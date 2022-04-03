@@ -25,7 +25,7 @@ class Partector2Ble:
 
     def __init_scanning(self):
         # Asyncio loop for scanning
-        self.__async_loop = asyncio.get_event_loop()
+        self.__async_loop = asyncio.new_event_loop()
         self.__async_loop.create_task(self.__scan_in_background())
         self.__async_loop.create_task(self.__decode_beacon_data())
 
