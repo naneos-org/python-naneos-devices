@@ -1,6 +1,6 @@
 # partector2
 
-Add a short description here!
+This package works with the namespace naneos. The structure in the src folder is applied to obtain this result.
 
 
 ## Description
