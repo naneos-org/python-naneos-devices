@@ -6,7 +6,7 @@ import time
 import pandas
 import serial
 from naneos.partector2._data_structure import PARTECTOR2_DATA_STRUCTURE
-from naneos.partector2._lambda_upload import _get_lambda_upload_list
+from naneos.partector2._lambda_upload import _get_lambda_upload_list_serial
 
 
 class Partector2(Thread):
@@ -19,7 +19,7 @@ class Partector2(Thread):
         self.__init_thread()
         self.__init_data_structures()
 
-        time.sleep(5e-3)
+        time.sleep(10e-3)
         self._ser.reset_input_buffer()
         self.start()  # starts the thread
 
@@ -123,7 +123,7 @@ class Partector2(Thread):
         return data_casted
 
     def get_lambda_upload_list(self) -> list:
-        return _get_lambda_upload_list(self.get_data_list(), self._serial_number)
+        return _get_lambda_upload_list_serial(self.get_data_list(), self._serial_number)
 
     def get_data_pandas(self) -> pandas.DataFrame:
         data = self.get_data_list()

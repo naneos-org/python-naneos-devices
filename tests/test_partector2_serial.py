@@ -1,4 +1,3 @@
-from cgi import test
 from naneos.partector2 import Partector2
 from naneos.partector2 import scan_for_serial_partector2
 import time
