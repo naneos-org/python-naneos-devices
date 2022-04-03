@@ -5,12 +5,16 @@ from threading import Thread
 from queue import Queue
 
 
-def scan_for_serial_partector2():
+def scan_for_serial_partector2(sn_exclude: list = []) -> dict:
     """Scans all possible ports using threads (fast)."""
     threads = []
     q = Queue()
 
-    [threads.append(Thread(target=__scan_port, args=(port, q))) for port in ls_ports()]
+    [
+        threads.append(Thread(target=__scan_port, args=(port, q)))
+        for port in ls_ports()
+        if port not in sn_exclude
+    ]
     [thread.start() for thread in threads]
     [thread.join() for thread in threads]
 
