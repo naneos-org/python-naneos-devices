@@ -4,18 +4,27 @@ import sys
 import time
 from datetime import datetime, timezone
 from queue import Queue
-from threading import Lock, Thread
+from threading import Lock, Thread, Event
 
 from bleak import BleakScanner
 
 from naneos.partector2_ble._lambda_upload import _get_lambda_upload_list_ble
 import requests
 
+# TODO: refactoring / maybe thread is not needed
 
-class Partector2Ble:
+
+class Partector2Ble(Thread):
     def __init__(self) -> None:
+        self.__init_thread()
         self.__init_data_structures()
-        self.__init_scanning()
+
+        self.start()
+
+    def __init_thread(self):
+        Thread.__init__(self)
+        self.name = "ble-partector2"
+        self.STOP_EVENT = Event()
 
     def __init_data_structures(self):
         self.__next_scanning_time = time.time() - 1.0  # starts directly
@@ -23,22 +32,21 @@ class Partector2Ble:
         self._results_dict = {}
         self._results_lock = Lock()
 
-    def __init_scanning(self):
-        # Asyncio loop for scanning
-        self.__async_loop = asyncio.new_event_loop()
-        self.__async_loop.create_task(self.__scan_in_background())
-        self.__async_loop.create_task(self.__decode_beacon_data())
-
-        # Run this asyncio loop in a thread in order to not block the main thread
-        self.__thread = Thread(target=self.__async_loop.run_forever)
-        self.__thread.start()
+    def run(self):
+        print("Starting Partector2 BLE thread")
+        asyncio.run(self._main_async())
+        print("Closed Partector2 BLE thread and event loop")
 
     def stop_scanning(self):
-        self.__async_loop.call_soon_threadsafe(self.__async_loop.stop)
-        self.__thread.join()
+        self.STOP_EVENT.set()
+        self.join()
+        print("Joined Partector2 BLE thread")
+
+    async def _main_async(self):
+        await asyncio.gather(self.__scan_in_background(), self.__decode_beacon_data())
 
     async def __scan_in_background(self):
-        while True:
+        while not self.STOP_EVENT.is_set():
             self.__wait_until_trigger()
             self.__update_next_scanning_time()
 
@@ -54,6 +62,7 @@ class Partector2Ble:
             # handles blueZ error on raspberry pi's (20.11.2021)
             if "linux" in sys.platform:
                 self.__clean_bluez_cache()
+        print("Stopped scanning")
 
     def __update_next_scanning_time(self):
         if abs(time.time() - self.__next_scanning_time) < 0.1:
@@ -83,7 +92,7 @@ class Partector2Ble:
             subprocess.check_output(f"bluetoothctl -- remove {line}", shell=True)
 
     async def __decode_beacon_data(self):
-        while True:
+        while not self.STOP_EVENT.is_set():
             scan_data = list(self._scanning_data.queue)
             self._scanning_data.queue.clear()
 
@@ -101,6 +110,7 @@ class Partector2Ble:
                     self.__add_measurement_to_results(measurement)
 
             await asyncio.sleep(3)
+        print("Stopped decoding")
 
     def __parse_mesurment_data(self, timestamp, b: bytes) -> dict:
         """Returns a dict with the serial number as key."""
