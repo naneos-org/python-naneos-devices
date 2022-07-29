@@ -122,11 +122,14 @@ class Partector2(Thread):
 
         return data_casted
 
-    def get_lambda_upload_list(self) -> list:
-        return _get_lambda_upload_list_serial(self.get_data_list(), self._serial_number)
+    def get_lambda_upload_list(self, data=None) -> list:
+        if not data:
+            data = self.get_data_list()
+        return _get_lambda_upload_list_serial(data, self._serial_number)
 
-    def get_data_pandas(self) -> pandas.DataFrame:
-        data = self.get_data_list()
+    def get_data_pandas(self, data=None) -> pandas.DataFrame:
+        if not data:
+            data = self.get_data_list()
 
         columns = PARTECTOR2_DATA_STRUCTURE.keys()
         df = pandas.DataFrame(data, columns=columns).set_index("dateTime")
