@@ -1,5 +1,6 @@
-from naneos.partector2_ble import Partector2Ble
 import time
+
+from naneos.partector2_ble import Partector2Ble
 
 
 def test_bluetooth_connection():

@@ -1,5 +1,6 @@
-import sys
 import glob
+import sys
+
 import serial
 
 
@@ -16,12 +17,14 @@ def list_serial_ports():
     elif sys.platform.startswith("linux") or sys.platform.startswith("cygwin"):
         # this excludes your current terminal "/dev/tty"
         ports = glob.glob("/dev/tty[A-Za-z]*")
-    elif sys.platform.startswith("darwin"):
+    elif sys.platform.startswith("darwin"):  # mac
         ports = glob.glob("/dev/tty.*")
+        ports = [port for port in ports if "Bluetooth" not in port]
     else:
         raise EnvironmentError("Unsupported platform")
 
     result = []
+
     for port in ports:
         try:
             s = serial.Serial(port)

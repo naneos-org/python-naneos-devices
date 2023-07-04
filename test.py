@@ -1,10 +1,16 @@
-test = {}
+import time
 
-test["test"] = test["test"] + ["foo1"]
-print(test)
+from naneos.partector2 import Partector2, scan_for_serial_partector2
 
-test["test"] = test["test"] + ["foo2"]
-print(test)
+x = scan_for_serial_partector2()
+
+myP2 = Partector2(list(x.values())[0], 1)
+
+time.sleep(2)
+
+data = myP2.get_data_pandas()
+
+print(data)
 
 
-structure = {8000: [["data_list"], ["data_list"]], 8001: [["data_list"], ["data_list"]]}
+myP2.close()

@@ -1,5 +1,6 @@
 import datetime
 
+# v295
 PARTECTOR2_DATA_STRUCTURE = {
     "dateTime": datetime.datetime,
     "runtime_min": float,
@@ -20,7 +21,6 @@ PARTECTOR2_DATA_STRUCTURE = {
     "number": int,
     "dP": int,
     "P_average": float,
-    "lag": float,
 }
 
 

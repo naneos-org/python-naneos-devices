@@ -1,10 +1,11 @@
+import time
 from datetime import datetime, timezone
 from queue import Queue
-from threading import Thread, Event
-import time
+from threading import Event, Thread
 
 import pandas
 import serial
+
 from naneos.partector2._data_structure import PARTECTOR2_DATA_STRUCTURE
 from naneos.partector2._lambda_upload import _get_lambda_upload_list_serial
 
@@ -70,7 +71,9 @@ class Partector2(Thread):
 
     def __serial_reading_routine(self):
         data = [datetime.now(tz=timezone.utc)] + self._readline().split("\t")
-        self._data.put(data) if len(data) == 20 else self._info.put(data)
+        self._data.put(data) if len(data) == len(
+            PARTECTOR2_DATA_STRUCTURE
+        ) else self._info.put(data)
 
     def __check_device_connection(self):
         """Checks if P2 is still connected!"""
@@ -189,38 +192,3 @@ class Partector2(Thread):
     # TODO: Ask Martin for an X? option in the protocol
     def __set_verbose_freq(self, freq: int):
         self._write(f"X000{freq}!")
-
-
-# import requests
-
-# if __name__ == "__main__":
-#     for _ in range(10):
-#         try:
-#             p2 = Partector2("COM4")
-#         except:
-#             continue
-#         break
-
-#     print(p2._serial_number)
-#     print(p2._firmware_version)
-
-#     print(p2.__check_device_connection())
-
-#     try:
-#         while True:
-#             time.sleep(60)
-#             myList = p2.get_upload_list()
-#             url = (
-#                 "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/mobile"
-#             )
-#             message = {"values": myList}
-#             status_code = requests.post(url=url, json=message)
-#             print(myList)
-#             print(status_code)
-#     except KeyboardInterrupt:
-#         print("User Interrupt!")
-
-#     # print(p2.get_data_list())
-#     # print(p2.get_data_pandas())
-#     time.sleep(1)
-#     p2.THREAD_RUN = False

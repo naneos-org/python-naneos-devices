@@ -1,6 +1,6 @@
-from naneos.partector2 import Partector2
-from naneos.partector2 import scan_for_serial_partector2
 import time
+
+from naneos.partector2 import Partector2, scan_for_serial_partector2
 
 # make sure a physical partector2 is connected
 
