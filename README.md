@@ -44,7 +44,7 @@ Make sure to modify the code according to your specific requirements. Refer to t
 
 ## Documentation
 
-The documentation for the `naneos-devices` package can be found in the [package's documentation folder](docs/index.md).
+The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
 ## Contributing
 
