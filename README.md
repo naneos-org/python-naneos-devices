@@ -5,6 +5,9 @@
 [![GitHub Issues](https://img.shields.io/github/issues/naneos-org/python-naneos-devices/issues)](https://github.com/naneos-org/python-naneos-devices/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/naneos-org/python-naneos-devices)](https://github.com/naneos-org/python-naneos-devices/pulls)
 
+[![Naneos Logo](naneos_logo.svg)](https://naneos.ch)
+
+
 This repository contains a collection of Python scripts and utilities for our naneos measurement devices. These scripts will provide various functionalities related to data acquisition, analysis, and visualization for your measurement devices.
 
 ## Installation
@@ -61,10 +64,6 @@ If you would like to acknowledge any individuals, organizations, or resources th
 
 For any questions, suggestions, or collaborations, please feel free to contact the project maintainer:
 
-- Your Name
-- Your Email
-- Your Website or GitHub profile (optional)
-
----
-
-We hope this README.md template provides a good starting point for your ultrafine particle measurement devices repository. Customize it further according to your specific project requirements and guidelines.
+- Mario Huegi
+- Contact: [mario.huegi@naneos.ch](mailto:mario.huegi@naneos.ch)
+- [Github](https://github.com/huegi)
