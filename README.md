@@ -8,7 +8,7 @@
 [![Naneos Logo](naneos_logo.svg)](https://naneos.ch)
 
 
-This repository contains a collection of Python scripts and utilities for our naneos measurement devices. These scripts will provide various functionalities related to data acquisition, analysis, and visualization for your measurement devices.
+This repository contains a collection of Python scripts and utilities for our [naneos](https://naneos.ch) measurement devices. These scripts will provide various functionalities related to data acquisition, analysis, and visualization for your measurement devices.
 
 ## Installation
 
