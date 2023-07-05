@@ -46,6 +46,25 @@ Make sure to modify the code according to your specific requirements. Refer to t
 
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
+## Important commands when working locall with tox
+```bash
+tox -e clean #cleans the dist and docs/_build folder
+tox -e build #builds the package based on the last tag
+pipenv install -e . #installs the locally builded package
+
+tox -e docs #generates the documentation
+
+tox -e publish  # to test your project uploads correctly in test.pypi.org
+tox -e publish -- --repository pypi  # to release your package to PyPI
+
+tox -av  # to list all the tasks available
+```
+
+## Ideas for future development
+* P2 BLE implementation that integrates into the implementation of the serial P2
+* P2 Bidirectional Implementation that allows to send commands to the P2
+* Automatically activate Bluetooth or ask when BLE is used
+
 ## Contributing
 
 Contributions are welcome! If you encounter any issues or have suggestions for improvements, please submit an issue on the [issue tracker](https://github.com/naneos-org/python-naneos-devices/issues). If you'd like to contribute code, please follow the guidelines mentioned in the [CONTRIBUTING](CONTRIBUTING.rst) file.
