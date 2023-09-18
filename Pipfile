@@ -5,7 +5,7 @@ name = "pypi"
 
 [packages]
 protobuf = "*"
-naneos-devices = {path = "."}
+naneos-devices = {editable = true, path = "."}
 
 [dev-packages]
 pyscaffold = "*"
