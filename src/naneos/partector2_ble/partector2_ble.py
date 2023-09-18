@@ -4,12 +4,10 @@ import sys
 import time
 from datetime import datetime, timezone
 from queue import Queue
-from threading import Lock, Thread, Event
+from threading import Event, Lock, Thread
 
-from bleak import BleakScanner
-
-from naneos.partector2_ble._lambda_upload import _get_lambda_upload_list_ble
 import requests
+from bleak import BleakScanner
 
 # TODO: refactoring / maybe thread is not needed
 
@@ -147,30 +145,16 @@ class Partector2Ble(Thread):
             self._results_dict = {}
         return results
 
-    def get_lambda_upload_list(self, sn_exclude: list = []) -> list:
-        return _get_lambda_upload_list_ble(self.get_and_clear_results(), sn_exclude)
-
 
 def test():
-
     ble_scanner = Partector2Ble()
 
     while True:
         try:
             time.sleep(5)
             print("---")
-            data = ble_scanner.get_lambda_upload_list()
+            data = ble_scanner.get_and_clear_results()
             print(data)
-
-            url = (
-                "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/mobile"
-            )
-            message = {"values": data}
-            status_code = requests.post(url=url, json=message)
-            print(data)
-            print(status_code)
-            # data = ble_scanner.get_and_clear_results()
-            # print(len(data[8112]))
 
         except KeyboardInterrupt:
             break

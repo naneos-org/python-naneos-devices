@@ -23,6 +23,28 @@ PARTECTOR2_DATA_STRUCTURE = {
     "P_average": float,
 }
 
+PARTECTOR1_DATA_STRUCTURE = {
+    "dateTime": datetime.datetime,
+    "runtime_min": float,
+    "batt_voltage": float,
+    "idiff_global": float,
+    "ucor_global": float,
+    "EM": float,
+    "DAC": float,
+    "HVon": int,
+    "idiffset": float,
+    "flow": float,
+    "LDSA": float,
+    "T": float,
+    "RHcorr": float,
+    "device_status": int,
+    # "phase_angle": float,
+}
+
 
 def get_p2_idx(key: str) -> int:
     return list(PARTECTOR2_DATA_STRUCTURE.keys()).index(key)
+
+
+def get_p1_idx(key: str) -> int:
+    return list(PARTECTOR1_DATA_STRUCTURE.keys()).index(key)

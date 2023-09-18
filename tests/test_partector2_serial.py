@@ -1,12 +1,12 @@
 import time
 
-from naneos.partector2 import Partector2, scan_for_serial_partector2
+from naneos.partector2 import Partector2, scan_for_serial_partectors
 
 # make sure a physical partector2 is connected
 
 
 def test_port_scanning():
-    ports = scan_for_serial_partector2()
+    ports = scan_for_serial_partectors()
     assert len(ports) > 0
     assert isinstance(ports, dict)
     assert isinstance(list(ports.keys())[0], int)
@@ -75,7 +75,7 @@ def test_partector_freq_change():
 
 
 def _find_and_connect_partector2(freq: int = 0):
-    scan = scan_for_serial_partector2()
+    scan = scan_for_serial_partectors()
     sn = list(scan.keys())[0]
     port = list(scan.values())[0]
 

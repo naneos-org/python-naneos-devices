@@ -1,11 +1,11 @@
-from naneos.serial_utils import list_serial_ports as ls_ports
-from naneos.partector2 import Partector2
-
-from threading import Thread
 from queue import Queue
+from threading import Thread
+
+from naneos.partector2 import Partector2
+from naneos.serial_utils import list_serial_ports as ls_ports
 
 
-def scan_for_serial_partector2(sn_exclude: list = []) -> dict:
+def scan_for_serial_partectors(sn_exclude: list = []) -> dict:
     """Scans all possible ports using threads (fast)."""
     threads = []
     q = Queue()
@@ -18,7 +18,10 @@ def scan_for_serial_partector2(sn_exclude: list = []) -> dict:
     [thread.start() for thread in threads]
     [thread.join() for thread in threads]
 
-    return {k: v for x in tuple(q.queue) for (k, v) in x.items()}
+    p1 = {k: v for x in tuple(q.queue) for (k, v) in x.items() if k < 1000}
+    p2 = {k: v for x in tuple(q.queue) for (k, v) in x.items() if k >= 1000}
+
+    return {"P1": p1, "P2": p2}
 
 
 def __scan_port(port: str, q: Queue) -> dict:
