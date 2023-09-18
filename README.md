@@ -60,6 +60,12 @@ tox -e publish -- --repository pypi  # to release your package to PyPI
 tox -av  # to list all the tasks available
 ```
 
+## Protobuf
+Use this command to create a py and pyi file from the proto file
+```bash
+protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto 
+```
+
 ## Ideas for future development
 * P2 BLE implementation that integrates into the implementation of the serial P2
 * P2 Bidirectional Implementation that allows to send commands to the P2

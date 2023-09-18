@@ -5,8 +5,9 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from naneos.partector2.partector1 import Partector1
-from naneos.partector2.scan_for_p2 import scan_for_serial_partectors
+from naneos.partector.partector1 import Partector1
+from naneos.partector.scan_for_partector import scan_for_serial_partectors
+from naneos.protobuf.protobuf import create_Partector1_entry
 
 
 def simple_callback(device: BLEDevice, advertisement_data: AdvertisementData):
@@ -58,9 +59,14 @@ def readP1():
     time.sleep(5)
 
     # print(p1.get_data_list())
-    print(p1.get_data_pandas())
+    df = p1.get_data_pandas()
+    print(df)
+
+    df.to_pickle("p1.pkl")
 
     p1.close()
+
+    create_Partector1_entry(df)
 
 
 if __name__ == "__main__":

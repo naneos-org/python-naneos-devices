@@ -1,6 +1,6 @@
 from math import pi
 
-from naneos.partector2._data_structure import get_p2_idx as get_i
+from naneos.partector._data_structure import get_p2_idx as get_i
 
 
 def _get_lambda_upload_list_serial(data_list: list, serial_number: int) -> list:

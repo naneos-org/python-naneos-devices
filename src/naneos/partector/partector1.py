@@ -6,8 +6,8 @@ from threading import Event, Thread
 import pandas
 import serial
 
-from naneos.partector2._data_structure import PARTECTOR1_DATA_STRUCTURE
-from naneos.partector2._lambda_upload import _get_lambda_upload_list_serial
+from naneos.partector._data_structure import PARTECTOR1_DATA_STRUCTURE
+from naneos.partector._lambda_upload import _get_lambda_upload_list_serial
 
 
 class Partector1(Thread):

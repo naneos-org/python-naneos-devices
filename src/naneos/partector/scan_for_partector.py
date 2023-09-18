@@ -1,7 +1,7 @@
 from queue import Queue
 from threading import Thread
 
-from naneos.partector2 import Partector2
+from naneos.partector import Partector2
 from naneos.serial_utils import list_serial_ports as ls_ports
 
 

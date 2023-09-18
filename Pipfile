@@ -4,7 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-naneos-devices = {editable = true, path = "."}
+protobuf = "*"
+naneos-devices = {path = "."}
 
 [dev-packages]
 pyscaffold = "*"
