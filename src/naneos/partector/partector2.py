@@ -12,7 +12,7 @@ from naneos.partector._lambda_upload import _get_lambda_upload_list_serial
 
 class Partector2(Thread):
     SERIAL_RETRIES = 5  # MAGIC, number of retries when command fails
-    TIMEOUT_SER = 0.1  # MAGIC, timeout of serial connection
+    TIMEOUT_SER = 0.2  # MAGIC, timeout of serial connection
     TIMEOUT_INFO = TIMEOUT_SER + 0.05  # MAGIC, timeout of info functions
 
     def __init__(self, port: str, verb_freq: int = 1) -> None:
@@ -172,10 +172,10 @@ class Partector2(Thread):
         self.__set_verbose_freq(freq)
 
     # user protected methods
-    def __get_and_check_info(self, leng: int = 2) -> list:
+    def __get_and_check_info(self, length: int = 2) -> list:
         data = self._info.get(timeout=self.TIMEOUT_INFO)
-        if len(data) != 2:
-            raise Exception(f"Info length {len(data)} not matching {leng}: {data}")
+        if len(data) != length:
+            raise Exception(f"Info length {len(data)} not matching {length}: {data}")
         return data
 
     def __get_serial_number(self) -> int:
