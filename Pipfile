@@ -11,6 +11,7 @@ naneos-devices = {editable = true, path = "."}
 pyscaffold = "*"
 tox = "*"
 sphinx = "*"
+pyinstaller = "*"
 
 [requires]
 python_version = "3.9"

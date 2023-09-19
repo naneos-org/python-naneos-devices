@@ -92,6 +92,15 @@ Use this command to create a py and pyi file from the proto file
 protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto 
 ```
 
+## Building executables
+Sometimes you want to build an executable for a customer with you custom script.
+The build must happen on the same OS as the target OS.
+For example if you want to build an executable for windows you need to build it on Windows.
+
+```bash
+pyinstaller demo/p1UploadTool.py  --console --noconfirm --clean --onefile
+```
+
 ## Ideas for future development
 * P2 BLE implementation that integrates into the implementation of the serial P2
 * P2 Bidirectional Implementation that allows to send commands to the P2

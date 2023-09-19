@@ -22,6 +22,7 @@ class Partector1(Thread):
 
         time.sleep(10e-3)
         self._ser.reset_input_buffer()
+        self.last_heard = time.time()
         self.start()  # starts the thread
 
         self.__init_get_device_info()
@@ -81,6 +82,7 @@ class Partector1(Thread):
         if lenData > len(PARTECTOR1_DATA_STRUCTURE):
             data = data[: len(PARTECTOR1_DATA_STRUCTURE)]
         self._data.put(data)
+        self.last_heard = time.time()
 
     def __check_device_connection(self):
         """Checks if P2 is still connected!"""
@@ -110,9 +112,13 @@ class Partector1(Thread):
         self._ser.write(line.encode())
 
     def _readline(self) -> str:
-        self.__check_serial_connection()
-        data = self._ser.readline().decode()
-        return data.replace("\r", "").replace("\n", "").replace("\x00", "")
+        try:
+            self.__check_serial_connection()
+            data = self._ser.readline().decode()
+            return data.replace("\r", "").replace("\n", "").replace("\x00", "")
+        except Exception as e:
+            self.last_heard = 0
+            return ""
 
     # data methods
     def clear_data_cache(self):
