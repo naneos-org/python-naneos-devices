@@ -39,7 +39,6 @@ class Partector2ProGarage(Partector2Pro):
             # set [-6] to [-13] to 0
             if not size_dist_received:
                 data[20:28] = [0] * 8
-                print(data)
             if self._queue.full():
                 self._queue.get()
             self._queue.put(data)
