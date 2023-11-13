@@ -1,4 +1,6 @@
 class PartectorDefaults:
+    """Default values for the Partector when connected via serial port."""
+
     SERIAL_RETRIES = 5
     SERIAL_TIMEOUT = 0.2
     SERIAL_TIMEOUT_INFO = SERIAL_TIMEOUT + 0.05
