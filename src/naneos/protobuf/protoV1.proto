@@ -42,6 +42,16 @@ message DevicePoint {
   uint32 particle_number_114nm = 25;
   uint32 particle_number_185nm = 26;
   uint32 particle_number_300nm = 27;
+  uint32 surface = 28;          // um^2 / cm^3 -> * 100
+  uint32 sigma_size_dist = 29;  // * 100
+  uint32 steps_inversion = 30;  // * 1
+  uint32 current_dist_0 = 31;   // * 100'000
+  uint32 current_dist_1 = 32;   // * 100'000
+  uint32 current_dist_2 = 33;   // * 100'000
+  uint32 current_dist_3 = 34;   // * 100'000
+  uint32 current_dist_4 = 35;   // * 100'000
+  uint32 pump_current = 36;     // * 100
+  uint32 pump_pwm = 37;         // * 1
 }
 
 message GatewayPoint {

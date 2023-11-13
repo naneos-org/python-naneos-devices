@@ -122,8 +122,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         data = [datetime.now(tz=timezone.utc)] + line.split("\t")
 
         if len(data) == len(self._data_structure):
+            if self._queue.full():
+                self._queue.get()
             self._queue.put(data)
         else:
+            if self._queue_info.full():
+                self._queue_info.get()
             self._queue_info.put(data)
 
     def _check_device_connection(self):
