@@ -11,13 +11,21 @@ from naneos.partector.blueprints._partector_defaults import PartectorDefaults
 
 
 class PartectorBluePrint(Thread, PartectorDefaults, ABC):
+    """
+    Class with the basic functionality of every Partector.
+    Mandatory device specific methods are defined abstract and have to be implemented in the child class.
+    """
+
     def __init__(self, port: str, verb_freq: int = 1) -> None:
+        """Initializes the Partector2 and starts the reading thread."""
         self._init(port, verb_freq)
 
     def close(self, blocking: bool = False):
+        """Closes the serial connection and stops the reading thread."""
         self._close(blocking)
 
     def run(self):
+        """Thread method. Reads the serial port and puts the data into the queue."""
         while not self.thread_event.is_set():
             self._run()
 
@@ -27,17 +35,32 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     ### Abstract methods
     @abstractmethod
     def set_verbose_freq(self, freq: int):
+        """
+        Sets the verbose frequency of the device.
+        This differs for P1, P2 and P2Pro.
+        """
         pass
 
     #########################################
     ### User accessible getters
     def get_serial_number(self) -> int:
+        """Gets the serial number via command from the device."""
         return self._serial_wrapper(self._get_serial_number)
 
     def get_firmware_version(self) -> str:
+        """Gets the firmware version via command from the device."""
         return self._serial_wrapper(self._get_firmware_version)
 
-    def write_line(self, line: str, number_of_elem: int = 1):
+    def write_line(self, line: str, number_of_elem: int = 1) -> list:
+        """
+        Writes a custom line to the device.
+        Returns the tab separated response as list.
+
+        :param str line: The line to write to the device.
+        :param int number_of_elem: The number of elements in the response. This will be checked!
+        :return: The response as list.
+        """
+
         self.custom_info_str = line
         self.custom_info_size = number_of_elem + 1
 
@@ -46,6 +69,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     #########################################
     ### User accessible data methods
     def clear_data_cache(self):
+        """Clears the data cache."""
         self._queue.queue.clear()
 
     def get_data_list(self) -> list:
@@ -63,6 +87,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         return data_casted
 
     def get_data_pandas(self, data=None) -> pandas.DataFrame:
+        """Returns the cache as pandas DataFrame with timestamp as index."""
         if not data:
             data = self.get_data_list()
 
@@ -160,7 +185,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._write_line("f?")
         return int(self._get_and_check_info()[1])
 
-    def _custom_info(self) -> str:
+    def _custom_info(self) -> list:
         self._queue_info.queue.clear()
         self._write_line(self.custom_info_str)
         return self._get_and_check_info(self.custom_info_size)

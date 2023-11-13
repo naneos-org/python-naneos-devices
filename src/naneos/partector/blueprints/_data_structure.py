@@ -77,11 +77,3 @@ PARTECTOR1_DATA_STRUCTURE = {
     "device_status": int,
     # "phase_angle": float,
 }
-
-
-def get_p2_idx(key: str) -> int:
-    return list(PARTECTOR2_DATA_STRUCTURE.keys()).index(key)
-
-
-def get_p1_idx(key: str) -> int:
-    return list(PARTECTOR1_DATA_STRUCTURE.keys()).index(key)
