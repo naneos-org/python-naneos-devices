@@ -60,6 +60,11 @@ PARTECTOR2_PRO_DATA_STRUCTURE = {
     "current_4": float,  # not existing in protobuf
 }
 
+# same as PARTECTOR2_PRO_DATA_STRUCTURE but with cs_status at the end
+PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE = PARTECTOR2_PRO_DATA_STRUCTURE.copy()
+PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE["cs_status"] = int
+
+
 PARTECTOR1_DATA_STRUCTURE = {
     "dateTime": datetime.datetime,
     "runtime_min": float,
