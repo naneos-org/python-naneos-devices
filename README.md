@@ -79,12 +79,13 @@ tox -e build #builds the package based on the last tag
 pipenv install -e . #installs the locally builded package
 
 tox -e docs #generates the documentation
-
+$
 tox -e publish  # to test your project uploads correctly in test.pypi.org
 tox -e publish -- --repository pypi  # to release your package to PyPI
 
 tox -av  # to list all the tasks available
 ```
+It's recommended to use a .pypirc file to store your credentials. See [here](https://packaging.python.org/en/latest/specifications/pypirc/) for more information.
 
 ## Protobuf
 Use this command to create a py and pyi file from the proto file
@@ -102,7 +103,7 @@ pyinstaller demo/p1UploadTool.py  --console --noconfirm --clean --onefile
 ```
 
 ## Ideas for future development
-* P2 BLE implementation that integrates into the implementation of the serial P2
+* P2 BLE implementation that integrates into the implementation of the serial P2$
 * P2 Bidirectional Implementation that allows to send commands to the P2
 * Automatically activate Bluetooth or ask when BLE is used
 

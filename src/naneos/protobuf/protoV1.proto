@@ -52,6 +52,7 @@ message DevicePoint {
   uint32 current_dist_4 = 35;   // * 100'000
   uint32 pump_current = 36;     // * 100
   uint32 pump_pwm = 37;         // * 1
+  int32 cs_status = 38;         // 0=off, 1=on
 }
 
 message GatewayPoint {
