@@ -1,8 +1,29 @@
 from queue import Queue
 from threading import Thread
 
+from logger.custom_logger import get_naneos_logger
 from naneos.partector import Partector2
 from naneos.serial_utils import list_serial_ports as ls_ports
+
+logger = get_naneos_logger(__name__)
+
+
+def scan_for_serial_partector(serial_number: int) -> str:
+    """Scans all possible ports using threads (fast)."""
+    threads = []
+    q = Queue()
+
+    [threads.append(Thread(target=__scan_port, args=(port, q))) for port in ls_ports()]
+    [thread.start() for thread in threads]
+    [thread.join() for thread in threads]
+
+    ports = {k: v for d in tuple(q.queue) for (k, v) in d.items()}
+    logger.debug(f"Found ports: {ports}")
+
+    if serial_number in ports.keys():
+        return ports[serial_number]
+
+    return None
 
 
 def scan_for_serial_partectors(sn_exclude: list = []) -> dict:
@@ -26,7 +47,7 @@ def scan_for_serial_partectors(sn_exclude: list = []) -> dict:
 
 def __scan_port(port: str, q: Queue) -> dict:
     try:
-        p2 = Partector2(port)
+        p2 = Partector2(port=port)
         q.put({p2._serial_number: port})
         p2.close(blocking=True)
     except Exception:

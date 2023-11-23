@@ -11,10 +11,13 @@ class Partector2ProGarage(PartectorBluePrint):
     CS_ON = 1
     CS_UNKNOWN = -1
 
-    def __init__(self, callback_catalyst, port: str, verb_freq: int = 1) -> None:
+    def __init__(
+        self, serial_number: int = None, port: str = None, verb_freq: int = 1, **kwargs
+    ):
         self._catalyst_state = self.CS_UNKNOWN
-        self._callback_catalyst = callback_catalyst
-        super().__init__(port, verb_freq)
+
+        self._callback_catalyst = kwargs.get("callback_catalyst", None)
+        super().__init__(serial_number, port, verb_freq)
 
     def _get_and_check_info(self, length: int = 3) -> list:
         data = self._queue_info.get(timeout=self.SERIAL_TIMEOUT_INFO)

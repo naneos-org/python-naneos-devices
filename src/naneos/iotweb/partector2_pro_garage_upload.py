@@ -1,5 +1,6 @@
 import base64
 import datetime
+from threading import Thread
 
 import pandas as pd
 import requests
@@ -7,9 +8,24 @@ import requests
 from naneos.protobuf import create_Combined_entry, create_partector_2_pro_garagenbox
 
 
-class Partector2ProGarageUpload:
+class Partector2ProGarageUpload(Thread):
     URL = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/dev/proto/v1"
     HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
+
+    def __init__(self, df: pd.DataFrame, serial_number: int, callback: callable):
+        super().__init__()
+        self.df = df
+        self.serial_number = serial_number
+        self._callback = callback
+
+    def run(self):
+        ret = self.upload(self.df, self.serial_number)
+
+        if self._callback:
+            if ret.status_code == 200:
+                self._callback(True)
+            else:
+                self._callback(False)
 
     @staticmethod
     def get_body(upload_string) -> str:
@@ -21,6 +37,7 @@ class Partector2ProGarageUpload:
             }}
             """
 
+    # can be used directly then its not threaded
     @classmethod
     def upload(cls, df: pd.DataFrame, serial_number: int):
         abs_time = int(datetime.datetime.now().timestamp())
@@ -34,6 +51,7 @@ class Partector2ProGarageUpload:
         body = cls.get_body(proto_str_base64)
         r = requests.post(cls.URL, headers=cls.HEADERS, data=body, timeout=10)
         # print(f"Status code: {r.status_code} text={r.text}")
+        return r
 
 
 if __name__ == "__main__":
