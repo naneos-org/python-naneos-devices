@@ -3,13 +3,13 @@ from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
 
 class Partector2(PartectorBluePrint):
-    def __init__(self, port: str, verb_freq: int = 1) -> None:
-        super().__init__(port, verb_freq)
+    def __init__(self, serial_number: int = None, port: str = None, verb_freq: int = 1):
+        super().__init__(serial_number, port, verb_freq)
 
     def _init_serial_data_structure(self):
         self._data_structure = PARTECTOR2_DATA_STRUCTURE
 
-    def set_verbose_freq(self, freq: int):
+    def _set_verbose_freq(self, freq: int):
         """
         Set the frequency of the verbose output.
 
