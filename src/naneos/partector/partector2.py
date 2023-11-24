@@ -9,7 +9,7 @@ class Partector2(PartectorBluePrint):
     def _init_serial_data_structure(self):
         self._data_structure = PARTECTOR2_DATA_STRUCTURE
 
-    def set_verbose_freq(self, freq: int):
+    def _set_verbose_freq(self, freq: int):
         """
         Set the frequency of the verbose output.
 

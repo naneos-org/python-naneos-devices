@@ -9,7 +9,7 @@ class Partector2Pro(PartectorBluePrint):
     def _init_serial_data_structure(self):
         self._data_structure = PARTECTOR2_PRO_DATA_STRUCTURE
 
-    def set_verbose_freq(self, freq: int):
+    def _set_verbose_freq(self, freq: int):
         if freq == 0:
             self._write_line("X0000!")
         else:

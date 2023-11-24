@@ -26,18 +26,18 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-def get_naneos_logger(name: str):
+def get_naneos_logger(name: str, level: int = logging.INFO):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(level)
 
     formatter_file = logging.Formatter("%(asctime)s - %(filename)s - %(message)s")
     file_handler = logging.FileHandler("naneos-devices.log")
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(level)
     file_handler.setFormatter(formatter_file)
 
     formatter_stream = CustomFormatter("%(asctime)s - %(filename)s - %(message)s")
     stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.DEBUG)
+    stream_handler.setLevel(level)
     stream_handler.setFormatter(formatter_stream)
 
     logger.addHandler(stream_handler)
