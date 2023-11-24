@@ -48,8 +48,8 @@ class Partector2ProGarage(PartectorBluePrint):
             self._write_line("CSoff!")
         elif state == "auto":
             self._write_line("CSauto!")
-
-        logger.warning(f"Unknown catalyst state: {state} -> nothing done.")
+        else:
+            logger.warning(f"Unknown catalyst state: {state} -> nothing done.")
 
     def _serial_reading_routine(self):
         line = self._read_line()
