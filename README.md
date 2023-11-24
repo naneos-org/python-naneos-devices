@@ -103,7 +103,7 @@ pyinstaller demo/p1UploadTool.py  --console --noconfirm --clean --onefile
 ```
 
 ## Ideas for future development
-* P2 BLE implementation that integrates into the implementation of the serial P2$
+* P2 BLE implementation that integrates into the implementation of the serial P2
 * P2 Bidirectional Implementation that allows to send commands to the P2
 * Automatically activate Bluetooth or ask when BLE is used
 

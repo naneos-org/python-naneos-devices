@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 
+from logger.custom_logger import get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
+
+logger = get_naneos_logger(__name__)
 
 
 class Partector2ProGarage(PartectorBluePrint):
@@ -33,6 +36,20 @@ class Partector2ProGarage(PartectorBluePrint):
             self._write_line("X0000!")
         else:
             self._write_line("X0006!")
+
+    def set_catalyst_state(self, state: str):
+        """Sets the catalyst state to on, off or auto."""
+        if not self._is_connected:
+            return
+
+        if state == "on":
+            self._write_line("CSon!")
+        elif state == "off":
+            self._write_line("CSoff!")
+        elif state == "auto":
+            self._write_line("CSauto!")
+
+        logger.warning(f"Unknown catalyst state: {state} -> nothing done.")
 
     def _serial_reading_routine(self):
         line = self._read_line()
