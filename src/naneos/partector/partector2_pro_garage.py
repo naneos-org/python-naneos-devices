@@ -39,7 +39,7 @@ class Partector2ProGarage(PartectorBluePrint):
 
     def set_catalyst_state(self, state: str):
         """Sets the catalyst state to on, off or auto."""
-        if not self._is_connected:
+        if not self._connected:
             return
 
         if state == "on":
