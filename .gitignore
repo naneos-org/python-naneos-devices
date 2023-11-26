@@ -53,3 +53,7 @@ MANIFEST
 .venv*/
 .conda*/
 .python-version
+sonar-project.properties
+.env
+.scannerwork/.sonar_lock
+.scannerwork/report-task.txt
