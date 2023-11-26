@@ -1,6 +1,6 @@
 from threading import Event, Thread
 
-from logger.custom_logger import get_naneos_logger
+from naneos.logger.custom_logger import get_naneos_logger
 
 logger = get_naneos_logger(__name__)
 

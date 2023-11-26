@@ -1,7 +1,7 @@
 from queue import Queue
 from threading import Thread
 
-from logger.custom_logger import get_naneos_logger
+from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector import Partector2
 from naneos.serial_utils import list_serial_ports as ls_ports
 

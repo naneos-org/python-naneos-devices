@@ -5,6 +5,8 @@ name = "pypi"
 
 [packages]
 protobuf = "*"
+bleak = "*"
+influxdb-client = {version = "*", extras = ["ciso"]}
 naneos-devices = {editable = true, path = "."}
 
 [dev-packages]

@@ -7,7 +7,7 @@ from threading import Event, Thread
 import pandas
 import serial
 
-from logger.custom_logger import get_naneos_logger
+from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector.blueprints._partector_defaults import PartectorDefaults
 from naneos.partector.blueprints._partectorCheckerThread import PartectorCheckerThread
 
@@ -73,14 +73,15 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
     def write_line(self, line: str, number_of_elem: int = 1) -> list:
         """
-        Writes a custom line to the device.
-        Returns the tab separated response as list.
+        Writes a custom line to the device and returns the tab-separated response as a list.
 
-        :param str line: The line to write to the device.
-        :param int number_of_elem: The number of elements in the response. This will be checked!
-        :return: The response as list.
+        Args:
+            line (str): The line to write to the device.
+            number_of_elem (int, optional): The number of elements in the response. This will be checked. Defaults to 1.
+
+        Returns:
+            list: The response as a list.
         """
-
         self.custom_info_str = line
         self.custom_info_size = number_of_elem + 1
 
@@ -140,17 +141,15 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     def _run_check_connection(self) -> bool:
         """Checks if the device is still connected."""
         if not self._connected:
-            # try to reconnect
             self._init_serial(self._serial_number, self._port)
             self.set_verbose_freq(1)
-            return
-
-        if self._check_device_connection() is False:
+        elif self._check_device_connection() is False:
             self._ser.close()
             self._connected = False
-
             logger.warning(f"Partector on port {self._port} disconnected!")
             self._port = None
+
+        return self._connected
 
     def _serial_reading_routine(self):
         if not self._connected:
@@ -173,9 +172,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             self._queue_info.put(data)
 
     def _check_device_connection(self) -> bool:
-        if self.thread_event.is_set():
-            return False
-        elif not self._ser.isOpen():
+        if self.thread_event.is_set() or not self._ser.isOpen():
             return False
 
         try:
@@ -198,7 +195,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         except Exception as e:
             self._ser.close()
             self._connected = False
-            raise Exception(f"Was not able to open the Serial connection: {e}")
+            raise ConnectionAbortedError(f"Serial connection aborted: {e}")
 
     def _serial_wrapper(self, func):
         """Wraps user func in try-except block. Forwards exceptions to the user."""
@@ -222,7 +219,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
     def _read_line(self) -> str:
         if not self._connected:
-            return
+            return ""
 
         self._check_serial_connection()
         try:
@@ -233,11 +230,24 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             raise Exception(f"Was not able to read from the Serial connection: {e}")
         return data.replace("\r", "").replace("\n", "").replace("\x00", "")
 
-    def _get_and_check_info(self, length: int = 2) -> list:
-        data = self._queue_info.get(timeout=self.SERIAL_TIMEOUT_INFO)
-        if len(data) != length:
-            raise Exception(f"Info length {len(data)} not matching {length}: {data}")
-        return data
+    def _get_and_check_info(self, expected_length: int = 2) -> list:
+        """
+        Get information from the queue and check its length.
+
+        Parameters:
+            expected_length (int): The expected length of the information.
+
+        Returns:
+            list: The information from the queue.
+
+        Raises:
+            ValueError: If the length of the information does not match the expected length.
+        """
+        info_data = self._queue_info.get(timeout=self.SERIAL_TIMEOUT_INFO)
+        if len(info_data) != expected_length:
+            error_msg = f"Received data of length {len(info_data)}, expected {expected_length}. Data: {info_data}"
+            raise ValueError(error_msg)
+        return info_data
 
     def _get_serial_number_secure(self) -> int:
         if not self._connected:

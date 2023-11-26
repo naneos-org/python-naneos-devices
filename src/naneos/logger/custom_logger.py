@@ -44,28 +44,3 @@ def get_naneos_logger(name: str, level: int = logging.INFO):
     logger.addHandler(file_handler)
 
     return logger
-
-
-# def get_naneos_logger(log_file_name):
-#     # Erstellt einen Logger
-#     logger = logging.getLogger(__name__)
-#     logger.setLevel(logging.DEBUG)
-
-#     # Erstellt einen Formatter, der das Datum, den Dateinamen und die Nachricht enthält
-#     formatter = logging.Formatter("%(asctime)s - %(filename)s - %(message)s")
-
-#     # Erstellt einen FileHandler, um das Protokoll in eine Datei zu schreiben
-#     file_handler = logging.FileHandler("naneos-devices.log")
-#     file_handler.setLevel(logging.DEBUG)
-#     file_handler.setFormatter(formatter)
-
-#     # Erstellt einen StreamHandler, um das Protokoll auf der Konsole auszugeben
-#     stream_handler = logging.StreamHandler()
-#     stream_handler.setLevel(logging.DEBUG)
-#     stream_handler.setFormatter(CustomFormatter)
-
-#     # Fügt die Handler dem Logger hinzu
-#     logger.addHandler(file_handler)
-#     logger.addHandler(stream_handler)
-
-#     return logger
