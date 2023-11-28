@@ -5,7 +5,10 @@ from threading import Thread
 import pandas as pd
 import requests
 
+from naneos.logger import get_naneos_logger
 from naneos.protobuf import create_Combined_entry, create_partector_2_pro_garagenbox
+
+logger = get_naneos_logger(__name__)
 
 
 class Partector2ProGarageUpload(Thread):
@@ -19,13 +22,17 @@ class Partector2ProGarageUpload(Thread):
         self._callback = callback
 
     def run(self):
-        ret = self.upload(self.df, self.serial_number)
+        try:
+            ret = self.upload(self.df, self.serial_number)
 
-        if self._callback:
-            if ret.status_code == 200:
-                self._callback(True)
-            else:
-                self._callback(False)
+            if self._callback:
+                if ret.status_code == 200:
+                    self._callback(True)
+                else:
+                    self._callback(False)
+        except Exception as e:
+            logger.error(f"Error in upload: {e}")
+            self._callback(True)  # delete data because it was corrupted
 
     @staticmethod
     def get_body(upload_string) -> str:

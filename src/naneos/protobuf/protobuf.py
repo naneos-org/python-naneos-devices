@@ -88,6 +88,7 @@ def create_partector_2_pro_garagenbox(
 
     # TODO: check if using the right axis
     devicePoints = df.apply(_create_device_Point, axis=1, abs_time=abs_time).to_list()
+    devicePoints = [x for x in devicePoints if x is not None]
 
     device.device_points.extend(devicePoints)
 
@@ -95,47 +96,51 @@ def create_partector_2_pro_garagenbox(
 
 
 def _create_device_Point(ser: pd.Series, abs_time: int) -> pbScheme.DevicePoint:
-    device_point = pbScheme.DevicePoint()
+    try:
+        device_point = pbScheme.DevicePoint()
 
-    # mandatory fields
-    device_point.timestamp = abs_time - int(ser.name.timestamp())
-    device_point.device_status = int(ser["device_status"])
+        # mandatory fields
+        device_point.timestamp = abs_time - int(ser.name.timestamp())
+        device_point.device_status = int(ser["device_status"])
 
-    # optional fields
-    device_point.particle_number_concentration = int(ser["number"])
-    device_point.average_particle_diameter = int(ser["diameter"])
-    device_point.ldsa = int(ser["LDSA"] * 100.0)
-    device_point.surface = int(ser["surface"] * 100.0)
-    device_point.particle_mass = int(ser["particle_mass"] * 100.0)
-    device_point.sigma_size_dist = int(ser["sigma"] * 100.0)
-    idiff_tmp = ser["idiff_global"] if ser["idiff_global"] > 0 else 0
-    device_point.diffusion_current = int(idiff_tmp * 100.0)
-    device_point.corona_voltage = int(ser["ucor_global"])
-    device_point.deposition_voltage = int(ser["deposition_voltage"])
-    device_point.temperature = int(ser["T"])
-    device_point.relative_humidity = int(ser["RHcorr"])
-    device_point.ambient_pressure = int(ser["P_average"] * 10.0)
-    device_point.flow = int(ser["flow_from_dp"] * 1000.0)
-    device_point.battery_voltage = int(ser["batt_voltage"] * 100.0)
-    device_point.pump_current = int(ser["pump_current"] * 100.0)
-    device_point.pump_pwm = int(ser["pump_pwm"])
+        # optional fields
+        device_point.particle_number_concentration = int(ser["number"])
+        device_point.average_particle_diameter = int(ser["diameter"])
+        device_point.ldsa = int(ser["LDSA"] * 100.0)
+        device_point.surface = int(ser["surface"] * 100.0)
+        device_point.particle_mass = int(ser["particle_mass"] * 100.0)
+        device_point.sigma_size_dist = int(ser["sigma"] * 100.0)
+        idiff_tmp = ser["idiff_global"] if ser["idiff_global"] > 0 else 0
+        device_point.diffusion_current = int(idiff_tmp * 100.0)
+        device_point.corona_voltage = int(ser["ucor_global"])
+        device_point.deposition_voltage = int(ser["deposition_voltage"])
+        device_point.temperature = int(ser["T"])
+        device_point.relative_humidity = int(ser["RHcorr"])
+        device_point.ambient_pressure = int(ser["P_average"] * 10.0)
+        device_point.flow = int(ser["flow_from_dp"] * 1000.0)
+        device_point.battery_voltage = int(ser["batt_voltage"] * 100.0)
+        device_point.pump_current = int(ser["pump_current"] * 100.0)
+        device_point.pump_pwm = int(ser["pump_pwm"])
 
-    # pro stuff
-    device_point.cs_status = int(ser["cs_status"])
-    device_point.steps_inversion = int(ser["steps"])
-    device_point.current_dist_0 = int(ser["current_0"])
-    device_point.current_dist_1 = int(ser["current_1"])
-    device_point.current_dist_2 = int(ser["current_2"])
-    device_point.current_dist_3 = int(ser["current_3"])
-    device_point.current_dist_4 = int(ser["current_4"])
-    device_point.particle_number_10nm = int(ser["particle_number_10nm"])
-    device_point.particle_number_16nm = int(ser["particle_number_16nm"])
-    device_point.particle_number_26nm = int(ser["particle_number_26nm"])
-    device_point.particle_number_43nm = int(ser["particle_number_43nm"])
-    device_point.particle_number_70nm = int(ser["particle_number_70nm"])
-    device_point.particle_number_114nm = int(ser["particle_number_114nm"])
-    device_point.particle_number_185nm = int(ser["particle_number_185nm"])
-    device_point.particle_number_300nm = int(ser["particle_number_300nm"])
+        # pro stuff
+        device_point.cs_status = int(ser["cs_status"])
+        device_point.steps_inversion = int(ser["steps"])
+        device_point.current_dist_0 = int(ser["current_0"])
+        device_point.current_dist_1 = int(ser["current_1"])
+        device_point.current_dist_2 = int(ser["current_2"])
+        device_point.current_dist_3 = int(ser["current_3"])
+        device_point.current_dist_4 = int(ser["current_4"])
+        device_point.particle_number_10nm = int(ser["particle_number_10nm"])
+        device_point.particle_number_16nm = int(ser["particle_number_16nm"])
+        device_point.particle_number_26nm = int(ser["particle_number_26nm"])
+        device_point.particle_number_43nm = int(ser["particle_number_43nm"])
+        device_point.particle_number_70nm = int(ser["particle_number_70nm"])
+        device_point.particle_number_114nm = int(ser["particle_number_114nm"])
+        device_point.particle_number_185nm = int(ser["particle_number_185nm"])
+        device_point.particle_number_300nm = int(ser["particle_number_300nm"])
+    except Exception as e:
+        print(f"Error in _create_device_Point: {e}")
+        return None
 
     return device_point
 
