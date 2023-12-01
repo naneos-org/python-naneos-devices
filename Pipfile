@@ -8,6 +8,7 @@ protobuf = "*"
 bleak = "*"
 influxdb-client = {version = "*", extras = ["ciso"]}
 naneos-devices = {editable = true, path = "."}
+coverage = "*"
 
 [dev-packages]
 pyscaffold = "*"
@@ -16,4 +17,4 @@ sphinx = "*"
 pyinstaller = "*"
 
 [requires]
-python_version = "3.9"
+python_version = "3.11"

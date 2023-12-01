@@ -24,9 +24,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         """Initializes the Partector2 and starts the reading thread."""
         self._init(serial_number, port, verb_freq)
 
-    def close(self, blocking: bool = False):
+    def close(self, blocking: bool = False, shutdown: bool = False):
         """Closes the serial connection and stops the reading thread."""
-        self._close(blocking)
+        self._close(blocking, shutdown)
 
     def run(self):
         """Thread method. Reads the serial port and puts the data into the queue."""
@@ -37,6 +37,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         checker_thread.stop()
         checker_thread.join()
+
+        if self._shutdown_partector:
+            self.write_line("off!", 0)
 
         if self._ser.isOpen():
             self._ser.close()
@@ -119,11 +122,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
     #########################################
     ### Serial methods (private)
-    def _close(self, blocking):
+    def _close(self, blocking: bool, shutdown: bool):
         try:
             self.set_verbose_freq(0)
         except Exception:
             pass
+        self._shutdown_partector = shutdown
         self.thread_event.set()
         if blocking:
             self.join()
@@ -284,6 +288,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     #########################################
     ### Init methods
     def _init(self, serial_number, port, verb_freq):
+        self._shutdown_partector = False
         self._init_serial(serial_number, port)
         self._init_thread()
         self._init_data_structures()

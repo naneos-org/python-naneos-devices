@@ -72,7 +72,7 @@ Make sure to modify the code according to your specific requirements. Refer to t
 
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
-## Important commands when working locall with tox
+## Important commands when working locally with tox
 ```bash
 tox -e clean #cleans the dist and docs/_build folder
 tox -e build #builds the package based on the last tag
@@ -84,6 +84,14 @@ tox -e publish  # to test your project uploads correctly in test.pypi.org
 tox -e publish -- --repository pypi  # to release your package to PyPI
 
 tox -av  # to list all the tasks available
+
+### Testing with tox
+# 1. Install the desired version with pyenv
+pyenv install 3.8.X 3.9.X, 3.10.X, 3.11.X, 3.12.X
+# 2. Set the desired versions global
+pyenv global 3.8.X 3.9.X 3.10.X 3.11.X 3.12.X
+# 3. Run tox
+tox
 ```
 It's recommended to use a .pypirc file to store your credentials. See [here](https://packaging.python.org/en/latest/specifications/pypirc/) for more information.
 
