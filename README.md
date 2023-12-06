@@ -11,7 +11,7 @@
 [![License][mit-license]](LICENSE.txt)
 
 <!-- hyperlinks -->
-[github-actions-badge]: https://github.com/naneos-org/python-naneos-devices/workflows/python/badge.svg
+[github-actions-badge]: https://github.com/naneos-org/python-naneos-devices/actions/workflows/pages.yml/badge.svg
 [poetry-badge]: https://img.shields.io/endpoint?url=https://python-poetry.org/badge/v0.json
 [nox-badge]: https://img.shields.io/badge/%F0%9F%A6%8A-Nox-D85E00.svg
 [black-badge]: https://img.shields.io/badge/code%20style-black-000000.svg

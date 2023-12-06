@@ -4,7 +4,6 @@
 .pytest_cache
 dist
 build
-htmlcov
 site
 __pycache__
 *.pyc
@@ -14,3 +13,4 @@ __pycache__
 
 **/.DS_Store
 **/.env
+**/.coverage-reports/

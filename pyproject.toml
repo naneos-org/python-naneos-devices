@@ -23,7 +23,7 @@ classifiers = [
 
     # Include this classifier to prevent accidently publishing private code to PyPI.
     #   https://pypi.org/classifiers/
-    "Private :: Do Not Upload",
+    # "Private :: Do Not Upload",
 ]
 
 [tool.poetry.dependencies]
@@ -131,7 +131,10 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
+relative_files = true
+source = [".nox/test-3-12/lib/python3.12/site-packages/naneos/"]
 branch = true
+# disable_warnings = ["include-ignored"]
 
 # To globally exclude additional code blocks from code coverage reporting, see:
 # https://coverage.readthedocs.io/en/latest/excluding.html#advanced-exclusion

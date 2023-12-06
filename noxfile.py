@@ -11,14 +11,18 @@ nox.options.sessions = ["fmt_check", "lint", "type_check", "test", "docs"]
 
 @session(python=["3.9", "3.10", "3.11", "3.12"])
 def test(s: Session) -> None:
-    s.install(".", "pytest", "pytest-cov", "pytest-dotenv", "pytest-randomly")
+    s.install(".", "pytest", "pytest-cov", "pytest-dotenv") # "pytest-randomly"
     s.run(
         "python",
         "-m",
         "pytest",
-        "--cov=naneos",
-        "--cov-report=html",
-        # "--cov-report=xml",
+        # --cov without a path argument will collect coverage for all modules in the current
+        "--cov",
+        # "--cov=naneos",
+        "--cov-config=pyproject.toml",
+        # "--cov-append",
+        "--cov-report=html:.coverage-reports/html",
+        "--cov-report=xml:.coverage-reports/coverage.xml",
         "--cov-report=term",
         "tests",
         *s.posargs,
