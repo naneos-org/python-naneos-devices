@@ -1,0 +1,16 @@
+.idea
+.mypy_cache
+.nox
+.pytest_cache
+dist
+build
+htmlcov
+site
+__pycache__
+*.pyc
+*.egg-info
+.coverage
+.coverage.*
+
+**/.DS_Store
+**/.env
