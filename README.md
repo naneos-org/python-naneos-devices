@@ -1,4 +1,4 @@
-# naneos (python-toolkit)
+# naneos-devices (python-toolkit)
 
 [![GitHub Actions][github-actions-badge]](https://github.com/naneos-org/python-naneos-devices/actions)
 [![GitHub Issues][gh-issues]](https://github.com/naneos-org/python-naneos-devices/issues)

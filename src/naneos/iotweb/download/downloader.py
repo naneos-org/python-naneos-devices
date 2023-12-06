@@ -1,6 +1,6 @@
 import datetime as dt
 
-# from influxdb_client import InfluxDBClient, QueryApi
+from influxdb_client import InfluxDBClient
 import pandas as pd
 
 from naneos.logger import get_naneos_logger
@@ -26,16 +26,16 @@ def get_query(bucket: str, serial_number: str, start: str, stop: str) -> str:
 
 def create_start_stop_timestamp(start: dt.datetime, stop: dt.datetime) -> list:
     """Returns a list of lists with start stop times in 1 day chunks in unix timesamps"""
-    DELTA_SECONDS = 3600 * 24 * 2
+    delta_seconds = 3600 * 24 * 2
 
     start = int(start.timestamp())
     stop = int(stop.timestamp())
 
     start_stop_times = []
 
-    while start < stop - DELTA_SECONDS:
-        start_stop_times.append([start, start + DELTA_SECONDS])
-        start += DELTA_SECONDS
+    while start < stop - delta_seconds:
+        start_stop_times.append([start, start + delta_seconds])
+        start += delta_seconds
     start_stop_times.append([start, stop])
 
     return start_stop_times
@@ -66,24 +66,23 @@ def download_from_iotweb(
 
     dfs = []
 
-    # with InfluxDBClient(url=URL_INFLUX, org=ORG_INFLUX, token=token) as client:
-    #     for t1, t2 in timestamps:
-    #         query = get_query(name, serial_number, t1, t2)
+    with InfluxDBClient(url=URL_INFLUX, org=ORG_INFLUX, token=token) as client:
+        for t1, t2 in timestamps:
+            query = get_query(name, serial_number, t1, t2)
 
-    #         df = client.query_api().query_data_frame(query)
+            df = client.query_api().query_data_frame(query)
 
-    #         if isinstance(df, list):
-    #             dfs.extend(df)
-    #         elif isinstance(df, pd.DataFrame):
-    #             dfs.append(df)
-    #         else:
-    #             logger.warning(f"Unknown type: {type(df)}")
+            if isinstance(df, list):
+                dfs.extend(df)
+            elif isinstance(df, pd.DataFrame):
+                dfs.append(df)
+            else:
+                logger.warning(f"Unknown type: {type(df)}")
 
-    # df = pd.concat(dfs, axis=0)
-    # df.set_index("_time", inplace=True)
-    # df.drop(["result", "table"], axis=1, inplace=True)
+    df = pd.concat(dfs, axis=0)
+    df.set_index("_time", inplace=True)
+    df.drop(["result", "table"], axis=1, inplace=True)
 
-    df = pd.DataFrame([[1,2,3], [1,2,3]], columns=["asdas","_time", "bla"])
     return df
 
 

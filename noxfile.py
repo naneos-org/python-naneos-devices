@@ -19,7 +19,7 @@ def test(s: Session) -> None:
         # --cov without a path argument will collect coverage for all modules in the current
         "--cov",
         # "--cov=naneos",
-        "--cov-config=pyproject.toml",
+        # "--cov-config=pyproject.toml",
         # "--cov-append",
         "--cov-report=html:.coverage-reports/html",
         "--cov-report=xml:.coverage-reports/coverage.xml",

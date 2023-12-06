@@ -3,7 +3,7 @@ import pytest
 from naneos.iotweb import download_from_iotweb
 
 
-def test_hello_world():
+def test_download_8134():
     import datetime as dt
     import os
 
@@ -11,6 +11,7 @@ def test_hello_world():
     if token is None:
         raise ValueError("No token found in your environment")
 
+    # use local timezone for start
     start = dt.datetime(2023, 11, 26)
     stop = dt.datetime(2023, 11, 27)
     serial_number = "8134"
