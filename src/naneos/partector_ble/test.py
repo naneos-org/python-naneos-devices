@@ -1,44 +1,39 @@
 import asyncio
+from typing import Optional
 
 from bleak import BleakClient, BleakScanner
-
-# Detecting devices
-# Connecting devices
-# Removing devices when disconnected
+from bleak.backends.device import BLEDevice
 
 
-async def connect(address):
-    async with BleakClient(address) as client:
-        for service in client.services:
-            print(f"[Service] {service}")
+async def discover() -> Optional[BLEDevice]:
+    device: BLEDevice | None = await BleakScanner.find_device_by_name("P2", timeout=4.0)  # type: ignore
 
-            for characteristic in service.characteristics:
-                print(f"[Characteristic] {characteristic}")
+    if isinstance(device, BLEDevice):
+        return device
 
-                # value = await client.read_gatt_char(characteristic.uuid)
-                # print(f"[Value] {value}")
+    return None
 
 
-async def discover():
-    # filter for device name P2
-    device1 = await BleakScanner.find_device_by_name("P2", timeout=4.0)
-    await connect(device1.address)
-    print(device1)
+async def print_client_services(device: BLEDevice) -> None:
+    try:
+        async with BleakClient(device, timeout=1) as client:
+            for service in client.services:
+                print(f"[Service] {service}")
+                for characteristic in service.characteristics:
+                    print(f"[Characteristic] {characteristic}")
+    except Exception as e:
+        print("Error:", e)
 
-    # device2 = await BleakScanner.find_device_by_name("P2", timeout=4.0)
-    # print(device2)
 
+async def find_and_print_services() -> None:
+    device: Optional[BLEDevice] = await discover()
 
-async def scan():
-    stop_event = asyncio.Event()
-
-    def scanner_callback(device, advertisement_data):
-        print(device, advertisement_data)
-
-    # filter for name P2
-    async with BleakScanner(scanner_callback) as scanner:
-        await stop_event.wait()
+    if isinstance(device, BLEDevice):
+        print(f"Found device: {device}")
+        await print_client_services(device)
+    else:
+        print("No device found")
 
 
 if __name__ == "__main__":
-    asyncio.run(discover())
+    asyncio.run(find_and_print_services())

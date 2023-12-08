@@ -1,3 +1,8 @@
 {
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "mypy.runUsingActiveInterpreter": true,
+    "mypy.targets": [
+        "./src",
+        "./tests"
+    ]
 }
