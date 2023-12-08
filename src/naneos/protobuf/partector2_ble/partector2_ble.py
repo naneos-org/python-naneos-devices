@@ -1,13 +1,13 @@
 import asyncio
-import subprocess
-import sys
-import time
 from datetime import datetime, timezone
 from queue import Queue
+import subprocess
+import sys
 from threading import Event, Lock, Thread
+import time
 
-import requests
 from bleak import BleakScanner
+import requests
 
 # TODO: refactoring / maybe thread is not needed
 
@@ -49,9 +49,7 @@ class Partector2Ble(Thread):
             self.__update_next_scanning_time()
 
             # fetching ble readings + saving the timestamp
-            tmp_devices = await BleakScanner.discover(
-                timeout=0.8
-            )  # TODO: check timeout
+            tmp_devices = await BleakScanner.discover(timeout=0.8)  # TODO: check timeout
             date_time = datetime.now(tz=timezone.utc)
 
             for d in (x for x in tmp_devices if x.name == "P2"):
@@ -124,8 +122,7 @@ class Partector2Ble(Thread):
             + (int(b[11]) << 8)
             + (((int(b[20]) >> 1) & 0b01111111) << 16),
             "batt_voltage": (int(b[13]) + (int(b[14]) << 8)) / 100.0,
-            "particle_mass": (int(b[17]) + (int(b[18]) << 8) + (int(b[19]) << 16))
-            / 100.0,
+            "particle_mass": (int(b[17]) + (int(b[18]) << 8) + (int(b[19]) << 16)) / 100.0,
         }
 
         return {serial_number: measurement}

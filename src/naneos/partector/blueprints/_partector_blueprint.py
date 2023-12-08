@@ -1,8 +1,8 @@
-import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from queue import Queue
 from threading import Event, Thread
+import time
 
 import pandas
 import serial

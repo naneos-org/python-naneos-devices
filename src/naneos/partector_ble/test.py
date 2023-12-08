@@ -23,7 +23,7 @@ async def discover():
     # filter for device name P2
     device1 = await BleakScanner.find_device_by_name("P2", timeout=4.0)
     await connect(device1.address)
-    # print(device1)
+    print(device1)
 
     # device2 = await BleakScanner.find_device_by_name("P2", timeout=4.0)
     # print(device2)

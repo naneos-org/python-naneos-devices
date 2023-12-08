@@ -38,9 +38,7 @@ def create_Combined_entry(
     return combined
 
 
-def create_Partector1_entry(
-    df: pd.DataFrame, serial_number: int = None, abs_time: int = None
-):
+def create_Partector1_entry(df: pd.DataFrame, serial_number: int = None, abs_time: int = None):
     if serial_number is None:
         raise ValueError("Serial number must be given!")
     if abs_time is None:

@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
 
 from naneos.logger.custom_logger import get_naneos_logger
-from naneos.partector.blueprints._data_structure import (
-    PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE,
-)
+from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
 logger = get_naneos_logger(__name__)
@@ -14,9 +12,7 @@ class Partector2ProGarage(PartectorBluePrint):
     CS_ON = 1
     CS_UNKNOWN = -1
 
-    def __init__(
-        self, serial_number: int = None, port: str = None, verb_freq: int = 1, **kwargs
-    ):
+    def __init__(self, serial_number: int = None, port: str = None, verb_freq: int = 1, **kwargs):
         self._catalyst_state = self.CS_UNKNOWN
         self._auto_mode = True
 
