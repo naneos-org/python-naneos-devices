@@ -80,6 +80,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.mypy]
 ignore_missing_imports = true
 strict = true
+exclude = ["src/naneos/protobuf/protoV1_pb2.pyi", "src/naneos/protobuf/protoV1_pb2.py"]
 # If certain strict config options are too pedantic for a project,
 # disable them selectively here by setting to false.
 
@@ -99,6 +100,8 @@ extend-select = [
 ]
 extend-ignore = ["RUF005"]
 src = ["src"]
+exclude = ["src/naneos/protobuf/protoV1_pb2.pyi", "src/naneos/protobuf/protoV1_pb2.py"]
+
 
 [tool.ruff.isort]
 force-sort-within-sections = true

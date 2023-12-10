@@ -4,5 +4,8 @@
     "mypy.targets": [
         "./src",
         "./tests"
-    ]
+    ],
+    "mypy.configFile": "./pyproject.toml",
+    "ruff.lint.args": ["--config=./pyproject.toml"],
+    "ruff.interpreter": ["python"],
 }

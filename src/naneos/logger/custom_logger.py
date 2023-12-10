@@ -31,7 +31,7 @@ class CustomFormatter(logging.Formatter):
             fmt = self._format
         super().__init__(fmt=fmt)
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         log_fmt = next(
             (x[1] for x in self._FORMATS if x[0] == record.levelno),
             self._FORMATS[0][1],
@@ -41,7 +41,7 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-def get_naneos_logger(name: str, level: int = logging.INFO):
+def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
