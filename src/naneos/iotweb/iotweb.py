@@ -12,7 +12,7 @@ from naneos.protobuf import create_Combined_entry, create_Partector1_entry
 
 
 class P1uploadThread(Thread):
-    def __init__(self):
+    def __init__(self) -> None:
         Thread.__init__(self)
         self.event = Event()
         self.event.set()
@@ -23,14 +23,14 @@ class P1uploadThread(Thread):
         self.last_send_time = time.time()  # change to asyncio loop
         self.start()
 
-    def run(self):
+    def run(self) -> None:
         asyncio.run(self.run_async())
 
         print("closing devices")
         for d in self.device_list:
             d.close()
 
-    async def run_async(self):
+    async def run_async(self) -> None:
         task1 = asyncio.create_task(self.connect_disconnect_routine())
         task2 = asyncio.create_task(self._send_data_to_server())
 
