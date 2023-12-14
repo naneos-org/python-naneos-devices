@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from queue import Queue
 from threading import Event, Thread
 import time
+from typing import Any, Callable, Optional
 
 import pandas
 import serial
@@ -20,17 +21,26 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     Mandatory device specific methods are defined abstract and have to be implemented in the child class.
     """
 
-    def __init__(self, serial_number: int = None, port: str = None, verb_freq: int = 1):
+    def __init__(
+        self, serial_number: Optional[int] = None, port: Optional[str] = None, verb_freq: int = 1
+    ) -> None:
         """Initializes the Partector2 and starts the reading thread."""
+        self._init_variables()
         self._init(serial_number, port, verb_freq)
 
-    def close(self, blocking: bool = False, shutdown: bool = False):
+    def _init_variables(self) -> None:
+        self._connected = False
+        self._serial_number: Optional[int] = None
+        self._port: Optional[str] = ""
+        self._ser: Optional[serial.Serial] = None
+
+    def close(self, blocking: bool = False, shutdown: bool = False) -> None:
         """Closes the serial connection and stops the reading thread."""
         self._close(blocking, shutdown)
 
-    def run(self):
+    def run(self) -> None:
         """Thread method. Reads the serial port and puts the data into the queue."""
-        checker_thread = PartectorCheckerThread(self)
+        checker_thread = PartectorCheckerThread(self)  # TODO: go over this checker thread
 
         while not self.thread_event.is_set():
             self._run()
@@ -41,12 +51,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         if self._shutdown_partector:
             self.write_line("off!", 0)
 
-        if self._ser.isOpen():
+        if isinstance(self._ser, serial.Serial) and self._ser.is_open:
             self._ser.close()
 
     #########################################
     ### Abstract methods
-    def set_verbose_freq(self, freq: int):
+    def set_verbose_freq(self, freq: int) -> None:
         """
         Sets the verbose frequency of the device.
         This differs for P1, P2 and P2Pro.
@@ -57,7 +67,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._set_verbose_freq(freq)
 
     @abstractmethod
-    def _set_verbose_freq(self, freq: int):
+    def _set_verbose_freq(self, freq: int) -> None:
         """
         Sets the verbose frequency of the device.
         This differs for P1, P2 and P2Pro.
@@ -66,11 +76,11 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
     #########################################
     ### User accessible getters
-    def get_serial_number(self) -> int:
+    def get_serial_number(self) -> Optional[int]:
         """Gets the serial number via command from the device."""
         return self._serial_wrapper(self._get_serial_number)
 
-    def get_firmware_version(self) -> str:
+    def get_firmware_version(self) -> Optional[str]:
         """Gets the firmware version via command from the device."""
         return self._serial_wrapper(self._get_firmware_version)
 
@@ -132,7 +142,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         if blocking:
             self.join()
 
-    def _run(self):
+    def _run(self) -> None:
         if not self._connected:
             return
 
@@ -201,10 +211,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             self._connected = False
             raise ConnectionAbortedError(f"Serial connection aborted: {e}")
 
-    def _serial_wrapper(self, func):
+    def _serial_wrapper(self, func: Callable[[], Any]) -> Optional[Any]:
         """Wraps user func in try-except block. Forwards exceptions to the user."""
         if not self._connected:
-            return
+            return None
+
+        excep = "Was not able to fetch the serial number!"
 
         for _ in range(self.SERIAL_RETRIES):
             try:
@@ -212,6 +224,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             except Exception as e:
                 logger.error(f"Exception in _serial_wrapper: {e}")
                 excep = f"Exception occured during user function call: {e}"
+
         raise Exception(excep)
 
     def _write_line(self, line: str):
@@ -271,14 +284,17 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     def _get_firmware_version(self) -> str:
         self._queue_info.queue.clear()
         self._write_line("f?")
-        return int(self._get_and_check_info()[1])
+        fw = self._get_and_check_info()[1]
+        if isinstance(fw, str):
+            return fw
+        return "Unknown"
 
     def _custom_info(self) -> list:
         self._queue_info.queue.clear()
         self._write_line(self.custom_info_str)
         return self._get_and_check_info(self.custom_info_size)
 
-    def _cast_splitted_input_string(self, line: str):
+    def _cast_splitted_input_string(self, line: str) -> str:
         for i, data_type in enumerate(self._data_structure.values()):
             if type(line[i]) is not data_type:
                 line[i] = data_type(line[i])
@@ -287,7 +303,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
     #########################################
     ### Init methods
-    def _init(self, serial_number, port, verb_freq):
+    def _init(
+        self,
+        serial_number: Optional[int] = None,
+        port: Optional[str] = None,
+        verb_freq: int = 1,
+    ) -> None:
         self._shutdown_partector = False
         self._init_serial(serial_number, port)
         self._init_thread()
@@ -300,18 +321,19 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         self.set_verbose_freq(verb_freq)
 
-    def _init_serial(self, serial_number: int, port: str):
+    def _init_serial(
+        self, serial_number: Optional[int] = None, port: Optional[str] = None
+    ) -> None:
         from naneos.partector import scan_for_serial_partector
 
         self._serial_number = serial_number
         self._port = port
 
         if self._serial_number:
-            self._port = scan_for_serial_partector(self._serial_number)
+            self._port = scan_for_serial_partector(serial_number=self._serial_number)
         elif self._port is None:
             raise Exception("No serial number or port given!")
 
-        self._ser = None
         if self._port:
             self._ser = serial.Serial(
                 port=self._port,
@@ -319,58 +341,58 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                 timeout=self.SERIAL_TIMEOUT,
             )
 
-        self._connected = False
-        if self._ser:
-            if self._ser.isOpen():
-                self._connected = True
-                logger.info(f"Connected to SN{self._serial_number} on {self._port}")
+        # check type of self._ser
+        if isinstance(self._ser, serial.Serial) and self._ser.is_open:
+            self._connected = True
+            logger.info(f"Connected to SN{self._serial_number} on {self._port}")
 
         self.set_verbose_freq(0)
 
-    def _init_thread(self):
+    def _init_thread(self) -> None:
         Thread.__init__(self)
         self.name = "naneos-partector-thread"
         self.thread_event = Event()
 
-    def _init_data_structures(self):
+    def _init_data_structures(self) -> None:
         self.custom_info_str = "0"
         self.custom_info_size = 0
         self._data_structure = None  # will be declared in child class
-        self._queue = Queue(maxsize=self.SERIAL_QUEUE_MAXSIZE)
-        self._queue_info = Queue(maxsize=self.SERIAL_INFO_QUEUE_MAXSIZE)
+        self._queue: Queue[list[datetime | str]] = Queue(maxsize=self.SERIAL_QUEUE_MAXSIZE)
+        self._queue_info: Queue[list[datetime | str]] = Queue(
+            maxsize=self.SERIAL_INFO_QUEUE_MAXSIZE
+        )
 
     @abstractmethod
-    def _init_serial_data_structure(self):
+    def _init_serial_data_structure(self) -> None:
         pass
 
-    def _init_clear_buffers(self):
+    def _init_clear_buffers(self) -> None:
         if not self._connected:
             return
 
         time.sleep(10e-3)
-        self._ser.reset_input_buffer()
+        if isinstance(self._ser, serial.Serial):
+            self._ser.reset_input_buffer()
 
-    def _init_get_device_info(self):
+    def _init_get_device_info(self) -> None:
         try:
             if self._serial_number is None:
                 self._serial_number = self._get_serial_number_secure()
             self._firmware_version = self.get_firmware_version()
-            logger.debug(f"Connected to SN{self._serial_number} on {self._ser.port}")
+            logger.debug(f"Connected to SN{self._serial_number} on {self._port}")
         except Exception:
             logger.warning("Could not get device info!")
-            # port = self._ser.port
-            # self.close()
-            # raise ConnectionError(f"No partector2 on port {port}.")
 
 
 if __name__ == "__main__":
     import time
 
-    from naneos.partector import Partector2ProGarage
+    from naneos.partector import Partector2, Partector2ProGarage
 
-    partector = Partector2ProGarage(serial_number=8150)
+    # partector = Partector2ProGarage(serial_number=8112)
+    partector = Partector2(serial_number=8112)
 
-    time.sleep(30)
+    time.sleep(5)
 
     print(partector.get_data_pandas())
     partector.close(blocking=True)

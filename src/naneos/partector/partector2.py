@@ -1,15 +1,19 @@
+from typing import Optional
+
 from naneos.partector.blueprints._data_structure import PARTECTOR2_DATA_STRUCTURE
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
 
 class Partector2(PartectorBluePrint):
-    def __init__(self, serial_number: int = None, port: str = None, verb_freq: int = 1):
+    def __init__(
+        self, serial_number: Optional[int] = None, port: Optional[str] = None, verb_freq: int = 1
+    ) -> None:
         super().__init__(serial_number, port, verb_freq)
 
-    def _init_serial_data_structure(self):
+    def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR2_DATA_STRUCTURE
 
-    def _set_verbose_freq(self, freq: int):
+    def _set_verbose_freq(self, freq: int) -> None:
         """
         Set the frequency of the verbose output.
 

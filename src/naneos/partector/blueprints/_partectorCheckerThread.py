@@ -8,17 +8,17 @@ logger = get_naneos_logger(__name__)
 class PartectorCheckerThread(Thread):
     # from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
-    def __init__(self, partector):
+    def __init__(self, partector) -> None:
         super().__init__()
         self.partector = partector
 
         self._stop_event = Event()
         self.start()
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop_event.set()
 
-    def run(self):
+    def run(self) -> None:
         # every 2.1 seconds check if device is still connected
         while not self._stop_event.wait(2.1):
             try:
