@@ -1,30 +1,23 @@
 import base64
 import datetime
+from typing import Optional
 
-import google.protobuf.json_format as pbJson
-import google.protobuf.message as pbMessage
 import pandas as pd
 
 import naneos.protobuf.protoV1_pb2 as pbScheme
 
 
-def create_Combined_entry(
-    devices=None,
-    abs_time=None,
-    gateway_points=None,
-    position_points=None,
-    wind_points=None,
-):
-    if devices is None:
-        raise ValueError("Devices must be given!")
-    if not isinstance(devices, list):
-        raise ValueError("Devices must be a list!")
-
+def create_combined_entry(
+    devices: list[pbScheme.Device],
+    abs_timestamp: int,
+    gateway_points: Optional[list[pbScheme.GatewayPoint]] = None,
+    position_points: Optional[list[pbScheme.PositionPoint]] = None,
+    wind_points: Optional[list[pbScheme.WindPoint]] = None,
+) -> pbScheme.CombinedData:
     combined = pbScheme.CombinedData()
-    combined.abs_timestamp = abs_time
+    combined.abs_timestamp = abs_timestamp
 
-    for device in devices:
-        combined.devices.append(device)
+    combined.devices.extend(devices)
 
     if gateway_points is not None:
         combined.gateway_points.extend(gateway_points)
@@ -38,12 +31,9 @@ def create_Combined_entry(
     return combined
 
 
-def create_Partector1_entry(df: pd.DataFrame, serial_number: int = None, abs_time: int = None):
-    if serial_number is None:
-        raise ValueError("Serial number must be given!")
-    if abs_time is None:
-        raise ValueError("Absolute time must be given!")
-
+def create_partector1_entry(
+    df: pd.DataFrame, serial_number: int, abs_time: int
+) -> pbScheme.Device:
     device = pbScheme.Device()
 
     device.type = 0  # Partector1
@@ -71,12 +61,8 @@ def create_Partector1_entry(df: pd.DataFrame, serial_number: int = None, abs_tim
 
 
 def create_partector_2_pro_garagenbox(
-    df: pd.DataFrame, serial_number: int = None, abs_time: int = None
-):
-    if serial_number is None:
-        raise ValueError("Serial number must be given!")
-    if abs_time is None:
-        raise ValueError("Absolute time must be given!")
+    df: pd.DataFrame, serial_number: int, abs_time: int
+) -> pbScheme.Device:
     if len(df) == 0:
         raise ValueError("Dataframe must not be empty!")
 
@@ -85,15 +71,15 @@ def create_partector_2_pro_garagenbox(
     device.serial_number = serial_number
 
     # TODO: check if using the right axis
-    devicePoints = df.apply(_create_device_Point, axis=1, abs_time=abs_time).to_list()
-    devicePoints = [x for x in devicePoints if x is not None]
+    device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()
+    device_points = [x for x in device_points if x is not None]
 
-    device.device_points.extend(devicePoints)
+    device.device_points.extend(device_points)
 
     return device
 
 
-def _create_device_Point(ser: pd.Series, abs_time: int) -> pbScheme.DevicePoint:
+def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.DevicePoint]:
     try:
         device_point = pbScheme.DevicePoint()
 
@@ -150,7 +136,9 @@ if __name__ == "__main__":
 
     abs_time = int(datetime.datetime.now().timestamp())
     serial_number = 777
-    create_partector_2_pro_garagenbox(df, serial_number, abs_time)
+    device = create_partector_2_pro_garagenbox(df, serial_number, abs_time)
+
+    # print(device)
 
     # df = pd.read_pickle("p1.pkl")
 

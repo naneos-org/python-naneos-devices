@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import stat
+from typing import Any, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE
@@ -12,26 +14,32 @@ class Partector2ProGarage(PartectorBluePrint):
     CS_ON = 1
     CS_UNKNOWN = -1
 
-    def __init__(self, serial_number: int = None, port: str = None, verb_freq: int = 1, **kwargs):
+    def __init__(
+        self,
+        serial_number: Optional[int] = None,
+        port: Optional[str] = None,
+        verb_freq: int = 1,
+        **kwargs: Any,
+    ) -> None:
         self._catalyst_state = self.CS_UNKNOWN
         self._auto_mode = True
 
         self._callback_catalyst = kwargs.get("callback_catalyst", None)
+        if self._callback_catalyst is None:
+            logger.error("No callback function for catalyst state given!")
+            raise ValueError("No callback function for catalyst state given!")
         super().__init__(serial_number, port, verb_freq)
 
-    def _get_and_check_info(self, expected_length: int = 3) -> list:
-        return super()._get_and_check_info(expected_length)
-
-    def _init_serial_data_structure(self):
+    def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE
 
-    def _set_verbose_freq(self, freq: int):
+    def _set_verbose_freq(self, freq: int) -> None:
         if freq == 0:
             self._write_line("X0000!")
         else:
             self._write_line("X0006!")
 
-    def set_catalyst_state(self, state: str):
+    def set_catalyst_state(self, state: str) -> None:
         """Sets the catalyst state to on, off or auto."""
         if not self._connected:
             return
@@ -53,7 +61,7 @@ class Partector2ProGarage(PartectorBluePrint):
 
         logger.info(f"Catalyst state set to {state}.")
 
-    def _serial_reading_routine(self):
+    def _serial_reading_routine(self) -> None:
         line = self._read_line()
 
         if not line or line == "":
@@ -73,13 +81,24 @@ class Partector2ProGarage(PartectorBluePrint):
         else:
             self._put_line_to_queue(line)
 
-    def _put_line_to_queue(self, line: str, cs_command: bool = None):
-        data = [datetime.now(tz=timezone.utc)] + line.split("\t")
-        data = data + [self._catalyst_state]
+    def _put_line_to_queue(self, line: str, cs_command: Optional[bool] = None) -> None:
+        unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp())
+        data = [unix_timestamp] + line.split("\t")
 
         if len(data) != len(self._data_structure):
             self._put_to_info_queue(data)
             return
+
+        state: Optional[int] = None
+        try:
+            state = int(data[-1])
+        except Exception as excep:
+            logger.warning(f"Could not parse catalyst state in backup function: {excep}")
+
+        if state in [0, 1] and self._catalyst_state != state:
+            self._callback_catalyst(state == 1)
+            self._catalyst_state = state
+            logger.warning(f"Set catalyst state to by backup function to {state}.")
 
         # removes the size dist from all the measurements that are not wanted
         if cs_command is None and self._auto_mode:
@@ -87,12 +106,12 @@ class Partector2ProGarage(PartectorBluePrint):
 
         self._put_to_data_queue(data)
 
-    def _put_to_info_queue(self, data: list):
+    def _put_to_info_queue(self, data: list[int | str]) -> None:
         if self._queue_info.full():
             self._queue_info.get()
         self._queue_info.put(data)
 
-    def _put_to_data_queue(self, data: list):
+    def _put_to_data_queue(self, data: list[int | str]) -> None:
         if self._queue.full():
             self._queue.get()
         self._queue.put(data)
@@ -101,14 +120,17 @@ class Partector2ProGarage(PartectorBluePrint):
 if __name__ == "__main__":
     import time
 
-    def test_callback(state: bool):
-        print("Catalyst state: {}".format(state))
+    def test_callback(state: bool) -> None:
+        logger.info(f"Catalyst state changed to {state}.")
 
-    p2 = Partector2ProGarage(test_callback, "/dev/tty.usbmodemDOSEMet_1")
+    p2 = Partector2ProGarage(serial_number=8440, callback_catalyst=test_callback)
 
     # print(p2.write_line("v?", 1))
-    time.sleep(3)
-    print(p2.get_data_pandas()["cs_status"])
+    time.sleep(100)
+
+    df = p2.get_data_pandas()
+    print(df)
+    # df.to_pickle("tests/df_garagae.pkl")
 
     print("Closing...")
     p2.close(blocking=True)

@@ -53,8 +53,9 @@ class Partector2DataStructure:
 
 
 # v295
-PARTECTOR2_DATA_STRUCTURE = {
-    "dateTime": datetime.datetime,
+# type hint the data types
+PARTECTOR2_DATA_STRUCTURE: dict[str, type[int | float]] = {
+    "unix_timestamp": int,
     "runtime_min": float,
     "idiff_global": float,
     "ucor_global": int,
@@ -76,8 +77,8 @@ PARTECTOR2_DATA_STRUCTURE = {
 }
 
 # v302
-PARTECTOR2_PRO_DATA_STRUCTURE = {
-    "dateTime": datetime.datetime,
+PARTECTOR2_PRO_DATA_STRUCTURE: dict[str, type[int | float]] = {
+    "unix_timestamp": int,
     "runtime_min": float,
     "number": int,
     "diameter": float,
