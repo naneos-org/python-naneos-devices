@@ -126,11 +126,11 @@ if __name__ == "__main__":
     p2 = Partector2ProGarage(serial_number=8440, callback_catalyst=test_callback)
 
     # print(p2.write_line("v?", 1))
-    time.sleep(100)
+    time.sleep(5)
 
     df = p2.get_data_pandas()
     print(df)
-    # df.to_pickle("tests/df_garagae.pkl")
+    df.to_pickle("tests/df_garagae.pkl")
 
     print("Closing...")
     p2.close(blocking=True)

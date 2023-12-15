@@ -84,7 +84,7 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
         device_point = pbScheme.DevicePoint()
 
         # mandatory fields
-        device_point.timestamp = abs_time - int(ser.name.timestamp())
+        device_point.timestamp = abs_time - ser.name
         device_point.device_status = int(ser["device_status"])
 
         # optional fields
@@ -130,15 +130,15 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
 
 
 if __name__ == "__main__":
-    df = pd.read_pickle(
-        "/Users/huegi/Code/naneos/python/python-naneos-devices/tests/df_garagae.pkl"
-    )
+    df = pd.read_pickle("/Users/huegi/gitlocal/naneos/naneos-devices/tests/df_garagae.pkl")
+
+    print(df)
 
     abs_time = int(datetime.datetime.now().timestamp())
     serial_number = 777
     device = create_partector_2_pro_garagenbox(df, serial_number, abs_time)
 
-    # print(device)
+    print(device)
 
     # df = pd.read_pickle("p1.pkl")
 

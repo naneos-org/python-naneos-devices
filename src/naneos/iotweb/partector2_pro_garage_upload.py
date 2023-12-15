@@ -66,10 +66,8 @@ class Partector2ProGarageUpload(Thread):
 
 
 if __name__ == "__main__":
-    df = pd.read_pickle(
-        "/Users/huegi/Code/naneos/python/python-naneos-devices/tests/df_garagae.pkl"
-    )
+    df = pd.read_pickle("/Users/huegi/gitlocal/naneos/naneos-devices/tests/df_garagae.pkl")
 
     abs_time = int(datetime.datetime.now().timestamp())
-    serial_number = 8224
+    serial_number = 777
     Partector2ProGarageUpload.upload(df, serial_number)
