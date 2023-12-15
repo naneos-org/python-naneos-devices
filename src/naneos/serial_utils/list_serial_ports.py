@@ -25,7 +25,7 @@ def _get_all_open_ports() -> list[str]:
     if sys.platform.startswith("win"):
         ports = ["COM%s" % (i + 1) for i in range(256)]
     elif sys.platform.startswith("linux") or sys.platform.startswith("cygwin"):
-        ports = [str(port) for port in Path("/dev").glob("tty*") if "tty." not in str(port)]
+        ports = [str(port) for port in Path("/dev").glob("tty[A-Za-z]*")]
     elif sys.platform.startswith("darwin"):  # mac
         ports = [str(port) for port in Path("/dev").glob("tty.*") if "Bluetooth" not in str(port)]
     else:

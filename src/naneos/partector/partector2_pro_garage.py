@@ -123,7 +123,9 @@ if __name__ == "__main__":
     def test_callback(state: bool) -> None:
         logger.info(f"Catalyst state changed to {state}.")
 
-    p2 = Partector2ProGarage(serial_number=8440, callback_catalyst=test_callback)
+    logger.info("Starting...")
+
+    p2 = Partector2ProGarage(serial_number=8421, callback_catalyst=test_callback)
 
     # print(p2.write_line("v?", 1))
     time.sleep(5)

@@ -10,14 +10,14 @@ class CustomFormatter(logging.Formatter):
     _bold_red = "\x1b[31;1m"
     _reset = "\x1b[0m"
     _format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
-    _FORMATS_TERMINAL: tuple[tuple[int, str], ...] = (
-        (logging.DEBUG, _grey + _format + _reset),
-        (logging.INFO, _green + _format + _reset),
-        (logging.WARNING, _yellow + _format + _reset),
-        (logging.ERROR, _red + _format + _reset),
-        (logging.CRITICAL, _bold_red + _format + _reset),
+    _FORMATS_TERMINAL = (
+        (logging.DEBUG, f"{_grey} {_format} {_reset}"),
+        (logging.INFO, f"{_green} {_format} {_reset}"),
+        (logging.WARNING, f"{_yellow} {_format} {_reset}"),
+        (logging.ERROR, f"{_red} {_format} {_reset}"),
+        (logging.CRITICAL, f"{_bold_red} {_format} {_reset}"),
     )
-    _FORMATS_SAVE: tuple[tuple[int, str], ...] = (
+    _FORMATS_SAVE = (
         (logging.DEBUG, _format),
         (logging.INFO, _format),
         (logging.WARNING, _format),
@@ -54,6 +54,7 @@ def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(level)
     stream_handler.setFormatter(formatter_stream)
+    stream_handler.terminator = "\r\n"
 
     logger.addHandler(stream_handler)
     logger.addHandler(file_handler)

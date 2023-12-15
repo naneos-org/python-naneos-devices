@@ -41,7 +41,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     def _checker_thread(self) -> None:
         while not self.thread_event.wait(2.1):
             try:
-                logger.info("Checking device connection...")
+                # logger.info("Checking device connection...")
                 self._run_check_connection()
             except Exception as e:
                 logger.error(e)
