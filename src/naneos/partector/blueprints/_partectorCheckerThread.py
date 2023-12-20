@@ -1,4 +1,5 @@
 from threading import Event, Thread
+import time
 
 from naneos.logger.custom_logger import get_naneos_logger
 
@@ -12,6 +13,8 @@ class PartectorCheckerThread(Thread):
         super().__init__()
         self.partector = partector
 
+        self._last_message_received = time.time()
+
         self._stop_event = Event()
         self.start()
 
@@ -20,8 +23,14 @@ class PartectorCheckerThread(Thread):
 
     def run(self) -> None:
         # every 2.1 seconds check if device is still connected
-        while not self._stop_event.wait(2.1):
+        while not self._stop_event.wait(0.5):
+            if time.time() - self._last_message_received < 5:
+                continue
+
             try:
                 self.partector._run_check_connection()
             except Exception as e:
                 logger.error(e)
+
+    def notify_message_received(self) -> None:
+        self._last_message_received = time.time()

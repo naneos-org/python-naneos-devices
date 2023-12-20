@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
+import collections
 from datetime import datetime, timezone
 from queue import Queue
+import stat
 from threading import Event, Thread
 import time
 from typing import Any, Callable, Optional
@@ -32,19 +34,24 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._serial_number: Optional[int] = None
         self._port: Optional[str] = ""
         self._ser: Optional[serial.Serial] = None
-        self._time_last_connection_check = time.time()
+        self._time_last_message_received = time.time()
 
     def close(self, blocking: bool = False, shutdown: bool = False) -> None:
         """Closes the serial connection and stops the reading thread."""
         self._close(blocking, shutdown)
 
     def _checker_thread(self) -> None:
-        while not self.thread_event.wait(2.1):
-            try:
-                # logger.info("Checking device connection...")
-                self._run_check_connection()
-            except Exception as e:
-                logger.error(e)
+        while not self.thread_event.wait(0.5):
+            if time.time() - self._time_last_message_received > 5:
+                try:
+                    logger.info("Checking device connection...")
+                    self._run_check_connection()
+                    self._time_last_message_received = time.time()
+                except Exception as e:
+                    logger.error(e)
+
+    def _notify_message_received(self) -> None:
+        self._time_last_message_received = time.time()
 
     def run(self) -> None:
         """Thread method. Reads the serial port and puts the data into the queue."""
@@ -188,6 +195,8 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp())
         data = [unix_timestamp] + line.split("\t")
+
+        self._notify_message_received()
 
         if len(data) == len(self._data_structure):
             if self._queue.full():
@@ -416,10 +425,12 @@ if __name__ == "__main__":
     def test_callback(state: bool) -> None:
         logger.info(f"Catalyst state changed to {state}.")
 
-    partector = Partector2ProGarage(serial_number=8440, callback_catalyst=test_callback)
+    partector = Partector2ProGarage(
+        serial_number=8421, callback_catalyst=test_callback, verb_freq=0
+    )
     # partector = Partector2(serial_number=8112)
 
-    time.sleep(5)
+    time.sleep(20)
 
     print(partector.get_data_pandas())
     partector.close(blocking=True)
