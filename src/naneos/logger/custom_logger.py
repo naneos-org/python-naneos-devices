@@ -2,6 +2,9 @@ import logging
 from typing import Optional
 
 
+NANEOS_LOGGER_PATH = "logs/naneos-devices.log"
+
+
 class CustomFormatter(logging.Formatter):
     _grey = "\x1b[38;20m"
     _green = "\x1b[32;20m"
@@ -41,12 +44,20 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+def set_naneos_logger_save_path(path: str) -> None:
+    global NANEOS_LOGGER_PATH
+
+    NANEOS_LOGGER_PATH = path
+
+
 def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+    global NANEOS_LOGGER_PATH
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
     formatter_file = CustomFormatter(terminal=False)
-    file_handler = logging.FileHandler("naneos-devices.log")
+    file_handler = logging.FileHandler(NANEOS_LOGGER_PATH)
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter_file)
 
@@ -63,6 +74,7 @@ def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:
 
 
 if __name__ == "__main__":
+    set_naneos_logger_save_path("logs/naneos-devices.log")
     logger = get_naneos_logger(__name__, logging.DEBUG)
     logger.debug("debug message")
     logger.info("info message")
