@@ -1,7 +1,6 @@
 import logging
 from typing import Optional
 
-
 NANEOS_LOGGER_PATH = "logs/naneos-devices.log"
 
 

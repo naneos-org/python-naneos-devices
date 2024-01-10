@@ -1,14 +1,45 @@
 from queue import Queue
 from threading import Thread
+from typing import Optional
+
+import serial
 
 from naneos.logger.custom_logger import get_naneos_logger
-from naneos.partector import Partector2
+from naneos.partector.blueprints._data_structure import PARTECTOR2_DATA_STRUCTURE
+from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 from naneos.serial_utils import list_serial_ports as ls_ports
 
 logger = get_naneos_logger(__name__)
 
 
-def scan_for_serial_partector(serial_number: int) -> str:
+class ScanPartector(PartectorBluePrint):
+    def __init__(
+        self, serial_number: Optional[int] = None, port: Optional[str] = None, verb_freq: int = 1
+    ) -> None:
+        super().__init__(serial_number, port, verb_freq)
+
+    def _init_serial_data_structure(self) -> None:
+        self._data_structure = PARTECTOR2_DATA_STRUCTURE
+        # not used for scanning
+
+    def _set_verbose_freq(self, freq: int) -> None:
+        """
+        Set the frequency of the verbose output.
+
+        :param int freq: Frequency of the verbose output in Hz. (0: off, 1: 1Hz, 2: 10Hz, 3: 100Hz)
+        """
+
+        if freq < 0 or freq > 3:
+            raise ValueError("Frequency must be between 0 and 3!")
+
+        self._write_line(f"X000{freq}!")
+
+    def _check_connection(self) -> None:
+        if isinstance(self._ser, serial.Serial) and self._ser.is_open:
+            self._connected = True
+
+
+def scan_for_serial_partector(serial_number: int) -> Optional[str]:
     """Scans all possible ports using threads (fast)."""
     threads = []
     q = Queue()
@@ -20,40 +51,60 @@ def scan_for_serial_partector(serial_number: int) -> str:
     ports = {k: v for d in tuple(q.queue) for (k, v) in d.items()}
     logger.debug(f"Found ports: {ports}")
 
-    if serial_number in ports.keys():
+    if serial_number in ports:
         return ports[serial_number]
 
     return None
 
 
-def scan_for_serial_partectors(sn_exclude: list = []) -> dict:
+def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
     """Scans all possible ports using threads (fast)."""
     threads = []
-    q = Queue()
+    q_1 = Queue()
+    q_2 = Queue()
+    q_2_pro = Queue()
+
+    if sn_exclude is None:
+        sn_exclude = []
 
     [
-        threads.append(Thread(target=__scan_port, args=(port, q)))
+        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro)))
         for port in ls_ports()
         if port not in sn_exclude
     ]
     [thread.start() for thread in threads]
     [thread.join() for thread in threads]
 
-    p1 = {k: v for x in tuple(q.queue) for (k, v) in x.items() if k < 1000}
-    p2 = {k: v for x in tuple(q.queue) for (k, v) in x.items() if k >= 1000}
+    p1 = {k: v for x in tuple(q_1.queue) for (k, v) in x.items()}
+    p2 = {k: v for x in tuple(q_2.queue) for (k, v) in x.items()}
+    p2_pro = {k: v for x in tuple(q_2_pro.queue) for (k, v) in x.items()}
 
-    return {"P1": p1, "P2": p2}
+    return {"P1": p1, "P2": p2, "P2 Pro": p2_pro}
 
 
-def __scan_port(port: str, q: Queue) -> dict:
+def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue) -> None:
+    partector: Optional[ScanPartector] = None  # Initialize p2 with a default value of None
+
     try:
-        p2 = Partector2(port=port)
-        q.put({p2._serial_number: port})
-        p2.close(blocking=True)
+        partector = ScanPartector(port=port)
+
+        if partector._serial_number is None:
+            return
+        elif partector._serial_number < 1000:
+            q_1.put({partector._serial_number: port})
+        else:
+            multi_dv = partector.write_line("M?")
+            multi_dv = int(multi_dv[1])
+            if multi_dv == 0:
+                q_2.put({partector._serial_number: port})
+            else:
+                q_2_pro.put({partector._serial_number: port})
+
+        partector.close(blocking=True)
     except Exception:
-        try:
-            p2.close(blocking=True)
-        except UnboundLocalError:
-            pass  # p2 object already destroyed
-        except Exception:
-            raise Exception(f"Could not close port {port}.")
+        if partector is not None:
+            partector.close(blocking=True)
+
+
+if __name__ == "__main__":
+    print(scan_for_serial_partectors())

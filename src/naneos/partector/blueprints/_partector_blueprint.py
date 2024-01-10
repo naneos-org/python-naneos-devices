@@ -377,12 +377,14 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                 timeout=self.SERIAL_TIMEOUT,
             )
 
-        # check type of self._ser
+        self._check_connection()
+
+        self.set_verbose_freq(0)
+
+    def _check_connection(self) -> None:
         if isinstance(self._ser, serial.Serial) and self._ser.is_open:
             self._connected = True
             logger.info(f"Connected to SN{self._serial_number} on {self._port}")
-
-        self.set_verbose_freq(0)
 
     def _init_thread(self) -> None:
         Thread.__init__(self)
