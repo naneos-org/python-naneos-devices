@@ -111,11 +111,12 @@ PARTECTOR2_PRO_DATA_STRUCTURE: dict[str, type[int | float]] = {
     "current_2": float,  # not existing in protobuf
     "current_3": float,  # not existing in protobuf
     "current_4": float,  # not existing in protobuf
+    "cs_status": int,
 }
 
 # same as PARTECTOR2_PRO_DATA_STRUCTURE but with cs_status at the end
 PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE = PARTECTOR2_PRO_DATA_STRUCTURE.copy()
-PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE["cs_status"] = int
+# PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE["cs_status"] = int
 
 
 PARTECTOR1_DATA_STRUCTURE = {

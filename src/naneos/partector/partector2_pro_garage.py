@@ -1,15 +1,14 @@
 from datetime import datetime, timezone
-import stat
 from typing import Any, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
+from naneos.partector import Partector2Pro
 from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE
-from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
 logger = get_naneos_logger(__name__)
 
 
-class Partector2ProGarage(PartectorBluePrint):
+class Partector2ProGarage(Partector2Pro):
     CS_OFF = 0
     CS_ON = 1
     CS_UNKNOWN = -1
@@ -32,13 +31,6 @@ class Partector2ProGarage(PartectorBluePrint):
 
     def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE
-
-    def _set_verbose_freq(self, freq: int) -> None:
-        if freq == 0:
-            self._write_line("X0000!")
-        else:
-            self._write_line("M0004!")  # activates size dist mode
-            self._write_line("X0006!")  # activates verbose mode
 
     def set_catalyst_state(self, state: str) -> None:
         """Sets the catalyst state to on, off or auto."""

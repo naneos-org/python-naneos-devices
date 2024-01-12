@@ -39,14 +39,27 @@ class ScanPartector(PartectorBluePrint):
             self._connected = True
 
 
-def scan_for_serial_partector(serial_number: int) -> Optional[str]:
+def scan_for_serial_partector(serial_number: int, partector_version: str) -> Optional[str]:
     """Scans all possible ports using threads (fast)."""
     threads = []
-    q = Queue()
+    q_1 = Queue()
+    q_2 = Queue()
+    q_2_pro = Queue()
 
-    [threads.append(Thread(target=__scan_port, args=(port, q))) for port in ls_ports()]
+    [
+        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro)))
+        for port in ls_ports()
+    ]
     [thread.start() for thread in threads]
     [thread.join() for thread in threads]
+
+    q = Queue()
+    if partector_version == "P1":
+        q = q_1
+    elif partector_version == "P2":
+        q = q_2
+    elif partector_version == "P2_Pro":
+        q = q_2_pro
 
     ports = {k: v for d in tuple(q.queue) for (k, v) in d.items()}
     logger.debug(f"Found ports: {ports}")
@@ -79,7 +92,7 @@ def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
     p2 = {k: v for x in tuple(q_2.queue) for (k, v) in x.items()}
     p2_pro = {k: v for x in tuple(q_2_pro.queue) for (k, v) in x.items()}
 
-    return {"P1": p1, "P2": p2, "P2 Pro": p2_pro}
+    return {"P1": p1, "P2": p2, "P2_Pro": p2_pro}
 
 
 def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue) -> None:
@@ -93,12 +106,15 @@ def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue) -> None:
         elif partector._serial_number < 1000:
             q_1.put({partector._serial_number: port})
         else:
-            multi_dv = partector.write_line("M?")
-            multi_dv = int(multi_dv[1])
-            if multi_dv == 0:
+            if partector._firmware_version < 310:
                 q_2.put({partector._serial_number: port})
             else:
-                q_2_pro.put({partector._serial_number: port})
+                multi_dv = partector.write_line("name?")
+                multi_dv = multi_dv[1]
+                if multi_dv == "P2pro":
+                    q_2_pro.put({partector._serial_number: port})
+                elif multi_dv == "P2":
+                    q_2.put({partector._serial_number: port})
 
         partector.close(blocking=True)
     except Exception:

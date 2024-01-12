@@ -6,6 +6,7 @@ import stat
 from threading import Event, Thread
 import time
 from typing import Any, Callable, Optional
+from numpy import isin
 
 import pandas
 import serial
@@ -23,11 +24,15 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     """
 
     def __init__(
-        self, serial_number: Optional[int] = None, port: Optional[str] = None, verb_freq: int = 1
+        self,
+        serial_number: Optional[int] = None,
+        port: Optional[str] = None,
+        verb_freq: int = 1,
+        hw_version: str = "None",
     ) -> None:
         """Initializes the Partector2 and starts the reading thread."""
         self._init_variables()
-        self._init(serial_number, port, verb_freq)
+        self._init(serial_number, port, verb_freq, hw_version)
 
     def _init_variables(self) -> None:
         self._connected = False
@@ -42,7 +47,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
     def _checker_thread(self) -> None:
         while not self.thread_event.wait(0.5):
-            if time.time() - self._time_last_message_received > 5:
+            if time.time() - self._time_last_message_received > 10:
                 try:
                     logger.info("Checking device connection...")
                     self._run_check_connection()
@@ -97,9 +102,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         """Gets the serial number via command from the device."""
         return self._serial_wrapper(self._get_serial_number)
 
-    def get_firmware_version(self) -> Optional[str]:
+    def get_firmware_version(self) -> int:
         """Gets the firmware version via command from the device."""
-        return self._serial_wrapper(self._get_firmware_version)
+        fw = self._serial_wrapper(self._get_firmware_version)
+        if isinstance(fw, int):
+            return fw
+        return 0
 
     def write_line(self, line: str, number_of_elem: int = 1) -> list[Any]:
         """
@@ -313,13 +321,16 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._write_line("N?")
         return int(self._get_and_check_info()[1])
 
-    def _get_firmware_version(self) -> str:
+    def _get_firmware_version(self) -> Optional[int]:
         self._queue_info.queue.clear()
         self._write_line("f?")
         fw = self._get_and_check_info()[1]
-        if isinstance(fw, str):
+        try:
+            fw = int(fw)
             return fw
-        return "Unknown"
+        except Exception as e:
+            logger.error(f"Could not cast firmware version to int: {e}")
+            return None
 
     def _custom_info(self) -> list[int | str]:
         self._queue_info.queue.clear()
@@ -344,7 +355,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         serial_number: Optional[int] = None,
         port: Optional[str] = None,
         verb_freq: int = 1,
+        hw_version: str = "None",
     ) -> None:
+        self._hw_version = hw_version
         self._shutdown_partector = False
         self._init_serial(serial_number, port)
         self._init_thread()
@@ -366,7 +379,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._port = port
 
         if self._serial_number:
-            self._port = scan_for_serial_partector(serial_number=self._serial_number)
+            self._port = scan_for_serial_partector(self._serial_number, self._hw_version)
         elif self._port is None:
             raise Exception("No serial number or port given!")
 
