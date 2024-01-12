@@ -8,7 +8,7 @@ import time
 import requests
 
 from naneos.partector import Partector1, scan_for_serial_partectors
-from naneos.protobuf import create_combined_entry, create_partector1_entry
+from naneos.protobuf import create_combined_entry, create_proto_p1
 
 
 class P1uploadThread(Thread):
@@ -89,7 +89,7 @@ class P1uploadThread(Thread):
             devices = []
             for d in self.device_list:
                 df = d.get_data_pandas()
-                devices.append(create_partector1_entry(df, d._serial_number, abs_time))
+                devices.append(create_proto_p1(d.serial_number, abs_time, df))
 
             combined = create_combined_entry(devices=devices, abs_timestamp=abs_time)
 

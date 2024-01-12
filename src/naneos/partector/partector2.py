@@ -1,7 +1,13 @@
 from typing import Optional
 
-from naneos.partector.blueprints._data_structure import PARTECTOR2_DATA_STRUCTURE
+from naneos.logger import get_naneos_logger
+from naneos.partector.blueprints._data_structure import (
+    PARTECTOR2_DATA_STRUCTURE_V299,
+    PARTECTOR2_DATA_STRUCTURE_V_LEGACY,
+)
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
+
+logger = get_naneos_logger(__name__)
 
 
 class Partector2(PartectorBluePrint):
@@ -11,7 +17,12 @@ class Partector2(PartectorBluePrint):
         super().__init__(serial_number, port, verb_freq, "P2")
 
     def _init_serial_data_structure(self) -> None:
-        self._data_structure = PARTECTOR2_DATA_STRUCTURE
+        if self._fw > 298:
+            self._data_structure = PARTECTOR2_DATA_STRUCTURE_V299
+            logger.info(f"SN{self._sn} has FW{self._fw}. -> Using V299 data structure.")
+        else:
+            self._data_structure = PARTECTOR2_DATA_STRUCTURE_V_LEGACY
+            logger.info(f"SN{self._sn} has FW{self._fw}. -> Using legacy data structure.")
 
     def _set_verbose_freq(self, freq: int) -> None:
         """
@@ -43,6 +54,8 @@ if __name__ == "__main__":
     p2 = Partector2(serial_number=serial_number)
 
     print(p2.write_line("v?", 1))
-    time.sleep(2)
-    print(p2.get_data_pandas())
+    time.sleep(10)
+    df = p2.get_data_pandas()
+    print(df)
+    # df.to_pickle("/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_test_data.pkl")
     p2.close()

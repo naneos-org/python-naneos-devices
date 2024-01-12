@@ -1,11 +1,15 @@
-from .protobuf import (
+from naneos.protobuf.protobuf import (
     create_combined_entry,
-    create_partector1_entry,
-    create_partector_2_pro_garagenbox,
+    create_proto_p1,
+    create_proto_p2,
+    create_proto_p2_pro,
+    create_proto_p2_pro_garage,
 )
 
 __all__ = [
-    "create_partector1_entry",
     "create_combined_entry",
-    "create_partector_2_pro_garagenbox",
+    "create_proto_p1",
+    "create_proto_p2",
+    "create_proto_p2_pro",
+    "create_proto_p2_pro_garage",
 ]

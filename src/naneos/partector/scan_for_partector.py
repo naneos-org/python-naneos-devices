@@ -5,7 +5,7 @@ from typing import Optional
 import serial
 
 from naneos.logger.custom_logger import get_naneos_logger
-from naneos.partector.blueprints._data_structure import PARTECTOR2_DATA_STRUCTURE
+from naneos.partector.blueprints._data_structure import PARTECTOR2_DATA_STRUCTURE_V_LEGACY
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 from naneos.serial_utils import list_serial_ports as ls_ports
 
@@ -19,7 +19,7 @@ class ScanPartector(PartectorBluePrint):
         super().__init__(serial_number, port, verb_freq)
 
     def _init_serial_data_structure(self) -> None:
-        self._data_structure = PARTECTOR2_DATA_STRUCTURE
+        self._data_structure = PARTECTOR2_DATA_STRUCTURE_V_LEGACY
         # not used for scanning
 
     def _set_verbose_freq(self, freq: int) -> None:
@@ -101,20 +101,20 @@ def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue) -> None:
     try:
         partector = ScanPartector(port=port)
 
-        if partector._serial_number is None:
+        if partector._sn is None:
             return
-        elif partector._serial_number < 1000:
-            q_1.put({partector._serial_number: port})
+        elif partector._sn < 1000:
+            q_1.put({partector._sn: port})
         else:
-            if partector._firmware_version < 310:
-                q_2.put({partector._serial_number: port})
+            if partector._fw < 310:
+                q_2.put({partector._sn: port})
             else:
                 multi_dv = partector.write_line("name?")
                 multi_dv = multi_dv[1]
                 if multi_dv == "P2pro":
-                    q_2_pro.put({partector._serial_number: port})
+                    q_2_pro.put({partector._sn: port})
                 elif multi_dv == "P2":
-                    q_2.put({partector._serial_number: port})
+                    q_2.put({partector._sn: port})
 
         partector.close(blocking=True)
     except Exception:
