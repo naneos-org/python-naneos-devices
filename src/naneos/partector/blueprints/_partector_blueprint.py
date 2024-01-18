@@ -28,6 +28,8 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         hw_version: str = "None",
     ) -> None:
         """Initializes the Partector2 and starts the reading thread."""
+        super().__init__()
+
         self._init_variables()
         self._init(serial_number, port, verb_freq, hw_version)
 
@@ -62,7 +64,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         checker_thread = Thread(target=self._checker_thread)
         checker_thread.start()
 
-        while not self.thread_event.is_set():
+        while not self.thread_event.wait(0.1):
             self._run()
 
         checker_thread.join()
@@ -400,8 +402,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             logger.warning(f"Could not connect to SN{self._sn} on {self._port}")
 
     def _init_thread(self) -> None:
-        Thread.__init__(self)
-        self.name = "naneos-partector-thread"
+        self.name = f"naneos-partector-thread_{self._sn}"
         self.thread_event = Event()
 
     def _init_data_structures(self) -> None:
@@ -440,12 +441,12 @@ if __name__ == "__main__":
     def test_callback(state: bool) -> None:
         logger.info(f"Catalyst state changed to {state}.")
 
-    partector = Partector2ProGarage(
-        serial_number=8421, callback_catalyst=test_callback, verb_freq=0
-    )
-    # partector = Partector2(serial_number=8112)
+    # partector = Partector2ProGarage(
+    #     serial_number=8421, callback_catalyst=test_callback, verb_freq=0
+    # )
+    partector = Partector2(serial_number=8112)
 
-    time.sleep(20)
+    time.sleep(30)
 
     print(partector.get_data_pandas())
     partector.close(blocking=True)
