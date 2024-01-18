@@ -102,7 +102,7 @@ def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue) -> None:
         partector = ScanPartector(port=port)
 
         if partector._sn is None:
-            return
+            pass
         elif partector._sn < 1000:
             q_1.put({partector._sn: port})
         else:
