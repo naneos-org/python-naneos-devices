@@ -1,6 +1,8 @@
 import logging
 from typing import Optional
 
+from pathlib import Path
+
 NANEOS_LOGGER_PATH = "logs/naneos-devices.log"
 
 
@@ -55,10 +57,13 @@ def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    formatter_file = CustomFormatter(terminal=False)
-    file_handler = logging.FileHandler(NANEOS_LOGGER_PATH)
-    file_handler.setLevel(level)
-    file_handler.setFormatter(formatter_file)
+    # check if NANEOS_LOGGER_PATH exists
+    if Path(NANEOS_LOGGER_PATH).exists():
+        formatter_file = CustomFormatter(terminal=False)
+        file_handler = logging.FileHandler(NANEOS_LOGGER_PATH)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter_file)
+        logger.addHandler(file_handler)
 
     formatter_stream = CustomFormatter(terminal=True)
     stream_handler = logging.StreamHandler()
@@ -67,7 +72,6 @@ def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     stream_handler.terminator = "\r\n"
 
     logger.addHandler(stream_handler)
-    logger.addHandler(file_handler)
 
     return logger
 
