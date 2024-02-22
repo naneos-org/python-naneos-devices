@@ -38,8 +38,8 @@ if __name__ == "__main__":
     p2 = Partector2Pro(serial_number=serial_number)
 
     # print(p2.write_line("M?", 1))
-    time.sleep(30)
+    time.sleep(5)
     df = p2.get_data_pandas()
     print(df)
-    df.to_pickle("/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_pro_test_data.pkl")
+    # df.to_pickle("/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_pro_test_data.pkl")
     p2.close()

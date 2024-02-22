@@ -1,6 +1,6 @@
 from queue import Queue
 from threading import Thread
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import serial
 
@@ -21,6 +21,32 @@ class ScanPartector(PartectorBluePrint):
     def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR2_DATA_STRUCTURE_V_LEGACY
         # not used for scanning
+
+    def _serial_wrapper(self, func: Callable[[], Any]) -> Optional[Any]:
+        """Wraps user func in try-except block. Forwards exceptions to the user."""
+        if not self._connected:
+            return None
+
+        excep = "Was not able to fetch the serial number!"
+
+        for _ in range(self.SERIAL_RETRIES):
+            try:
+                return func()
+            except Exception as e:
+                # ßlogger.error(f"SN{self._sn} Exception in _serial_wrapper: {e}")
+                excep = f"SN{self._sn} Exception occured during user function call: {e}"
+
+        raise Exception(excep)
+
+    def _init_get_device_info(self) -> None:
+        try:
+            if self._sn is None:
+                self._sn = self._get_serial_number_secure()
+            self._fw = self.get_firmware_version()
+            logger.debug(f"Connected to SN{self._sn} on {self._port}")
+        except Exception:
+            pass
+            # logger.warning("Could not get device info!")
 
     def _set_verbose_freq(self, freq: int) -> None:
         """

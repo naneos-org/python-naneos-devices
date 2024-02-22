@@ -377,7 +377,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._sn = serial_number
         self._port = port
 
-        if self._sn:
+        self.set_verbose_freq(0)
+
+        if self._sn is not None:
             self._port = scan_for_serial_partector(self._sn, self._hw_version)
         elif self._port is None:
             raise Exception("No serial number or port given!")
