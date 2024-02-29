@@ -3,7 +3,7 @@ from typing import Any, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector import Partector2Pro
-from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE
+from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE_V315
 
 logger = get_naneos_logger(__name__)
 
@@ -27,10 +27,10 @@ class Partector2ProGarage(Partector2Pro):
         if self._callback_catalyst is None:
             logger.error("No callback function for catalyst state given!")
             raise ValueError("No callback function for catalyst state given!")
-        super().__init__(serial_number, port, verb_freq)
+        super().__init__(serial_number, port, verb_freq, "P2_pro_garage")
 
     def _init_serial_data_structure(self) -> None:
-        self._data_structure = PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE
+        self._data_structure = PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE_V315
 
     def set_catalyst_state(self, state: str) -> None:
         """Sets the catalyst state to on, off or auto."""
@@ -93,7 +93,7 @@ class Partector2ProGarage(Partector2Pro):
         if state in [0, 1] and self._catalyst_state != state:
             self._callback_catalyst(state == 1)
             self._catalyst_state = state
-            logger.warning(f"Set catalyst state to by backup function to {state}.")
+            logger.warning(f"Set catalyst state to {state} by backup function to.")
 
         # removes the size dist from all the measurements that are not wanted
         if cs_command is None and self._auto_mode:
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
     logger.info("Starting...")
 
-    p2 = Partector2ProGarage(serial_number=8421, callback_catalyst=test_callback)
+    p2 = Partector2ProGarage(serial_number=8448, callback_catalyst=test_callback)
 
     # print(p2.write_line("v?", 1))
     time.sleep(5)

@@ -156,7 +156,7 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, type[int | float]] = {
     "em_gain2": float,
 }
 
-PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE: dict[str, type[int | float]] = {
+PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE_V315: dict[str, type[int | float]] = {
     "unix_timestamp": int,
     "runtime_min": float,
     "number": int,
@@ -190,5 +190,7 @@ PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE: dict[str, type[int | float]] = {
     "current_2": float,  # not existing in protobuf
     "current_3": float,  # not existing in protobuf
     "current_4": float,  # not existing in protobuf
+    "em_gain1": float,
+    "em_gain2": float,
     "cs_status": int,
 }

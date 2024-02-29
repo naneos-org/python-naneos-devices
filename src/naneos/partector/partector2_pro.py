@@ -6,9 +6,13 @@ from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
 class Partector2Pro(PartectorBluePrint):
     def __init__(
-        self, serial_number: Optional[int] = None, port: Optional[str] = None, verb_freq: int = 1
+        self,
+        serial_number: Optional[int] = None,
+        port: Optional[str] = None,
+        verb_freq: int = 1,
+        hw_version: str = "P2_pro",
     ) -> None:
-        super().__init__(serial_number, port, verb_freq, "P2_Pro")
+        super().__init__(serial_number, port, verb_freq, hw_version)
 
     def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR2_PRO_DATA_STRUCTURE_V311
