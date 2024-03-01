@@ -105,12 +105,13 @@ def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
     q_1 = Queue()
     q_2 = Queue()
     q_2_pro = Queue()
+    q_2_pro_cs = Queue()
 
     if sn_exclude is None:
         sn_exclude = []
 
     [
-        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro)))
+        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
         for port in ls_ports()
         if port not in sn_exclude
     ]
@@ -120,8 +121,9 @@ def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
     p1 = {k: v for x in tuple(q_1.queue) for (k, v) in x.items()}
     p2 = {k: v for x in tuple(q_2.queue) for (k, v) in x.items()}
     p2_pro = {k: v for x in tuple(q_2_pro.queue) for (k, v) in x.items()}
+    p2_pro_cs = {k: v for x in tuple(q_2_pro_cs.queue) for (k, v) in x.items()}
 
-    return {"P1": p1, "P2": p2, "P2_Pro": p2_pro}
+    return {"P1": p1, "P2": p2, "P2_Pro": p2_pro, "P2proCS": p2_pro_cs}
 
 
 def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Queue) -> None:

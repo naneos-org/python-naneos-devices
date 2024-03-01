@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from queue import Queue
 from threading import Event, Thread
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import pandas
 import serial
@@ -130,9 +130,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         """Clears the data cache."""
         self._queue.queue.clear()
 
-    def get_data_list(self) -> list[list[int | float]]:
+    def get_data_list(self) -> list[list[Union[int, float]]]:
         """Returns the cache as list with timestamp as first element."""
-        data_casted: list[list[int | float]] = []
+        data_casted: list[list[Union[int, float]]] = []
         data = list(self._queue.queue)
         self.clear_data_cache()
 
@@ -145,7 +145,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         return data_casted
 
-    def get_data_pandas(self, data: Optional[list[list[int | float]]] = None) -> pandas.DataFrame:
+    def get_data_pandas(
+        self, data: Optional[list[list[Union[int, float]]]] = None
+    ) -> pandas.DataFrame:
         """Returns the cache as pandas DataFrame with timestamp as index."""
         if not data:
             data = self.get_data_list()
@@ -286,7 +288,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         return data.replace("\r", "").replace("\n", "").replace("\x00", "")
 
-    def _get_and_check_info(self, expected_length: int = 2) -> list[int | str]:
+    def _get_and_check_info(self, expected_length: int = 2) -> list[Union[int, str]]:
         """
         Get information from the queue and check its length.
 
@@ -334,13 +336,13 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             logger.error(f"Could not cast firmware version to int: {e}")
             return None
 
-    def _custom_info(self) -> list[int | str]:
+    def _custom_info(self) -> list[Union[int, str]]:
         self._queue_info.queue.clear()
         self._write_line(self.custom_info_str)
         return self._get_and_check_info(self.custom_info_size)
 
-    def _cast_splitted_input_string(self, line: list[int | str]) -> list[int | float]:
-        line_parsed: list[int | float] = []
+    def _cast_splitted_input_string(self, line: list[Union[int, str]]) -> list[Union[int, float]]:
+        line_parsed: list[Union[int, float]] = []
 
         for value, data_type in zip(line, self._data_structure.values()):
             # parsed_value = value if isinstance(value, data_type) else data_type(value)

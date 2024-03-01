@@ -1,11 +1,24 @@
 {
     "editor.formatOnSave": true,
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/.venv": true
+    },
     "mypy.runUsingActiveInterpreter": true,
     "mypy.targets": [
         "./src",
         "./tests"
     ],
     "mypy.configFile": "./pyproject.toml",
-    "ruff.lint.args": ["--config=./pyproject.toml"],
-    "ruff.interpreter": ["python"],
+    "ruff.lint.args": [
+        "--config=./pyproject.toml"
+    ],
+    "ruff.interpreter": [
+        "python"
+    ],
 }

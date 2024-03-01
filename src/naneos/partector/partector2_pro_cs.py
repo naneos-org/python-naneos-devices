@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector import Partector2Pro
@@ -101,12 +101,12 @@ class Partector2ProCs(Partector2Pro):
 
         self._put_to_data_queue(data)
 
-    def _put_to_info_queue(self, data: list[int | str]) -> None:
+    def _put_to_info_queue(self, data: list[Union[int, str]]) -> None:
         if self._queue_info.full():
             self._queue_info.get()
         self._queue_info.put(data)
 
-    def _put_to_data_queue(self, data: list[int | str]) -> None:
+    def _put_to_data_queue(self, data: list[Union[int, str]]) -> None:
         if self._queue.full():
             self._queue.get()
         self._queue.put(data)

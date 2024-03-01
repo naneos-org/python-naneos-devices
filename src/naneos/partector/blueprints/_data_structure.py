@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import datetime
-from typing import Optional
+from typing import Optional, Union
 
 
 @dataclass
@@ -52,7 +52,9 @@ class Partector2DataStructure:
     cs_status: Optional[int] = None
 
 
-PARTECTOR1_DATA_STRUCTURE_V_LEGACY = {
+PARTECTOR1_DATA_STRUCTURE_V_LEGACY: dict[
+    str, Union[type[datetime.datetime], type[int], type[float]]
+] = {
     "dateTime": datetime.datetime,
     "runtime_min": float,
     "batt_voltage": float,
@@ -71,7 +73,7 @@ PARTECTOR1_DATA_STRUCTURE_V_LEGACY = {
 }
 
 # v298 and smaller
-PARTECTOR2_DATA_STRUCTURE_V_LEGACY: dict[str, type[int | float]] = {
+PARTECTOR2_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp": int,
     "runtime_min": float,
     "idiff_global": float,
@@ -94,7 +96,7 @@ PARTECTOR2_DATA_STRUCTURE_V_LEGACY: dict[str, type[int | float]] = {
 }
 
 # TODO: wait for martin to implement this
-PARTECTOR2_DATA_STRUCTURE_V299: dict[str, type[int | float]] = {
+PARTECTOR2_DATA_STRUCTURE_V299: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp": int,
     "runtime_min": float,
     "idiff_global": float,
@@ -118,7 +120,7 @@ PARTECTOR2_DATA_STRUCTURE_V299: dict[str, type[int | float]] = {
     "em_gain2": float,
 }
 
-PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, type[int | float]] = {
+PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp": int,
     "runtime_min": float,
     "number": int,
@@ -156,7 +158,7 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, type[int | float]] = {
     "em_gain2": float,
 }
 
-PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, type[int | float]] = {
+PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp": int,
     "runtime_min": float,
     "number": int,

@@ -188,7 +188,7 @@ class PartectorBle(Thread):
 
 
 if __name__ == "__main__":
-    partector_ble = PartectorBle(serial_numbers=[8448])
+    partector_ble = PartectorBle(serial_numbers=[8465])
     partector_ble.start()
     time.sleep(5)
 
