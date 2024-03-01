@@ -156,7 +156,7 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, type[int | float]] = {
     "em_gain2": float,
 }
 
-PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE_V315: dict[str, type[int | float]] = {
+PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, type[int | float]] = {
     "unix_timestamp": int,
     "runtime_min": float,
     "number": int,

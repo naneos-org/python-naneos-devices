@@ -3,12 +3,12 @@ from typing import Any, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector import Partector2Pro
-from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE_V315
+from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315
 
 logger = get_naneos_logger(__name__)
 
 
-class Partector2ProGarage(Partector2Pro):
+class Partector2ProCs(Partector2Pro):
     CS_OFF = 0
     CS_ON = 1
     CS_UNKNOWN = -1
@@ -27,10 +27,10 @@ class Partector2ProGarage(Partector2Pro):
         if self._callback_catalyst is None:
             logger.error("No callback function for catalyst state given!")
             raise ValueError("No callback function for catalyst state given!")
-        super().__init__(serial_number, port, verb_freq, "P2_pro_garage")
+        super().__init__(serial_number, port, verb_freq, "P2proCS")
 
     def _init_serial_data_structure(self) -> None:
-        self._data_structure = PARTECTOR2_PRO_GARAGE_DATA_STRUCTURE_V315
+        self._data_structure = PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315
 
     def set_catalyst_state(self, state: str) -> None:
         """Sets the catalyst state to on, off or auto."""
@@ -120,9 +120,9 @@ if __name__ == "__main__":
 
     logger.info("Starting...")
 
-    p2 = Partector2ProGarage(serial_number=8448, callback_catalyst=test_callback)
+    p2 = Partector2ProCs(serial_number=8448, callback_catalyst=test_callback)
+    p2._write_line("h2001!")
 
-    # print(p2.write_line("v?", 1))
     time.sleep(5)
 
     df = p2.get_data_pandas()

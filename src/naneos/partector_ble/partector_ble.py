@@ -89,6 +89,7 @@ class PartectorBle(Thread):
         Scan duration of 850ms is used because the advertised data of the old devices changes every 1s.
         """
         async with BleakScanner(detection_callback=self._detection_callback) as scanner:
+            await scanner.stop()  # hack for raspberry pi
             await scanner.start()
             await asyncio.sleep(0.85)
             await scanner.stop()
@@ -187,11 +188,14 @@ class PartectorBle(Thread):
 
 
 if __name__ == "__main__":
-    partector_ble = PartectorBle(serial_numbers=[8112, 8446])
+    partector_ble = PartectorBle(serial_numbers=[8448])
     partector_ble.start()
     time.sleep(5)
+
+    if 8448 in partector_ble._partector_clients:
+        print(partector_ble._partector_clients[8448]._data_queue.pop())
     partector_ble.send_command(8112, "N?")
-    time.sleep(15)
+    time.sleep(3)
     # print(partector_ble._partector_clients[8112]._data_queue)
     partector_ble.event.set()
     partector_ble.join()

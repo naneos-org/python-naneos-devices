@@ -71,10 +71,10 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
     q_1 = Queue()
     q_2 = Queue()
     q_2_pro = Queue()
-    q_2_pro_garage = Queue()
+    q_2_pro_cs = Queue()
 
     [
-        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_garage)))
+        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
         for port in ls_ports()
     ]
     [thread.start() for thread in threads]
@@ -87,8 +87,8 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
         q = q_2
     elif partector_version == "P2_Pro":
         q = q_2_pro
-    elif partector_version == "P2_pro_garage":
-        q = q_2_pro_garage
+    elif partector_version == "P2proCS":
+        q = q_2_pro_cs
 
     ports = {k: v for d in tuple(q.queue) for (k, v) in d.items()}
     logger.debug(f"Found ports: {ports}")
@@ -124,7 +124,7 @@ def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
     return {"P1": p1, "P2": p2, "P2_Pro": p2_pro}
 
 
-def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_garage: Queue) -> None:
+def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Queue) -> None:
     partector: Optional[ScanPartector] = None  # Initialize p2 with a default value of None
 
     try:
@@ -143,8 +143,8 @@ def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_garag
                     q_2.put({partector._sn: port})
                 elif name == "P2pro":
                     q_2_pro.put({partector._sn: port})
-                elif name == "P2proGarage":
-                    q_2_pro_garage.put({partector._sn: port})
+                elif name == "P2proCS":
+                    q_2_pro_cs.put({partector._sn: port})
 
         partector.close(blocking=True)
     except Exception:

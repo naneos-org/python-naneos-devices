@@ -259,7 +259,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                 logger.error(f"SN{self._sn} Exception in _serial_wrapper: {e}")
                 excep = f"SN{self._sn} Exception occured during user function call: {e}"
 
-        raise Exception(excep)
+        return False
 
     def _write_line(self, line: str) -> None:
         if not self._connected:
@@ -300,6 +300,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             ValueError: If the length of the information does not match the expected length.
         """
         info_data = self._queue_info.get(timeout=self.SERIAL_TIMEOUT_INFO)
+        # print(len(info_data))
+        # print(type(info_data))
+        # print(info_data)
         if len(info_data) != expected_length:
             error_msg = f"Received data of length {len(info_data)}, expected {expected_length}. Data: {info_data}"
             raise ValueError(error_msg)
@@ -438,14 +441,11 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
 
 if __name__ == "__main__":
-    from naneos.partector import Partector2, Partector2ProGarage  # noqa: F401
+    from naneos.partector import Partector2, Partector2ProCs  # noqa: F401
 
     def test_callback(state: bool) -> None:
         logger.info(f"Catalyst state changed to {state}.")
 
-    # partector = Partector2ProGarage(
-    #     serial_number=8421, callback_catalyst=test_callback, verb_freq=0
-    # )
     partector = Partector2(serial_number=8112)
 
     time.sleep(30)

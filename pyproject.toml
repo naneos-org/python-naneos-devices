@@ -3,7 +3,7 @@ name = "naneos-devices"
 packages = [
     { include = "naneos", from = "src" },
 ]
-version = "1.0.20"
+version = "1.0.21"
 description = "Naneos gmbh python backend"
 authors = ["Mario Huegi <mario.huegi@naneos.ch>"]
 license = "MIT"
