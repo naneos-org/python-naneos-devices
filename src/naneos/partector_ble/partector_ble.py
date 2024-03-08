@@ -180,11 +180,14 @@ class PartectorBle(Thread):
         Args:
             client (BleakClient): BleakClient object
         """
-        serial_number = next(
-            x.serial_number for x in self._partector_clients.values() if x.ble_client == client
-        )
-        logger.debug(f"Disconnected from {serial_number}")
-        self._partector_clients.pop(serial_number)
+        try:
+            serial_number = next(
+                x.serial_number for x in self._partector_clients.values() if x.ble_client == client
+            )
+            logger.debug(f"Disconnected from {serial_number}")
+            self._partector_clients.pop(serial_number)
+        except Exception as excep:
+            logger.warning(f"Could not remove client from dict: {excep}")
 
 
 if __name__ == "__main__":

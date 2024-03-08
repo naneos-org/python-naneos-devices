@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
+from collections import deque
 from datetime import datetime, timezone
-from queue import Queue
 from threading import Event, Thread
 import time
 from typing import Any, Callable, Optional, Union
@@ -37,12 +37,14 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._connected = False
         self._sn: Optional[int] = None
         self._port: Optional[str] = ""
-        self._ser: Optional[serial.Serial] = None
+        self._ser: serial.Serial = serial.Serial()
         self._time_last_message_received = time.time()
 
-    def close(self, blocking: bool = False, shutdown: bool = False) -> None:
+    def close(
+        self, blocking: bool = False, shutdown: bool = False, verbose_reset: bool = True
+    ) -> None:
         """Closes the serial connection and stops the reading thread."""
-        self._close(blocking, shutdown)
+        self._close(blocking, shutdown, verbose_reset)
 
     def _checker_thread(self) -> None:
         while not self.thread_event.wait(0.5):
@@ -64,7 +66,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         checker_thread = Thread(target=self._checker_thread)
         checker_thread.start()
 
-        while not self.thread_event.wait(0.1):
+        while not self.thread_event.wait(0.001):
             self._run()
 
         checker_thread.join()
@@ -128,12 +130,15 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     ### User accessible data methods
     def clear_data_cache(self) -> None:
         """Clears the data cache."""
-        self._queue.queue.clear()
+        # self._queue.clear()
+        if self._queue:
+            self._queue = deque([self._queue.pop()], maxlen=self.SERIAL_QUEUE_MAXSIZE)
 
     def get_data_list(self) -> list[list[Union[int, float]]]:
         """Returns the cache as list with timestamp as first element."""
         data_casted: list[list[Union[int, float]]] = []
-        data = list(self._queue.queue)
+        # data all but not not the last element
+        data = list(self._queue)[0:-1]
         self.clear_data_cache()
 
         for line in data:
@@ -153,15 +158,16 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             data = self.get_data_list()
 
         columns = list(self._data_structure.keys())
-        df = pandas.DataFrame(data, columns=columns).set_index("unix_timestamp")
+        df = pandas.DataFrame(data, columns=columns).set_index("unix_timestamp_ms")
         df = df[~df.index.duplicated(keep="last")]
         return df
 
     #########################################
     ### Serial methods (private)
-    def _close(self, blocking: bool, shutdown: bool) -> None:
+    def _close(self, blocking: bool, shutdown: bool, verbose_reset: bool) -> None:
         try:
-            self.set_verbose_freq(0)
+            if verbose_reset:
+                self.set_verbose_freq(0)
         except Exception:
             logger.warning("Could not set verbose frequency to 0!")
         self._shutdown_partector = shutdown
@@ -202,19 +208,15 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         if not line or line == "":
             return
 
-        unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp())
+        unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
         data = [unix_timestamp] + line.split("\t")
 
         self._notify_message_received()
 
         if len(data) == len(self._data_structure):
-            if self._queue.full():
-                self._queue.get()
-            self._queue.put(data)
+            self._queue.append(data)
         else:
-            if self._queue_info.full():
-                self._queue_info.get()
-            self._queue_info.put(data)
+            self._queue_info.append(data)
 
     def _check_device_connection(self) -> bool:
         if self.thread_event.is_set() or not self._ser or not self._ser.is_open:
@@ -301,10 +303,16 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         Raises:
             ValueError: If the length of the information does not match the expected length.
         """
-        info_data = self._queue_info.get(timeout=self.SERIAL_TIMEOUT_INFO)
-        # print(len(info_data))
-        # print(type(info_data))
-        # print(info_data)
+        # info_data = self._queue_info.get(timeout=self.SERIAL_TIMEOUT_INFO)
+        info_data = []
+        start_time = time.time()
+        while time.time() - start_time < self.SERIAL_TIMEOUT_INFO:
+            if len(self._queue_info) > 0:
+                info_data = self._queue_info.popleft()
+                break
+            time.sleep(0.005)
+        self._queue_info.clear()
+
         if len(info_data) != expected_length:
             error_msg = f"Received data of length {len(info_data)}, expected {expected_length}. Data: {info_data}"
             raise ValueError(error_msg)
@@ -321,12 +329,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         raise Exception("Was not able to fetch the serial number (secure)!")
 
     def _get_serial_number(self) -> int:
-        self._queue_info.queue.clear()
+        self._queue_info.clear()
         self._write_line("N?")
         return int(self._get_and_check_info()[1])
 
     def _get_firmware_version(self) -> Optional[int]:
-        self._queue_info.queue.clear()
+        self._queue_info.clear()
         self._write_line("f?")
         fw = self._get_and_check_info()[1]
         try:
@@ -337,7 +345,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             return None
 
     def _custom_info(self) -> list[Union[int, str]]:
-        self._queue_info.queue.clear()
+        self._queue_info.clear()
         self._write_line(self.custom_info_str)
         return self._get_and_check_info(self.custom_info_size)
 
@@ -389,12 +397,23 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         elif self._port is None:
             raise Exception("No serial number or port given!")
 
-        if self._port:
-            self._ser = serial.Serial(
-                port=self._port,
-                baudrate=self.SERIAL_BAUDRATE,
-                timeout=self.SERIAL_TIMEOUT,
-            )
+        tries = 0
+        for _ in range(self.SERIAL_INIT_RETRIES):
+            tries += 1
+
+            if self._port:
+                self._ser = serial.Serial(
+                    port=self._port,
+                    baudrate=self.SERIAL_BAUDRATE,
+                    timeout=self.SERIAL_TIMEOUT,
+                )
+
+            if self._ser.is_open:
+                break
+        if tries >= self.SERIAL_INIT_RETRIES:
+            logger.error(f"SN{self._sn} on port {self._port} could not be opened!")
+        elif tries > 1:
+            logger.warning(f"SN{self._sn} on port {self._port} needed {tries} tries to connect.")
 
         self._check_connection()
 
@@ -416,9 +435,11 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self.custom_info_str = "0"
         self.custom_info_size = 0
         # will be declared in child class
-        self._data_structure: dict[str, type[int | float]] = {}
-        self._queue: Queue[list[int | str]] = Queue(maxsize=self.SERIAL_QUEUE_MAXSIZE)
-        self._queue_info: Queue[list[int | str]] = Queue(maxsize=self.SERIAL_INFO_QUEUE_MAXSIZE)
+        self._data_structure: dict[str, type[Union[int, float]]] = {}
+        self._queue: deque[list[Union[int, str]]] = deque(maxlen=self.SERIAL_QUEUE_MAXSIZE)
+        self._queue_info: deque[list[Union[int, str]]] = deque(
+            maxlen=self.SERIAL_INFO_QUEUE_MAXSIZE
+        )
 
     @abstractmethod
     def _init_serial_data_structure(self) -> None:

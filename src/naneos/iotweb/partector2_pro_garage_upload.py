@@ -7,7 +7,7 @@ import pandas as pd
 import requests
 
 from naneos.logger import get_naneos_logger
-from naneos.protobuf import create_combined_entry, create_proto_p2_pro_garage
+from naneos.protobuf import create_combined_entry, create_proto_p2_pro_cs
 
 logger = get_naneos_logger(__name__)
 
@@ -52,7 +52,7 @@ class Partector2ProGarageUpload(Thread):
     @classmethod
     def upload(cls, df: pd.DataFrame, serial_number: int) -> requests.Response:
         abs_time = int(datetime.datetime.now().timestamp())
-        device = create_proto_p2_pro_garage(serial_number, abs_time, df)
+        device = create_proto_p2_pro_cs(serial_number, abs_time, df)
         combined_entry = create_combined_entry(devices=[device], abs_timestamp=abs_time)
 
         proto_str = combined_entry.SerializeToString()

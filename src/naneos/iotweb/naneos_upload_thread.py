@@ -12,7 +12,7 @@ from naneos.protobuf.protobuf import (
     create_proto_p1,
     create_proto_p2,
     create_proto_p2_pro,
-    create_proto_p2_pro_garage,
+    create_proto_p2_pro_cs,
 )
 
 logger = get_naneos_logger(__name__)
@@ -76,10 +76,10 @@ class NaneosUploadThread(Thread):
                 devices.append(create_proto_p1(sn, abs_time, df))
             elif device_type == "P2":
                 devices.append(create_proto_p2(sn, abs_time, df))
-            elif device_type == "P2_Pro":
+            elif device_type == "P2pro":
                 devices.append(create_proto_p2_pro(sn, abs_time, df))
-            elif device_type == "P2_Pro_Garage":
-                devices.append(create_proto_p2_pro_garage(sn, abs_time, df))
+            elif device_type == "P2proCS":
+                devices.append(create_proto_p2_pro_cs(sn, abs_time, df))
             else:
                 raise ValueError(f"Unknown device type: {device_type}")
 
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     def callback(ret: bool) -> None:
         print(f"Callback: {ret}")
 
-    data = [(int(777), str("P2_Pro"), df_p2_pro), (int(666), str("P2"), df_p2)]  # noqa: UP018
+    data = [(int(777), str("P2pro"), df_p2_pro), (int(666), str("P2"), df_p2)]  # noqa: UP018
     # NaneosUploadThread.upload(data)
 
     t = NaneosUploadThread(data, callback)

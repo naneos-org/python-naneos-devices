@@ -71,7 +71,7 @@ def create_proto_p2_pro(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.De
     return device
 
 
-def create_proto_p2_pro_garage(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
+def create_proto_p2_pro_cs(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
     device = pbScheme.Device()
     device.type = 0
     device.serial_number = sn

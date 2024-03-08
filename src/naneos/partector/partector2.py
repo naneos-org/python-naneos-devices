@@ -43,27 +43,7 @@ if __name__ == "__main__":
     from naneos.partector import scan_for_serial_partectors
 
     # production scanning:
-    p2 = Partector2(serial_number=0)
-    time.sleep(2)
+    p2 = Partector2(serial_number=8112)
+    time.sleep(5)
     print(p2.get_data_pandas())
     p2.close()
-
-    # partectors = scan_for_serial_partectors()
-    # partectors = partectors["P2"]
-
-    # print(partectors)
-
-    # if not partectors:
-    #     print("No Partector found!")
-    #     exit()
-
-    # serial_number = next(iter(partectors.keys()))
-
-    # p2 = Partector2(serial_number=serial_number)
-
-    # print(p2.write_line("v?", 1))
-    # time.sleep(2)
-    # df = p2.get_data_pandas()
-    # print(df)
-    # # df.to_pickle("/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_test_data.pkl")
-    # p2.close()

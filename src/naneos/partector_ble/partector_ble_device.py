@@ -9,7 +9,7 @@ from bleak.backends.scanner import AdvertisementData
 from naneos.logger import LEVEL_DEBUG, LEVEL_INFO, get_naneos_logger
 from naneos.partector.blueprints._data_structure import Partector2DataStructure
 
-logger = get_naneos_logger(__name__, LEVEL_DEBUG)
+logger = get_naneos_logger(__name__, LEVEL_INFO)
 
 
 class PartectorBleDevice:

@@ -3,7 +3,7 @@ from naneos.protobuf.protobuf import (
     create_proto_p1,
     create_proto_p2,
     create_proto_p2_pro,
-    create_proto_p2_pro_garage,
+    create_proto_p2_pro_cs,
 )
 
 __all__ = [
@@ -11,5 +11,5 @@ __all__ = [
     "create_proto_p1",
     "create_proto_p2",
     "create_proto_p2_pro",
-    "create_proto_p2_pro_garage",
+    "create_proto_p2_pro_cs",
 ]

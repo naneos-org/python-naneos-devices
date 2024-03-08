@@ -19,8 +19,8 @@ class ScanPartector(PartectorBluePrint):
         super().__init__(serial_number, port, verb_freq)
 
     def _init_serial_data_structure(self) -> None:
+        """This field is not used in the scan partector, but mandatory in the partector blueprint."""
         self._data_structure = PARTECTOR2_DATA_STRUCTURE_V_LEGACY
-        # not used for scanning
 
     def _serial_wrapper(self, func: Callable[[], Any]) -> Optional[Any]:
         """Wraps user func in try-except block. Forwards exceptions to the user."""
@@ -45,22 +45,16 @@ class ScanPartector(PartectorBluePrint):
             self._fw = self.get_firmware_version()
             logger.debug(f"Connected to SN{self._sn} on {self._port}")
         except Exception:
+            # this gets just passed because scan partector scans every port
+            # therefore it does not know if there is a partector
             pass
-            # logger.warning("Could not get device info!")
 
-    def _set_verbose_freq(self, freq: int) -> None:
-        """
-        Set the frequency of the verbose output.
-
-        :param int freq: Frequency of the verbose output in Hz. (0: off, 1: 1Hz, 2: 10Hz, 3: 100Hz)
-        """
-
-        if freq < 0 or freq > 3:
-            raise ValueError("Frequency must be between 0 and 3!")
-
-        self._write_line(f"X000{freq}!")
+    def _set_verbose_freq(self, freq: int = 0) -> None:
+        """This field is only used to set the verbose frequency to 0"""
+        self._write_line("X0000!")
 
     def _check_connection(self) -> None:
+        """Checks if there is a serial connection."""
         if isinstance(self._ser, serial.Serial) and self._ser.is_open:
             self._connected = True
 
@@ -85,7 +79,7 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
         q = q_1
     elif partector_version == "P2":
         q = q_2
-    elif partector_version == "P2_Pro":
+    elif partector_version == "P2pro":
         q = q_2_pro
     elif partector_version == "P2proCS":
         q = q_2_pro_cs
@@ -102,10 +96,7 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
 def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
     """Scans all possible ports using threads (fast)."""
     threads = []
-    q_1 = Queue()
-    q_2 = Queue()
-    q_2_pro = Queue()
-    q_2_pro_cs = Queue()
+    q_1, q_2, q_2_pro, q_2_pro_cs = (Queue() for _ in range(4))
 
     if sn_exclude is None:
         sn_exclude = []
@@ -123,7 +114,7 @@ def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
     p2_pro = {k: v for x in tuple(q_2_pro.queue) for (k, v) in x.items()}
     p2_pro_cs = {k: v for x in tuple(q_2_pro_cs.queue) for (k, v) in x.items()}
 
-    return {"P1": p1, "P2": p2, "P2_Pro": p2_pro, "P2proCS": p2_pro_cs}
+    return {"P1": p1, "P2": p2, "P2pro": p2_pro, "P2proCS": p2_pro_cs}
 
 
 def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Queue) -> None:
@@ -150,7 +141,7 @@ def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Q
 
         partector.close(blocking=True)
     except Exception:
-        if partector is not None:
+        if isinstance(partector, ScanPartector):
             partector.close(blocking=True)
 
 

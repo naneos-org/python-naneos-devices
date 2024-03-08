@@ -60,28 +60,35 @@ class Partector2ProCs(Partector2Pro):
         if not line or line == "":
             return
 
-        # check if line contains !CS_on or !CS_off and remove it from line
-        if "!CS_on" in line:
-            line = line.replace("!CS_on", "")
-            self._callback_catalyst(True)
-            self._put_line_to_queue(line, True)
+        if "CS_on" in line:
             self._catalyst_state = self.CS_ON
-        elif "!CS_off" in line:
-            line = line.replace("!CS_off", "")
-            self._callback_catalyst(False)
-            self._put_line_to_queue(line, False)
+            self._callback_catalyst(True)
+            self._mark_cs_change()
+            return
+        elif "CS_off" in line:
             self._catalyst_state = self.CS_OFF
-        else:
-            self._put_line_to_queue(line)
+            self._callback_catalyst(False)
+            self._mark_cs_change()
+            return
 
-    def _put_line_to_queue(self, line: str, cs_command: Optional[bool] = None) -> None:
+        self._put_line_to_queue(line)
+
+    def _mark_cs_change(self) -> None:
+        try:
+            last_line = self._queue.pop()
+            last_line[-1] = f"1{last_line[-1]}"
+            self._queue.append(last_line)
+        except Exception as excep:
+            logger.warning(f"Could not mark catalyst state change: {excep}")
+
+    def _put_line_to_queue(self, line: str) -> None:
         unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp())
         data = [unix_timestamp] + line.split("\t")
 
         self._notify_message_received()
 
         if len(data) != len(self._data_structure):
-            self._put_to_info_queue(data)
+            self._queue_info.append(data)
             return
 
         state: Optional[int] = None
@@ -95,25 +102,13 @@ class Partector2ProCs(Partector2Pro):
             self._catalyst_state = state
             logger.warning(f"Set catalyst state to {state} by backup function to.")
 
-        # removes the size dist from all the measurements that are not wanted
-        if cs_command is None and self._auto_mode:
-            data[20:28] = [0] * 8
-
-        self._put_to_data_queue(data)
-
-    def _put_to_info_queue(self, data: list[Union[int, str]]) -> None:
-        if self._queue_info.full():
-            self._queue_info.get()
-        self._queue_info.put(data)
-
-    def _put_to_data_queue(self, data: list[Union[int, str]]) -> None:
-        if self._queue.full():
-            self._queue.get()
-        self._queue.put(data)
+        self._queue.append(data)
 
 
 if __name__ == "__main__":
     import time
+
+    import pandas as pd
 
     def test_callback(state: bool) -> None:
         logger.info(f"Catalyst state changed to {state}.")
@@ -121,13 +116,17 @@ if __name__ == "__main__":
     logger.info("Starting...")
 
     p2 = Partector2ProCs(serial_number=8448, callback_catalyst=test_callback)
-    p2._write_line("h2001!")
 
-    time.sleep(5)
+    start = time.time()
+    df = pd.DataFrame()
+    while time.time() - start < 30:
+        df_tmp = p2.get_data_pandas()
+        if len(df_tmp) > 0:
+            df = pd.concat([df, df_tmp])
+        time.sleep(0.01)
 
-    df = p2.get_data_pandas()
     print(df)
-    df.to_pickle("tests/df_garagae.pkl")
+    # df.to_pickle("tests/df_garagae.pkl")
 
     print("Closing...")
     p2.close(blocking=True)
