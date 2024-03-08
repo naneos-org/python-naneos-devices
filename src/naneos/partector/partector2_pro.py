@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     p2.close(verbose_reset=False)
 
-    for _ in range(10):
+    for _ in range(200):
         p2 = Partector2Pro(serial_number=serial_number)
         time.sleep(0.2)
         p2.close(verbose_reset=False)

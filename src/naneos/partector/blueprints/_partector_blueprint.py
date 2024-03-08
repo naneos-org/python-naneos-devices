@@ -254,14 +254,15 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         if not self._connected:
             return None
 
-        excep = "Was not able to fetch the serial number!"
+        logger_msg = ""
 
         for _ in range(self.SERIAL_RETRIES):
             try:
                 return func()
             except Exception as e:
-                logger.error(f"SN{self._sn} Exception in _serial_wrapper: {e}")
-                excep = f"SN{self._sn} Exception occured during user function call: {e}"
+                logger_msg = f"SN{self._sn} Exception occured during user function call: {e}"
+
+        logger.warning(logger_msg)
 
         return False
 
