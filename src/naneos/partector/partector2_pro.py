@@ -53,4 +53,4 @@ if __name__ == "__main__":
 
     for _ in range(100):
         p2 = Partector2Pro(serial_number=serial_number)
-        p2.close(verbose_reset=False)
+        p2.close(verbose_reset=False, blocking=True)

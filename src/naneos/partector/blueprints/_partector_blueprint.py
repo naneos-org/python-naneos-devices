@@ -181,7 +181,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             return
 
         try:
-            if isinstance(self._ser, serial.Serial) and self._ser.is_open:
+            if self._ser.is_open:
                 self._serial_reading_routine()
         except Exception as e:
             logger.warning(f"SN{self._sn} Exception occured during threaded serial reading: {e}")
