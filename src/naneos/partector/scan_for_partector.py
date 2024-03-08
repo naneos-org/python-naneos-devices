@@ -20,7 +20,7 @@ class ScanPartector(PartectorBluePrint):
 
     def _init_serial_data_structure(self) -> None:
         """This field is not used in the scan partector, but mandatory in the partector blueprint."""
-        self._data_structure = PARTECTOR2_DATA_STRUCTURE_V_LEGACY
+        pass
 
     def _serial_wrapper(self, func: Callable[[], Any]) -> Optional[Any]:
         """Wraps user func in try-except block. Forwards exceptions to the user."""
@@ -118,8 +118,6 @@ def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
 
 
 def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Queue) -> None:
-    partector: Optional[ScanPartector] = None  # Initialize p2 with a default value of None
-
     try:
         partector = ScanPartector(port=port)
 

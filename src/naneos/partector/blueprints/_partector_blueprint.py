@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import datetime, timezone
+from socket import timeout
 from threading import Event, Thread
 import time
 from typing import Any, Callable, Optional, Union
@@ -386,42 +387,53 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     def _init_serial(
         self, serial_number: Optional[int] = None, port: Optional[str] = None
     ) -> None:
-        from naneos.partector import scan_for_serial_partector
-
         self._sn = serial_number
         self._port = port
 
-        self.set_verbose_freq(0)
-
-        if self._sn is not None:
-            self._port = scan_for_serial_partector(self._sn, self._hw_version)
-        elif self._port is None:
-            raise Exception("No serial number or port given!")
-
-        tries = 0
-        for _ in range(self.SERIAL_INIT_RETRIES):
-            tries += 1
-
-            if self._port:
-                self._ser = serial.Serial(
-                    port=self._port,
-                    baudrate=self.SERIAL_BAUDRATE,
-                    timeout=self.SERIAL_TIMEOUT,
-                )
-
-            if self._ser.is_open:
-                break
-        if tries >= self.SERIAL_INIT_RETRIES:
-            logger.error(f"SN{self._sn} on port {self._port} could not be opened!")
-        elif tries > 1:
-            logger.warning(f"SN{self._sn} on port {self._port} needed {tries} tries to connect.")
+        self._init_serial_sn_search()
+        self._init_serial_connection()
 
         self._check_connection()
 
-        self.set_verbose_freq(0)
+    def _init_serial_sn_search(self) -> None:
+        from naneos.partector import scan_for_serial_partector
+
+        if self._sn is not None:
+            for _ in range(self.SERIAL_INIT_SCAN_RETRIES):
+                self._port = scan_for_serial_partector(self._sn, self._hw_version)
+                if self._port:
+                    break
+            if not self._port:
+                logger.warning(f"SN{self._sn} not found! Checker is running in the background.")
+        elif self._port is None:
+            raise Exception("No serial number or port given!")
+
+    def _init_serial_connection(self) -> None:
+        tries = 0
+        tries_start = time.time()
+
+        while time.time() - tries_start < self.SERIAL_INIT_RETRIES_TIMEOUT_S:
+            tries += 1
+
+            self._ser = serial.Serial(
+                port=self._port,
+                baudrate=self.SERIAL_BAUDRATE,
+                timeout=self.SERIAL_TIMEOUT,
+            )
+            if self._ser.is_open:
+                self.set_verbose_freq(0)
+                time.sleep(10e-3)
+                self._ser.reset_input_buffer()
+                break
+            self._ser.close()
+
+        if not self._ser.is_open:
+            logger.error(f"SN{self._sn} on port {self._port} could not be opened! Tries: {tries}")
+        if tries > 1:
+            logger.warning(f"SN{self._sn} on port {self._port} needed {tries} tries to connect.")
 
     def _check_connection(self) -> None:
-        if isinstance(self._ser, serial.Serial) and self._ser.is_open:
+        if self._ser.is_open:
             self._connected = True
             logger.info(f"Connected to SN{self._sn} on {self._port}")
         else:

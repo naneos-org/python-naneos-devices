@@ -42,8 +42,6 @@ class Partector2Pro(PartectorBluePrint):
 
 
 if __name__ == "__main__":
-    import time
-
     from naneos.partector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()
@@ -53,16 +51,6 @@ if __name__ == "__main__":
 
     serial_number = next(iter(p2_pro.keys()))
 
-    p2 = Partector2Pro(serial_number=serial_number, verb_freq=3)
-
-    time.sleep(1)
-
-    print(p2.get_data_pandas())
-
-    p2.close(verbose_reset=False)
-
-    for _ in range(200):
+    for _ in range(100):
         p2 = Partector2Pro(serial_number=serial_number)
-        time.sleep(0.2)
         p2.close(verbose_reset=False)
-        time.sleep(0.2)

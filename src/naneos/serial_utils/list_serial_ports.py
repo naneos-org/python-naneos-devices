@@ -38,11 +38,14 @@ def _check_port_function(ports: list[str]) -> list[str]:
     working_ports: list[str] = []
 
     for port in ports:
-        try:
-            s = serial.Serial(port)
-            s.close()
-            working_ports.append(port)
-        except (OSError, serial.SerialException):
-            pass
+        for _ in range(100):  # I have to do this because of windows and P2's 100Hz output
+            try:
+                s = serial.Serial(port)
+                s.write("X0000!".encode())
+                s.close()
+                working_ports.append(port)
+                break
+            except (OSError, serial.SerialException):
+                pass
 
     return working_ports
