@@ -415,11 +415,14 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         while time.time() - tries_start < self.SERIAL_INIT_RETRIES_TIMEOUT_S:
             tries += 1
 
-            self._ser = serial.Serial(
-                port=self._port,
-                baudrate=self.SERIAL_BAUDRATE,
-                timeout=self.SERIAL_TIMEOUT,
-            )
+            try:
+                self._ser = serial.Serial(
+                    port=self._port,
+                    baudrate=self.SERIAL_BAUDRATE,
+                    timeout=self.SERIAL_TIMEOUT,
+                )
+            except serial.SerialException:
+                continue
             if self._ser.is_open:
                 self.set_verbose_freq(0)
                 time.sleep(10e-3)
