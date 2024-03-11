@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 
 import serial
+import serial.tools.list_ports as ls
 
 
 def list_serial_ports() -> list[str]:
@@ -13,8 +14,20 @@ def list_serial_ports() -> list[str]:
     Returns:
         list[str]: A list of serial ports available on the system.
     """
-    ports: list[str] = _get_all_open_ports()
+    # ports: list[str] = _get_all_open_ports()
+    ports: list[str] = _get_all_dosemet_ports()
     ports = _check_port_function(ports)
+
+    return ports
+
+
+def _get_all_dosemet_ports() -> list[str]:
+    ports: list[str] = []
+
+    all_ports = ls.comports()
+    for port in all_ports:
+        if port.serial_number and "DOSEMet" in port.serial_number:
+            ports.append(port.device)
 
     return ports
 

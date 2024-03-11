@@ -1,10 +1,20 @@
 from dataclasses import dataclass
-import datetime
+import re
 from typing import Optional, Union
 
 
 @dataclass
 class Partector2DataStructure:
+    def to_dict(self, remove_nan=True) -> dict[str, Union[int, float]]:
+        if remove_nan:
+            return {
+                key: getattr(self, key)
+                for key in self.__dataclass_fields__
+                if getattr(self, key) is not None
+            }
+        else:
+            return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
     # mandatory
     unix_timestamp: Optional[int] = None
 

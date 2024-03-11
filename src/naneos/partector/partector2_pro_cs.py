@@ -32,6 +32,17 @@ class Partector2ProCs(Partector2Pro):
     def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315
 
+    def _set_verbose_freq(self, freq: int) -> None:
+        if freq == 0:
+            self._write_line("X0000!")
+        else:
+            if self._fw >= 311:
+                self._data_structure = PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315
+
+            self._write_line("h2001!")  # activates harmonics output
+            self._write_line("M0004!")  # activates size dist mode
+            self._write_line("X0006!")  # activates verbose mode
+
     def set_catalyst_state(self, state: str) -> None:
         """Sets the catalyst state to on, off or auto."""
         if not self._connected:

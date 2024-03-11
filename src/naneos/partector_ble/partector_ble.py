@@ -35,6 +35,18 @@ class PartectorBle(Thread):
 
         self._send_queue: deque[tuple[int, str]] = deque(maxlen=10)
 
+    def get_data(self, serial_number: int) -> list[dict]:
+        """Returns the data queue without popping the last element."""
+
+        if serial_number not in self._partector_clients:
+            return []
+
+        data = []
+        while len(self._partector_clients[serial_number]._data_queue) > 1:
+            data.append(self._partector_clients[serial_number]._data_queue.popleft().to_dict())
+
+        return data
+
     def run(self) -> None:
         """Main loop of the partector BLE thread"""
         # asyncio.run(self.async_run())
@@ -100,10 +112,10 @@ class PartectorBle(Thread):
         If the device is a old one, the advertisement data will be parsed and added to an partector_ble_device object.
         """
         for device, values in self._devices_to_check.items():
-            if values[0] not in self._partector_clients:
+            if values[0] not in self._partector_clients:  # check if SN is already in the dict
                 self._partector_clients[values[0]] = PartectorBleDevice(values[0])
 
-            client = BleakClient(device, self._disconnected_callback, timeout=1)
+            client = BleakClient(device, self._disconnected_callback, timeout=5)
 
             try:
                 await client.connect()
@@ -184,21 +196,32 @@ class PartectorBle(Thread):
             serial_number = next(
                 x.serial_number for x in self._partector_clients.values() if x.ble_client == client
             )
-            logger.debug(f"Disconnected from {serial_number}")
+            logger.info(f"Disconnected from {serial_number}")
             self._partector_clients.pop(serial_number)
         except Exception as excep:
             logger.warning(f"Could not remove client from dict: {excep}")
 
 
 if __name__ == "__main__":
-    partector_ble = PartectorBle(serial_numbers=[8465])
-    partector_ble.start()
-    time.sleep(5)
+    import pandas as pd
 
-    if 8448 in partector_ble._partector_clients:
-        print(partector_ble._partector_clients[8448]._data_queue.pop())
-    partector_ble.send_command(8112, "N?")
-    time.sleep(3)
+    SN = 8465
+
+    partector_ble = PartectorBle(serial_numbers=[SN])
+    partector_ble.start()
+
+    stop_time = time.time() + 120
+
+    while time.time() < stop_time:
+        if SN in partector_ble._partector_clients:
+            data = partector_ble.get_data(SN)
+
+            if data:
+                # print(data)
+                df = pd.DataFrame(data)
+                print(df)
+
+    # partector_ble.send_command(8112, "N?")
     # print(partector_ble._partector_clients[8112]._data_queue)
     partector_ble.event.set()
     partector_ble.join()

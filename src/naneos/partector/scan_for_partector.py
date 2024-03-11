@@ -5,7 +5,6 @@ from typing import Any, Callable, Optional
 import serial
 
 from naneos.logger.custom_logger import get_naneos_logger
-from naneos.partector.blueprints._data_structure import PARTECTOR2_DATA_STRUCTURE_V_LEGACY
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 from naneos.serial_utils import list_serial_ports as ls_ports
 
