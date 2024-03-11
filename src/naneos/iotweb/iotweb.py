@@ -8,11 +8,11 @@ import time
 import requests
 
 from naneos.partector import Partector1, scan_for_serial_partectors
-from naneos.protobuf import create_Combined_entry, create_Partector1_entry
+from naneos.protobuf import create_combined_entry, create_proto_p1
 
 
 class P1uploadThread(Thread):
-    def __init__(self):
+    def __init__(self) -> None:
         Thread.__init__(self)
         self.event = Event()
         self.event.set()
@@ -23,14 +23,14 @@ class P1uploadThread(Thread):
         self.last_send_time = time.time()  # change to asyncio loop
         self.start()
 
-    def run(self):
+    def run(self) -> None:
         asyncio.run(self.run_async())
 
         print("closing devices")
         for d in self.device_list:
             d.close()
 
-    async def run_async(self):
+    async def run_async(self) -> None:
         task1 = asyncio.create_task(self.connect_disconnect_routine())
         task2 = asyncio.create_task(self._send_data_to_server())
 
@@ -89,9 +89,9 @@ class P1uploadThread(Thread):
             devices = []
             for d in self.device_list:
                 df = d.get_data_pandas()
-                devices.append(create_Partector1_entry(df, d._serial_number, abs_time))
+                devices.append(create_proto_p1(d.serial_number, abs_time, df))
 
-            combined = create_Combined_entry(devices=devices, abs_time=abs_time)
+            combined = create_combined_entry(devices=devices, abs_timestamp=abs_time)
 
             proto_string = combined.SerializeToString()
             proto_string_base64 = base64.b64encode(proto_string)

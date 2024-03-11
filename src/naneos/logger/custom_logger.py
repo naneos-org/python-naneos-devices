@@ -1,6 +1,10 @@
 import logging
 from typing import Optional
 
+from pathlib import Path
+
+NANEOS_LOGGER_PATH = "logs/naneos-devices.log"
+
 
 class CustomFormatter(logging.Formatter):
     _grey = "\x1b[38;20m"
@@ -10,14 +14,14 @@ class CustomFormatter(logging.Formatter):
     _bold_red = "\x1b[31;1m"
     _reset = "\x1b[0m"
     _format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
-    _FORMATS_TERMINAL: tuple[tuple[int, str], ...] = (
-        (logging.DEBUG, _grey + _format + _reset),
-        (logging.INFO, _green + _format + _reset),
-        (logging.WARNING, _yellow + _format + _reset),
-        (logging.ERROR, _red + _format + _reset),
-        (logging.CRITICAL, _bold_red + _format + _reset),
+    _FORMATS_TERMINAL = (
+        (logging.DEBUG, f"{_grey} {_format} {_reset}"),
+        (logging.INFO, f"{_green} {_format} {_reset}"),
+        (logging.WARNING, f"{_yellow} {_format} {_reset}"),
+        (logging.ERROR, f"{_red} {_format} {_reset}"),
+        (logging.CRITICAL, f"{_bold_red} {_format} {_reset}"),
     )
-    _FORMATS_SAVE: tuple[tuple[int, str], ...] = (
+    _FORMATS_SAVE = (
         (logging.DEBUG, _format),
         (logging.INFO, _format),
         (logging.WARNING, _format),
@@ -31,7 +35,7 @@ class CustomFormatter(logging.Formatter):
             fmt = self._format
         super().__init__(fmt=fmt)
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         log_fmt = next(
             (x[1] for x in self._FORMATS if x[0] == record.levelno),
             self._FORMATS[0][1],
@@ -41,27 +45,39 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-def get_naneos_logger(name: str, level: int = logging.INFO):
+def set_naneos_logger_save_path(path: str) -> None:
+    global NANEOS_LOGGER_PATH
+
+    NANEOS_LOGGER_PATH = path
+
+
+def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+    global NANEOS_LOGGER_PATH
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    formatter_file = CustomFormatter(terminal=False)
-    file_handler = logging.FileHandler("naneos-devices.log")
-    file_handler.setLevel(level)
-    file_handler.setFormatter(formatter_file)
+    # check if NANEOS_LOGGER_PATH exists
+    if Path(NANEOS_LOGGER_PATH).exists():
+        formatter_file = CustomFormatter(terminal=False)
+        file_handler = logging.FileHandler(NANEOS_LOGGER_PATH)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter_file)
+        logger.addHandler(file_handler)
 
     formatter_stream = CustomFormatter(terminal=True)
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(level)
     stream_handler.setFormatter(formatter_stream)
+    stream_handler.terminator = "\r\n"
 
     logger.addHandler(stream_handler)
-    logger.addHandler(file_handler)
 
     return logger
 
 
 if __name__ == "__main__":
+    set_naneos_logger_save_path("logs/naneos-devices.log")
     logger = get_naneos_logger(__name__, logging.DEBUG)
     logger.debug("debug message")
     logger.info("info message")
