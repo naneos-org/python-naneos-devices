@@ -54,7 +54,7 @@ def _check_port_function(ports: list[str]) -> list[str]:
         for _ in range(100):  # I have to do this because of windows and P2's 100Hz output
             try:
                 s = serial.Serial(port)
-                s.write("X0000!".encode())
+                s.write(b"X0000!")
                 s.close()
                 working_ports.append(port)
                 break

@@ -103,7 +103,7 @@ PARTECTOR2_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
     "P_average": float,
 }
 
-PARTECTOR2_DATA_STRUCTURE_V299: dict[str, Union[type[int], type[float]]] = {
+PARTECTOR2_DATA_STRUCTURE_V317: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp_ms": int,
     "runtime_min": float,
     "idiff_global": float,
