@@ -19,6 +19,7 @@ class Partector2(PartectorBluePrint):
     def _init_serial_data_structure(self) -> None:
         if self._fw > 298:
             self._data_structure = PARTECTOR2_DATA_STRUCTURE_V299
+            self._write_line("h2001!")  # activates harmonics output
             logger.info(f"SN{self._sn} has FW{self._fw}. -> Using V299 data structure.")
         else:
             self._data_structure = PARTECTOR2_DATA_STRUCTURE_V_LEGACY
@@ -42,11 +43,11 @@ if __name__ == "__main__":
 
     for _ in range(100):
         partectors = scan_for_serial_partectors()
-        p2_pro = partectors["P2"]
+        p2 = partectors["P2"]
 
-        assert p2_pro, "No Partector found!"
+        assert p2, "No Partector found!"
 
-        serial_number = next(iter(p2_pro.keys()))
+        serial_number = next(iter(p2.keys()))
 
         p2 = Partector2(serial_number=serial_number)
         p2.close(verbose_reset=False, blocking=True)

@@ -46,40 +46,48 @@ from naneos.partector import Partector1, Partector2, scan_for_serial_partectors
 # Lists all available Partector2 devices
 x = scan_for_serial_partectors()
 
+print(x)  # eg. {'P1': {}, 'P2': {8112: '/dev/cu.usbmodemDOSEMet_1'}, 'P2pro': {}, 'P2proCS': {}}
+
 # Split dictionary into P1 and P2 devices
-p1_devs = x["P1"]
-p2_devs = x["P2"]
+p1 = x["P1"]
+p2 = x["P2"]
+p2_pro = x["P2pro"]
 
-if len(p1_devs) > 0:
+if len(p1) > 0:
     print("Found Partector1 devices:")
-    for k, v in p1_devs.items():
+    for k, v in p1.items():
         print(f"Serial number: {k}, Port: {v}")
 
-    # Connect to the first device
-    myP1 = Partector1(list(p1_devs.values())[0], 1)
+    # Connect to the first device with sn
+    p1_dev = Partector1(serial_number=next(iter(p1.keys())))
+    # or with port
+    # p1_dev = Partector1(port=next(iter(p1.values())))
+
     time.sleep(2)
 
     # Get the data as a pandas DataFrame
-    data = myP1.get_data_pandas()
+    data = p1_dev.get_data_pandas()
     print(data)
 
-    myP1.close()
+    p1_dev.close()
 
-if len(p2_devs) > 0:
+if len(p2) > 0:
     print("Found Partector2 devices:")
-    for k, v in p2_devs.items():
+    for k, v in p2.items():
         print(f"Serial number: {k}, Port: {v}")
 
-    # Connect to the first device
-    myP2 = Partector2(list(p2_devs.values())[0], 1)
+    # Connect to the first device with sn
+    p2_dev = Partector2(serial_number=next(iter(p2.keys())))
+    # or with port
+    # p2_dev = Partector2(port=next(iter(p2.values())))
+
     time.sleep(2)
 
     # Get the data as a pandas DataFrame
-    data = myP2.get_data_pandas()
+    data = p2_dev.get_data_pandas()
     print(data)
 
-    myP2.close()
-
+    p2_dev.close()
 ```
 
 Make sure to modify the code according to your specific requirements. Refer to the documentation and comments within the code for detailed explanations and usage instructions.
