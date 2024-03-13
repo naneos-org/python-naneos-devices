@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 
 import serial
+import serial.tools.list_ports as ls
 
 
 def list_serial_ports() -> list[str]:
@@ -13,8 +14,20 @@ def list_serial_ports() -> list[str]:
     Returns:
         list[str]: A list of serial ports available on the system.
     """
-    ports: list[str] = _get_all_open_ports()
+    # ports: list[str] = _get_all_open_ports()
+    ports: list[str] = _get_all_dosemet_ports()
     ports = _check_port_function(ports)
+
+    return ports
+
+
+def _get_all_dosemet_ports() -> list[str]:
+    ports: list[str] = []
+
+    all_ports = ls.comports()
+    for port in all_ports:
+        if port.serial_number and "dosemet" in port.serial_number.lower():
+            ports.append(port.device)
 
     return ports
 
@@ -41,7 +54,7 @@ def _check_port_function(ports: list[str]) -> list[str]:
         for _ in range(100):  # I have to do this because of windows and P2's 100Hz output
             try:
                 s = serial.Serial(port)
-                s.write("X0000!".encode())
+                s.write(b"X0000!")
                 s.close()
                 working_ports.append(port)
                 break

@@ -1,10 +1,20 @@
 from dataclasses import dataclass
-import datetime
+import re
 from typing import Optional, Union
 
 
 @dataclass
 class Partector2DataStructure:
+    def to_dict(self, remove_nan=True) -> dict[str, Union[int, float]]:
+        if remove_nan:
+            return {
+                key: getattr(self, key)
+                for key in self.__dataclass_fields__
+                if getattr(self, key) is not None
+            }
+        else:
+            return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
     # mandatory
     unix_timestamp: Optional[int] = None
 
@@ -93,7 +103,7 @@ PARTECTOR2_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
     "P_average": float,
 }
 
-PARTECTOR2_DATA_STRUCTURE_V299: dict[str, Union[type[int], type[float]]] = {
+PARTECTOR2_DATA_STRUCTURE_V317: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp_ms": int,
     "runtime_min": float,
     "idiff_global": float,

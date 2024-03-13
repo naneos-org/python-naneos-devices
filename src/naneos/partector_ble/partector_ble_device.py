@@ -17,6 +17,7 @@ class PartectorBleDevice:
         self.serial_number: int = serial_number
         self.ble_client: Optional[BleakClient] = None
         self._data_queue: deque[Partector2DataStructure] = deque(maxlen=100)
+        self._last_received_data = time.time()
 
     def _add_old_format_data(self, data: AdvertisementData, serial_number: int) -> None:
         """Adds data from old format to the data queue"""
@@ -35,6 +36,8 @@ class PartectorBleDevice:
             self._data_queue.popleft()
         self._data_queue.append(decoded_data)
 
+        self._last_received_data = time.time()
+
         logger.debug(f"Added old format data from {self.serial_number}")
 
     def callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
@@ -45,6 +48,8 @@ class PartectorBleDevice:
             self._data_queue.popleft()
         self._data_queue.append(decoded_data)
 
+        self._last_received_data = time.time()
+
         logger.debug(f"Callback std from {self.serial_number}")
 
     def callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
@@ -52,6 +57,7 @@ class PartectorBleDevice:
         if self._data_queue:
             for field in self._data_queue[-1].__dataclass_fields__:
                 if getattr(decoded_data, field) is not None:
+                    # logger.info(f"Setting {field} to {getattr(decoded_data, field)}")
                     setattr(self._data_queue[-1], field, getattr(decoded_data, field))
 
         logger.debug(f"Callback aux from {self.serial_number}")

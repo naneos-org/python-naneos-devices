@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import datetime, timezone
-from socket import timeout
 from threading import Event, Thread
 import time
 from typing import Any, Callable, Optional, Union

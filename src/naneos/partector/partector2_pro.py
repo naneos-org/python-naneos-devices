@@ -1,7 +1,7 @@
 from typing import Optional
 
 from naneos.partector.blueprints._data_structure import (
-    PARTECTOR2_DATA_STRUCTURE_V299,
+    PARTECTOR2_DATA_STRUCTURE_V317,
     PARTECTOR2_PRO_DATA_STRUCTURE_V311,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
@@ -27,7 +27,7 @@ class Partector2Pro(PartectorBluePrint):
             self._write_line("X0000!")
         elif freq in [1, 2, 3]:  # std p2 mode
             if self._fw >= 311:
-                self._data_structure = PARTECTOR2_DATA_STRUCTURE_V299
+                self._data_structure = PARTECTOR2_DATA_STRUCTURE_V317
 
             self._write_line("h2001!")  # activates harmonics output
             self._write_line("M0000!")  # deactivates size dist mode

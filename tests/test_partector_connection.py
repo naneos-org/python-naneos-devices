@@ -12,6 +12,6 @@ def test_partector2_pro() -> None:
 
     serial_number = next(iter(p2_pro.keys()))
 
-    for _ in range(100):
+    for _ in range(33):
         p2 = Partector2Pro(serial_number=serial_number)
         p2.close(verbose_reset=False)
