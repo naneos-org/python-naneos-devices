@@ -10,10 +10,10 @@ class Partector1(PartectorBluePrint):
     ) -> None:
         super().__init__(serial_number, port, verb_freq)
 
-    def _init_serial_data_structure(self):
+    def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR1_DATA_STRUCTURE_V_LEGACY
 
-    def _set_verbose_freq(self, freq: int):
+    def _set_verbose_freq(self, freq: int) -> None:
         """
         Set the frequency of the verbose output.
 

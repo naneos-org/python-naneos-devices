@@ -134,7 +134,7 @@ class PartectorBleDevice:
         naneos_adv = next(iter(data.manufacturer_data.keys())).to_bytes(2, byteorder="little")
 
         # security check 1: First byte must be "X"
-        if naneos_adv[0].to_bytes(1).decode("utf-8") != "X":
+        if naneos_adv[0].to_bytes(1, byteorder="little").decode("utf-8") != "X":
             return (None, None)
 
         # add the data part of the manufacturer data

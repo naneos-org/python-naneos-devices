@@ -1,7 +1,6 @@
 import logging
-from typing import Optional
-
 from pathlib import Path
+from typing import Optional, Union
 
 NANEOS_LOGGER_PATH = "logs/naneos-devices.log"
 
@@ -45,10 +44,20 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-def set_naneos_logger_save_path(path: str) -> None:
+def set_naneos_logger_save_path(path: Union[str, Path]) -> None:
     global NANEOS_LOGGER_PATH
 
-    NANEOS_LOGGER_PATH = path
+    if isinstance(path, str):
+        path = Path(path).resolve()
+
+    if path.is_dir():
+        path = path / "naneos-devices.log"
+
+    # create file if it does not exist
+    if not path.exists():
+        path.touch()
+
+    NANEOS_LOGGER_PATH = str(path)
 
 
 def get_naneos_logger(name: str, level: int = logging.INFO) -> logging.Logger:

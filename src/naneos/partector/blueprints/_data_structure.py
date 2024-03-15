@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import re
 from typing import Optional, Union
 
 
@@ -80,30 +79,10 @@ PARTECTOR1_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
     # "phase_angle": float,
 }
 
-# v298 and smaller
-PARTECTOR2_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
-    "unix_timestamp_ms": int,
-    "runtime_min": float,
-    "idiff_global": float,
-    "ucor_global": int,
-    "hiresADC1": float,
-    "hiresADC2": float,
-    "EM_amplitude1": float,
-    "EM_amplitude2": float,
-    "T": float,
-    "RHcorr": int,
-    "device_status": int,
-    "deposition_voltage": int,
-    "batt_voltage": float,
-    "flow_from_dp": float,
-    "LDSA": float,
-    "diameter": float,
-    "number": int,
-    "dP": int,
-    "P_average": float,
-}
+# data structure for Partector2 320 and higher
+# lower give error and recommend update
 
-PARTECTOR2_DATA_STRUCTURE_V317: dict[str, Union[type[int], type[float]]] = {
+PARTECTOR2_DATA_STRUCTURE_V320: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp_ms": int,
     "runtime_min": float,
     "idiff_global": float,
@@ -126,6 +105,52 @@ PARTECTOR2_DATA_STRUCTURE_V317: dict[str, Union[type[int], type[float]]] = {
     "em_gain1": float,
     "em_gain2": float,
 }
+
+PARTECTOR2_DATA_STRUCTURE_V265_V275: dict[str, Union[type[int], type[float]]] = {
+    "unix_timestamp_ms": int,
+    "runtime_min": float,
+    "idiff_global": float,
+    "ucor_global": int,
+    "hiresADC1": float,
+    "hiresADC2": float,
+    "EM_amplitude1": float,
+    "EM_amplitude2": float,
+    "T": float,
+    "RHcorr": int,
+    "device_status": int,
+    "deposition_voltage": int,
+    "batt_voltage": float,
+    "flow_from_dp": float,
+    "LDSA": float,
+    "diameter": float,
+    "number": int,
+    "dP": int,
+    "P_average": float,
+    "lag": int,
+}
+
+PARTECTOR2_DATA_STRUCTURE_V295_V297_V298: dict[str, Union[type[int], type[float]]] = {
+    "unix_timestamp_ms": int,
+    "runtime_min": float,
+    "idiff_global": float,
+    "ucor_global": int,
+    "hiresADC1": float,
+    "hiresADC2": float,
+    "EM_amplitude1": float,
+    "EM_amplitude2": float,
+    "T": float,
+    "RHcorr": int,
+    "device_status": int,
+    "deposition_voltage": int,
+    "batt_voltage": float,
+    "flow_from_dp": float,
+    "LDSA": float,
+    "diameter": float,
+    "number": int,
+    "dP": int,
+    "P_average": float,
+}
+
 
 PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp_ms": int,
