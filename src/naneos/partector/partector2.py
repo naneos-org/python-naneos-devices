@@ -2,6 +2,7 @@ from typing import Optional
 
 from naneos.logger import get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
+    PARTECTOR2_DATA_STRUCTURE_LEGACY,
     PARTECTOR2_DATA_STRUCTURE_V265_V275,
     PARTECTOR2_DATA_STRUCTURE_V295_V297_V298,
     PARTECTOR2_DATA_STRUCTURE_V320,
@@ -31,9 +32,10 @@ class Partector2(PartectorBluePrint):
             self._write_line("h2001!")  # activates harmonics output
             logger.info(f"SN{self._sn} has FW{self._fw}. -> Using V320 data structure.")
         else:
-            self._data_structure = PARTECTOR2_DATA_STRUCTURE_V295_V297_V298
-            logger.error(f"SN{self._sn} has FW{self._fw}. -> Unofficial firmware version.")
-            logger.warning("Using V295/297/298 data structure. Contact naneos for a FW update.")
+            self._data_structure = PARTECTOR2_DATA_STRUCTURE_LEGACY
+            self._legacy_data_structure = True
+            logger.warning(f"SN{self._sn} has FW{self._fw}. -> Unofficial firmware version.")
+            logger.warning("Using legacy data structure. Contact naneos for a FW update.")
 
     def _set_verbose_freq(self, freq: int) -> None:
         """

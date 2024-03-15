@@ -39,6 +39,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._port: Optional[str] = ""
         self._ser: serial.Serial = serial.Serial()
         self._time_last_message_received = time.time()
+        self._legacy_data_structure: bool = False
 
     def close(
         self, blocking: bool = False, shutdown: bool = False, verbose_reset: bool = True
@@ -217,6 +218,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         if len(data) == len(self._data_structure):
             self._queue.append(data)
+        # this is legacy mode, where the data structure is not known exactly
+        elif len(data) > len(self._data_structure) and self._legacy_data_structure:
+            self._queue.append(data[0 : len(self._data_structure)])
         else:
             self._queue_info.append(data)
 
