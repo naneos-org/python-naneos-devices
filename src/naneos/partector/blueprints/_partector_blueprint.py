@@ -125,6 +125,10 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self.custom_info_str = line
         self.custom_info_size = number_of_elem + 1
 
+        if number_of_elem == 0:
+            self._write_line(line)
+            return []
+
         return self._serial_wrapper(self._custom_info)  # type: ignore
 
     #########################################
