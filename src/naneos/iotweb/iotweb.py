@@ -124,7 +124,7 @@ if __name__ == "__main__":
         while True:
             time.sleep(1)
             connected_ports = upload_thread.get_connected_devices_ports()
-            devs = scan_for_serial_partectors(sn_exclude=connected_ports)["P1"]
+            devs = scan_for_serial_partectors(ports_exclude=connected_ports)["P1"]
             # print(devs)
 
             # add all devices to the queue

@@ -92,18 +92,18 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
     return None
 
 
-def scan_for_serial_partectors(sn_exclude: Optional[list] = None) -> dict:
+def scan_for_serial_partectors(ports_exclude: Optional[list] = None) -> dict:
     """Scans all possible ports using threads (fast)."""
     threads = []
     q_1, q_2, q_2_pro, q_2_pro_cs = (Queue() for _ in range(4))
 
-    if sn_exclude is None:
-        sn_exclude = []
+    if ports_exclude is None:
+        ports_exclude = []
 
     [
         threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
-        for port in ls_ports()
-        if port not in sn_exclude
+        for port in ls_ports(ports_exclude)
+        if port not in ports_exclude
     ]
     [thread.start() for thread in threads]
     [thread.join() for thread in threads]

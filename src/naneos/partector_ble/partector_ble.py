@@ -122,6 +122,9 @@ class PartectorBle(Thread):
             except asyncio.TimeoutError:
                 self._add_old_device_data(values)
                 continue
+            except Exception as excep:
+                logger.error(f"BLE Excep: {excep}")
+                return
 
             my_ble_device = self._partector_clients[values[0]]
             if my_ble_device.ble_client:
@@ -205,12 +208,12 @@ class PartectorBle(Thread):
 if __name__ == "__main__":
     import pandas as pd
 
-    SN = 8465
+    SN = 8112
 
     partector_ble = PartectorBle(serial_numbers=[SN])
     partector_ble.start()
 
-    stop_time = time.time() + 120
+    stop_time = time.time() + 20
 
     while time.time() < stop_time:
         if SN in partector_ble._partector_clients:

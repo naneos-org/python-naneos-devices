@@ -1,11 +1,12 @@
 from pathlib import Path
 import sys
+from typing import Optional
 
 import serial
 import serial.tools.list_ports as ls
 
 
-def list_serial_ports() -> list[str]:
+def list_serial_ports(ports_exclude: list) -> list[str]:
     """Returns a list of serial ports available on the system.
 
     Raises:
@@ -15,16 +16,17 @@ def list_serial_ports() -> list[str]:
         list[str]: A list of serial ports available on the system.
     """
     # ports: list[str] = _get_all_open_ports()
-    ports: list[str] = _get_all_dosemet_ports()
+    ports: list[str] = _get_all_dosemet_ports(ports_exclude)
     ports = _check_port_function(ports)
 
     return ports
 
 
-def _get_all_dosemet_ports() -> list[str]:
+def _get_all_dosemet_ports(ports_exclude: list) -> list[str]:
     ports: list[str] = []
 
     all_ports = ls.comports()
+    all_ports = [port for port in all_ports if port.device not in ports_exclude]
     for port in all_ports:
         if port.serial_number and "dosemet" in port.serial_number.lower():
             ports.append(port.device)
