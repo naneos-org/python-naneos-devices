@@ -72,6 +72,11 @@ class NaneosUploadThread(Thread):
             device_type = device[1]
             df = device[2]
 
+            # detect ms timestamp and convert to s
+            if df.index[0] > 1e12:
+                df.index = df.index / 1e3
+                df.index = df.index.astype(int)
+
             if device_type == "P1":
                 devices.append(create_proto_p1(sn, abs_time, df))
             elif device_type == "P2":

@@ -28,7 +28,9 @@ def _get_all_dosemet_ports(ports_exclude: list) -> list[str]:
     all_ports = ls.comports()
     all_ports = [port for port in all_ports if port.device not in ports_exclude]
     for port in all_ports:
-        if port.serial_number and "dosemet" in port.serial_number.lower():
+        if (port.pid == 5 and port.vid == 65535) or (
+            port.serial_number and "dosemet" in port.serial_number.lower()
+        ):
             ports.append(port.device)
 
     return ports
