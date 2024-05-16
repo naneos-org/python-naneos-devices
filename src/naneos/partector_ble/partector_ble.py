@@ -1,5 +1,6 @@
 import asyncio
 from collections import deque
+from distutils.command import upload
 from threading import Event, Thread
 import time
 from typing import Optional
@@ -7,6 +8,7 @@ from typing import Optional
 from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
+import pandas as pd
 
 from naneos.logger import LEVEL_DEBUG, get_naneos_logger
 from naneos.partector_ble.partector_ble_device import PartectorBleDevice
@@ -35,6 +37,11 @@ class PartectorBle(Thread):
 
         self._send_queue: deque[tuple[int, str]] = deque(maxlen=10)
 
+    def stop(self, blocking=True) -> None:
+        self.event.set()
+        if blocking:
+            self.join()
+
     def get_data(self, serial_number: int) -> list[dict]:
         """Returns the data queue without popping the last element."""
 
@@ -44,6 +51,23 @@ class PartectorBle(Thread):
         data = []
         while len(self._partector_clients[serial_number]._data_queue) > 1:
             data.append(self._partector_clients[serial_number]._data_queue.popleft().to_dict())
+
+        return data
+
+    def get_data_pandas(self, serial_number: int) -> pd.DataFrame:
+        data = self.get_data(serial_number)
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df = df.set_index("unix_timestamp")
+        return df
+
+    def get_upload_list(self) -> list[tuple[int, str, pd.DataFrame]]:
+        """Returns a list of tuples with serial number, device type and the data queue as pandas dataframe."""
+        data = []
+        for serial_number, partector in self._partector_clients.items():
+            df = self.get_data_pandas(serial_number)
+            if not df.empty:
+                data.append((serial_number, partector.device_type, df))
 
         return data
 
@@ -136,6 +160,9 @@ class PartectorBle(Thread):
             await client.start_notify(self.CHAR_SIZE_DIST, my_ble_device.callback_size_dist)
 
             my_ble_device.ble_client = client
+            my_ble_device.data_format = "new"
+
+            self.send_command(values[0], "N?")
 
             logger.info(
                 f"Connected to {device.name} {device.address} with serial number {values[0]}"
@@ -208,23 +235,24 @@ class PartectorBle(Thread):
 if __name__ == "__main__":
     import pandas as pd
 
-    SN = 8112
+    from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
 
-    partector_ble = PartectorBle(serial_numbers=[SN])
+    SN = 8150
+    SN2 = 8112
+
+    partector_ble = PartectorBle(serial_numbers=[SN, SN2])
     partector_ble.start()
 
-    stop_time = time.time() + 20
+    try:
+        while True:
+            upload_list = partector_ble.get_upload_list()
+            # print(upload_list)
+            upload_thread = NaneosUploadThread(upload_list, None)
+            upload_thread.start()
+            time.sleep(10)
+            print("Uploaded")
+    except KeyboardInterrupt:
+        pass
 
-    while time.time() < stop_time:
-        if SN in partector_ble._partector_clients:
-            data = partector_ble.get_data(SN)
-
-            if data:
-                # print(data)
-                df = pd.DataFrame(data)
-                print(df)
-
-    # partector_ble.send_command(8112, "N?")
-    # print(partector_ble._partector_clients[8112]._data_queue)
     partector_ble.event.set()
     partector_ble.join()

@@ -15,6 +15,8 @@ logger = get_naneos_logger(__name__, LEVEL_INFO)
 class PartectorBleDevice:
     def __init__(self, serial_number: int) -> None:
         self.serial_number: int = serial_number
+        self.device_type: str = "P2"  # TODO: write name? to the device and read it here
+        self.data_format: str = "std"
         self.ble_client: Optional[BleakClient] = None
         self._data_queue: deque[Partector2DataStructure] = deque(maxlen=100)
         self._last_received_data = time.time()
@@ -69,6 +71,9 @@ class PartectorBleDevice:
                 if getattr(decoded_data, field) is not None:
                     setattr(self._data_queue[-1], field, getattr(decoded_data, field))
 
+        # When this callback gets triggered we are sure that the device is a P2pro
+        self.device_type = "P2pro"
+
         logger.debug(f"Callback size_dist from {self.serial_number}")
 
     def callback_read(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
@@ -111,14 +116,34 @@ class PartectorBleDevice:
     @staticmethod
     def decode_size_dist_characteristic(data: bytearray) -> Partector2DataStructure:
         decoded_data = Partector2DataStructure(
-            dist_particle_number_10nm=int.from_bytes(data[0:3], byteorder="little"),
-            dist_particle_number_16nm=int.from_bytes(data[3:6], byteorder="little"),
-            dist_particle_number_26nm=int.from_bytes(data[6:9], byteorder="little"),
-            dist_particle_number_43nm=int.from_bytes(data[9:12], byteorder="little"),
-            dist_particle_number_70nm=int.from_bytes(data[12:15], byteorder="little"),
-            dist_particle_number_114nm=int.from_bytes(data[15:18], byteorder="little"),
-            dist_particle_number_185nm=int.from_bytes(data[18:21], byteorder="little"),
-            dist_particle_number_300nm=int.from_bytes(data[21:24], byteorder="little"),
+            dist_particle_number_10nm=int.from_bytes(
+                bytearray([data[0], data[1], data[2] & 0x0F]), byteorder="little"
+            ),
+            dist_particle_number_16nm=int.from_bytes(
+                bytearray([data[2] & 0xF0, data[3], data[4]]), byteorder="little"
+            )
+            >> 4,
+            dist_particle_number_26nm=int.from_bytes(
+                bytearray([data[5], data[6], data[7] & 0x0F]), byteorder="little"
+            ),
+            dist_particle_number_43nm=int.from_bytes(
+                bytearray([data[7] & 0xF0, data[8], data[9]]), byteorder="little"
+            )
+            >> 4,
+            dist_particle_number_70nm=int.from_bytes(
+                bytearray([data[10], data[11], data[12] & 0x0F]), byteorder="little"
+            ),
+            dist_particle_number_114nm=int.from_bytes(
+                bytearray([data[12] & 0xF0, data[13], data[14]]), byteorder="little"
+            )
+            >> 4,
+            dist_particle_number_185nm=int.from_bytes(
+                bytearray([data[15], data[16], data[17] & 0x0F]), byteorder="little"
+            ),
+            dist_particle_number_300nm=int.from_bytes(
+                bytearray([data[17] & 0xF0, data[18], data[19]]), byteorder="little"
+            )
+            >> 4,
         )
 
         return decoded_data
