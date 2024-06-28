@@ -3,6 +3,7 @@ from typing import Optional
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_V320,
     PARTECTOR2_PRO_DATA_STRUCTURE_V311,
+    PARTECTOR2_PRO_DATA_STRUCTURE_V336
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
@@ -33,7 +34,9 @@ class Partector2Pro(PartectorBluePrint):
             self._write_line("M0000!")  # deactivates size dist mode
             self._write_line(f"X000{freq}!")
         elif freq == 6:  # p2 pro mode
-            if self._fw >= 311:
+            if self._fw >= 336:
+                self._data_structure = PARTECTOR2_PRO_DATA_STRUCTURE_V336
+            else:
                 self._data_structure = PARTECTOR2_PRO_DATA_STRUCTURE_V311
 
             self._write_line("h2001!")  # activates harmonics output
@@ -43,6 +46,7 @@ class Partector2Pro(PartectorBluePrint):
 
 if __name__ == "__main__":
     from naneos.partector import scan_for_serial_partectors
+    import time
 
     partectors = scan_for_serial_partectors()
     p2_pro = partectors["P2pro"]
@@ -51,6 +55,10 @@ if __name__ == "__main__":
 
     serial_number = next(iter(p2_pro.keys()))
 
-    for _ in range(100):
-        p2 = Partector2Pro(serial_number=serial_number)
-        p2.close(verbose_reset=False, blocking=True)
+    p2 = Partector2Pro(serial_number=serial_number, verb_freq=6)
+    
+    for _ in range(10):
+        time.sleep(5)
+        print(p2.get_data_pandas())
+    
+    p2.close(verbose_reset=False, blocking=True)

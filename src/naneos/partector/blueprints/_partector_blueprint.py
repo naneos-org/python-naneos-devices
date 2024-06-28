@@ -219,7 +219,6 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         # print(f"Received line length: {len(data)}, soll length: {len(self._data_structure)}")
 
         self._notify_message_received()
-
         if len(data) == len(self._data_structure):
             self._queue.append(data)
         # this is legacy mode, where the data structure is not known exactly

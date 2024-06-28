@@ -212,6 +212,44 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, Union[type[int], type[float]]] = {
     "em_gain2": float,
 }
 
+PARTECTOR2_PRO_DATA_STRUCTURE_V336: dict[str, Union[type[int], type[float]]] = {
+    "unix_timestamp_ms": int,
+    "runtime_min": float,
+    "number": int,
+    "diameter": float,
+    "LDSA": float,
+    "surface": float,  # not existing in protobuf
+    "particle_mass": float,
+    "sigma": float,  # not existing in protobuf
+    "idiff_global": float,
+    "ucor_global": int,
+    "deposition_voltage": int,
+    "T": float,
+    "RHcorr": int,
+    "P_average": float,
+    "flow_from_dp": float,
+    "batt_voltage": float,
+    "pump_current": float,  # not existing in protobuf
+    "device_status": int,
+    "flow_from_phase_angle": float,  # not existing in protobuf
+    "steps": int,  # not existing in protobuf
+    "particle_number_10nm": int,
+    "particle_number_16nm": int,
+    "particle_number_26nm": int,
+    "particle_number_43nm": int,
+    "particle_number_70nm": int,
+    "particle_number_114nm": int,
+    "particle_number_185nm": int,
+    "particle_number_300nm": int,
+    "current_0": float,  
+    "current_1": float,  
+    "current_2": float,  
+    "current_3": float,  
+    "current_4": float,  
+    "em_gain1": float,
+    "em_gain2": float,
+}
+
 PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp_ms": int,
     "runtime_min": float,
@@ -241,11 +279,11 @@ PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, Union[type[int], type[float]]] 
     "particle_number_114nm": int,
     "particle_number_185nm": int,
     "particle_number_300nm": int,
-    "current_0": float,  # not existing in protobuf
-    "current_1": float,  # not existing in protobuf
-    "current_2": float,  # not existing in protobuf
-    "current_3": float,  # not existing in protobuf
-    "current_4": float,  # not existing in protobuf
+    "current_0": float,  
+    "current_1": float,  
+    "current_2": float, 
+    "current_3": float,  
+    "current_4": float, 
     "em_gain1": float,
     "em_gain2": float,
     "cs_status": int,

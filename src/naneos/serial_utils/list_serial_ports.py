@@ -6,7 +6,7 @@ import serial
 import serial.tools.list_ports as ls
 
 
-def list_serial_ports(ports_exclude: list) -> list[str]:
+def list_serial_ports(ports_exclude: list = []) -> list[str]:
     """Returns a list of serial ports available on the system.
 
     Raises:
