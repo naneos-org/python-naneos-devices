@@ -35,7 +35,7 @@ def create_combined_entry(
 
 def create_proto_p1(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
     device = pbScheme.Device()
-    device.type = 0
+    device.type = 1
     device.serial_number = sn
 
     device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
@@ -61,7 +61,7 @@ def create_proto_p2(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device
 
 def create_proto_p2_pro(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
     device = pbScheme.Device()
-    device.type = 0
+    device.type = 2
     device.serial_number = sn
 
     device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
@@ -74,7 +74,7 @@ def create_proto_p2_pro(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.De
 
 def create_proto_p2_pro_cs(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
     device = pbScheme.Device()
-    device.type = 0
+    device.type = 3
     device.serial_number = sn
 
     device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore

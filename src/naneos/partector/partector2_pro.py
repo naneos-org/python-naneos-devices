@@ -42,6 +42,7 @@ class Partector2Pro(PartectorBluePrint):
             self._write_line("h2001!")  # activates harmonics output
             self._write_line("M0004!")  # activates size dist mode
             self._write_line("X0006!")  # activates verbose mode
+            self._write_line("A0001!")  # activates the antispikes
 
 
 if __name__ == "__main__":
@@ -56,11 +57,11 @@ if __name__ == "__main__":
 
     serial_number = next(iter(p2_pro.keys()))
 
-    p2 = Partector2Pro(serial_number=serial_number, verb_freq=6)
-    time.sleep(30)
-
-    df = p2.get_data_pandas()
-    print(df)
+    p2 = Partector2Pro(serial_number=serial_number)
+    for _ in range(5):
+        time.sleep(10)
+        df = p2.get_data_pandas()
+        print(df)
     # df.to_pickle("p2_pro.pkl")
 
     # for _ in range(10):

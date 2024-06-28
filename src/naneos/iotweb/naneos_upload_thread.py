@@ -7,6 +7,7 @@ import pandas as pd
 import requests
 
 from naneos.logger import get_naneos_logger
+from naneos.partector.partector2_pro import Partector2Pro
 from naneos.protobuf.protobuf import (
     create_combined_entry,
     create_proto_p1,
@@ -103,19 +104,44 @@ class NaneosUploadThread(Thread):
 
 
 if __name__ == "__main__":
-    df_p2: pd.DataFrame = pd.read_pickle(
-        "/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_test_data.pkl"
-    )
-    df_p2_pro: pd.DataFrame = pd.read_pickle(
-        "/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_pro_test_data.pkl"
-    )
+    import time
 
-    def callback(ret: bool) -> None:
-        print(f"Callback: {ret}")
+    def saved_method():
+        df_p2: pd.DataFrame = pd.read_pickle(
+            "/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_test_data.pkl"
+        )
+        df_p2_pro: pd.DataFrame = pd.read_pickle(
+            "/Users/huegi/gitlocal/naneos/naneos-devices/tests/p2_pro_test_data.pkl"
+        )
 
-    data = [(int(777), str("P2pro"), df_p2_pro), (int(666), str("P2"), df_p2)]  # noqa: UP018
-    # NaneosUploadThread.upload(data)
+        def callback(ret: bool) -> None:
+            print(f"Callback: {ret}")
 
-    t = NaneosUploadThread(data, callback)
-    t.start()
-    t.join()
+        data = [(int(777), str("P2pro"), df_p2_pro), (int(666), str("P2"), df_p2)]  # noqa: UP018
+        # NaneosUploadThread.upload(data)
+
+        t = NaneosUploadThread(data, callback)
+        t.start()
+        t.join()
+
+    def active_method():
+        p2_pro = Partector2Pro(serial_number=8527)
+        time.sleep(30)
+
+        df = p2_pro.get_data_pandas()
+
+        if df.empty:
+            print("No data available")
+            return
+
+        def callback(ret: bool) -> None:
+            print(f"Callback: {ret}")
+
+        data = [(int(8527), str("P2pro"), df)]
+        t = NaneosUploadThread(data, callback)
+        t.start()
+        t.join()
+
+        p2_pro.close(blocking=True)
+
+    active_method()
