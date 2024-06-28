@@ -3,7 +3,7 @@ from typing import Optional
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_V320,
     PARTECTOR2_PRO_DATA_STRUCTURE_V311,
-    PARTECTOR2_PRO_DATA_STRUCTURE_V336
+    PARTECTOR2_PRO_DATA_STRUCTURE_V336,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
@@ -45,8 +45,9 @@ class Partector2Pro(PartectorBluePrint):
 
 
 if __name__ == "__main__":
-    from naneos.partector import scan_for_serial_partectors
     import time
+
+    from naneos.partector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()
     p2_pro = partectors["P2pro"]
@@ -56,9 +57,14 @@ if __name__ == "__main__":
     serial_number = next(iter(p2_pro.keys()))
 
     p2 = Partector2Pro(serial_number=serial_number, verb_freq=6)
-    
-    for _ in range(10):
-        time.sleep(5)
-        print(p2.get_data_pandas())
-    
+    time.sleep(30)
+
+    df = p2.get_data_pandas()
+    print(df)
+    # df.to_pickle("p2_pro.pkl")
+
+    # for _ in range(10):
+    #     time.sleep(5)
+    #     print(p2.get_data_pandas())
+
     p2.close(verbose_reset=False, blocking=True)

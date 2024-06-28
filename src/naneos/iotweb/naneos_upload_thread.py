@@ -72,6 +72,9 @@ class NaneosUploadThread(Thread):
             device_type = device[1]
             df = device[2]
 
+            # make all inf values in df_p2_pro 0
+            df = df.replace([float("inf"), -float("inf")], 0)
+
             # detect ms timestamp and convert to s
             if df.index[0] > 1e12:
                 df.index = df.index / 1e3
