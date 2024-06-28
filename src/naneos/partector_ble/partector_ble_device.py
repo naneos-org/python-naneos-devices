@@ -5,6 +5,7 @@ from typing import Optional
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.scanner import AdvertisementData
+from numpy import byte
 
 from naneos.logger import LEVEL_DEBUG, LEVEL_INFO, get_naneos_logger
 from naneos.partector.blueprints._data_structure import Partector2DataStructure
@@ -149,22 +150,12 @@ class PartectorBleDevice:
         return decoded_data
 
     @classmethod
-    def get_naneos_adv(cls, data: AdvertisementData) -> tuple[Optional[bytes], Optional[int]]:
+    def get_naneos_adv(cls, naneos_adv: bytearray) -> tuple[Optional[bytes], Optional[int]]:
         """
         Returns the custom advertisement data from Naneos devices.
 
         We are violating the BLE standard here by using the manufacturer data field for our own purposes.
         """
-        # Because of the 22 byte limit we also encoded data into the manufacturer name field.
-        naneos_adv = next(iter(data.manufacturer_data.keys())).to_bytes(2, byteorder="little")
-
-        # security check 1: First byte must be "X"
-        if naneos_adv[0].to_bytes(1, byteorder="little").decode("utf-8") != "X":
-            return (None, None)
-
-        # add the data part of the manufacturer data
-        naneos_adv += next(iter(data.manufacturer_data.values()))
-
         # security check 2: The data must be 22 bytes long
         if len(naneos_adv) != 22:
             return (None, None)
@@ -172,6 +163,16 @@ class PartectorBleDevice:
         serial_number = cls.get_serial_number(naneos_adv)
 
         return (naneos_adv, serial_number)
+
+    @classmethod
+    def check_naneos_adv(cls, naneos_adv: bytearray) -> Optional[int]:
+        """
+        Returns the Serial number from the advertisement data.
+        """
+        if len(naneos_adv) <= 22 or naneos_adv[0] != 88:  # 88 is the ASCII code for X
+            return None
+
+        return cls.get_serial_number(naneos_adv)
 
     @staticmethod
     def get_serial_number(data: bytes) -> int:

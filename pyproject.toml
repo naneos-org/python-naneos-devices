@@ -41,6 +41,7 @@ requests = "^2.31.0"
 pyserial = "^3.5"
 protobuf = "^4.25.1"
 bleak = "^0.21.1"
+simplepyble = "^0.7.3"
 
 [tool.poetry.group.nox.dependencies]
 nox-poetry = "*"
