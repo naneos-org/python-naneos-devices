@@ -56,10 +56,10 @@ if __name__ == "__main__":
     assert p2_pro, "No Partector found!"
 
     serial_number = next(iter(p2_pro.keys()))
-
     p2 = Partector2Pro(serial_number=serial_number)
-    for _ in range(5):
-        time.sleep(10)
+
+    for _ in range(20):
+        time.sleep(3)
         df = p2.get_data_pandas()
         print(df)
     # df.to_pickle("p2_pro.pkl")

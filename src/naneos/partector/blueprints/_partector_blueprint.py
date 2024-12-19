@@ -31,6 +31,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         super().__init__()
 
         self._init_variables()
+        self._verb_freq = verb_freq
         self._init(serial_number, port, verb_freq, hw_version)
 
     def _init_variables(self) -> None:
@@ -194,7 +195,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         """Checks if the device is still connected."""
         if not self._connected:
             self._init_serial(self._sn, self._port)
-            self.set_verbose_freq(1)
+            self.set_verbose_freq(self._verb_freq)
         elif self._check_device_connection() is False:
             if isinstance(self._ser, serial.Serial) and self._ser.is_open:
                 self._ser.close()

@@ -177,23 +177,23 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
         elif "dist_steps" in ser:
             device_point.steps_inversion = int(ser["dist_steps"])
         if "current_0" in ser:
-            device_point.current_dist_0 = int(ser["current_0"])
+            device_point.current_dist_0 = int(ser["current_0"] * 100000.0)
         elif "dist_current_0" in ser:
             device_point.current_dist_0 = int(ser["dist_current_0"])
         if "current_1" in ser:
-            device_point.current_dist_1 = int(ser["current_1"])
+            device_point.current_dist_1 = int(ser["current_1"] * 100000.0)
         elif "dist_current_1" in ser:
             device_point.current_dist_1 = int(ser["dist_current_1"])
         if "current_2" in ser:
-            device_point.current_dist_2 = int(ser["current_2"])
+            device_point.current_dist_2 = int(ser["current_2"] * 100000.0)
         elif "dist_current_2" in ser:
             device_point.current_dist_2 = int(ser["dist_current_2"])
         if "current_3" in ser:
-            device_point.current_dist_3 = int(ser["current_3"])
+            device_point.current_dist_3 = int(ser["current_3"] * 100000.0)
         elif "dist_current_3" in ser:
             device_point.current_dist_3 = int(ser["dist_current_3"])
         if "current_4" in ser:
-            device_point.current_dist_4 = int(ser["current_4"])
+            device_point.current_dist_4 = int(ser["current_4"] * 100000.0)
         elif "dist_current_4" in ser:
             device_point.current_dist_4 = int(ser["dist_current_4"])
         if "particle_number_10nm" in ser:
