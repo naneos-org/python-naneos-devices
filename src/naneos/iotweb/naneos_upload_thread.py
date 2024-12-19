@@ -20,7 +20,7 @@ logger = get_naneos_logger(__name__)
 
 
 class NaneosUploadThread(Thread):
-    URL: ClassVar[str] = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/dev/proto/v1"
+    URL: ClassVar[str] = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
     HEADERS: ClassVar[dict] = {"Content-Type": "application/json", "Accept": "application/json"}
 
     def __init__(

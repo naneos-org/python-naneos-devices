@@ -13,7 +13,7 @@ logger = get_naneos_logger(__name__)
 
 
 class Partector2ProGarageUpload(Thread):
-    URL = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/dev/proto/v1"
+    URL = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
     HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
 
     def __init__(
