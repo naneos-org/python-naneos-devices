@@ -136,7 +136,7 @@ if __name__ == "__main__":
 
     def active_method(serial_number: int):
         p2_pro = Partector2Pro(serial_number=serial_number)
-        time.sleep(60)
+        time.sleep(30)
 
         df = p2_pro.get_data_pandas()
 

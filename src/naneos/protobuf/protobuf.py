@@ -173,7 +173,7 @@ def _create_device_point(
         if "sigma" in ser:
             device_point.sigma_size_dist = int(ser["sigma"] * 100.0)
         if "pump_current" in ser:
-            device_point.pump_current = int(ser["pump_current"] * 100.0)
+            device_point.pump_current = int(ser["pump_current"] * 1000.0)
         if "pump_pwm" in ser:
             device_point.pump_pwm = int(ser["pump_pwm"])
         if "steps" in ser:

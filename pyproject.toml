@@ -1,6 +1,6 @@
 [project]
 name = "naneos-devices"
-version = "1.0.52"
+version = "1.0.55"
 description = "naneos particle solutions gmbh python backend"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
@@ -11,10 +11,13 @@ classifiers = [
     "Intended Audience :: Healthcare Industry",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "bleak>=0.22.3",
     "influxdb-client[ciso]>=1.48.0",

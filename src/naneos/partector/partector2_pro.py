@@ -58,9 +58,11 @@ if __name__ == "__main__":
     serial_number = next(iter(p2_pro.keys()))
     p2 = Partector2Pro(serial_number=serial_number)
 
-    for _ in range(3):
-        time.sleep(10)
+    for _ in range(10):
+        time.sleep(5)
         df = p2.get_data_pandas()
-        print(df[["particle_number_10nm", "particle_number_16nm"]])
+        if not df.empty:
+            print(df)
+            break
 
     p2.close(verbose_reset=False, blocking=True)
