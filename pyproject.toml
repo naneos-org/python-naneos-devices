@@ -1,12 +1,9 @@
 [project]
 name = "naneos-devices"
-version = "1.0.51"
-description = "Naneos gmbh python backend"
-readme = "README.md"
-readme-content-type = "text/markdown"
+version = "1.0.52"
+description = "naneos particle solutions gmbh python backend"
+readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
-repository = "https://github.com/naneos-org/python-naneos-devices"
-documentation = "https://naneos-org.github.io/python-naneos-devices/"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -29,6 +26,10 @@ dependencies = [
     "simplepyble>=0.9.0",
     "typer>=0.15.2",
 ]
+
+[project.urls]
+Repository = "https://github.com/naneos-org/python-naneos-devices"
+Documentation = "https://naneos-org.github.io/python-naneos-devices/"
 
 [tool.uv]
 environments = [
