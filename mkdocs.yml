@@ -1,171 +1,26 @@
-# +--------------------------------------------------------------------------------------------------------+
-# |                                                                                                        |
-# | This is the main file used by MkDocs to build the pages.                                               |
-# | It contains a lot of information and settings for you to read and use.                                 |
-# | Comments may contain "Read More" URLs to more in-depth documentation about the option for you to read. |
-# |                                                                                                        |
-# | You can check out https://www.mkdocs.org/user-guide/configuration/ for a more detailed explanation of  |
-# | all the options MkDocs offers by default.                                                              |
-# |                                                                                                        |
-# +------------------------------------------------- NOTE -------------------------------------------------+
-# |                                                                                                        |
-# | Some of the options listed here are only available through the usage of Material for MkDocs.           |
-# | Those options will usually have a link to the docs of this Theme and also mention "Material" as name.  |
-# | The actual name of the theme is "Material for MkDocs" and "Material" is used for simplicity reasons.   |
-# |                                                                                                        |
-# +--------------------------------------------------------------------------------------------------------+
-
-# +--------------------------------------------------------------------------------------------------------+
-# |                                                                                                        |
-# | Main Page Settings for MkDocs.                                                                         |
-# | Those settings are site name, site description, Site author and also Site URL (Canonical URL)          |
-# |                                                                                                        |
-# | Read More:                                                                                             |
-# | - https://www.mkdocs.org/user-guide/configuration/#site_name                                           |
-# | - https://www.mkdocs.org/user-guide/configuration/#site_description                                    |
-# | - https://www.mkdocs.org/user-guide/configuration/#site_author                                         |
-# | - https://www.mkdocs.org/user-guide/configuration/#site_url                                            |
-# |                                                                                                        |
-# +--------------------------------------------------------------------------------------------------------+
 site_name: 'naneos-devices'
 site_description: 'Documentation for the naneos-devices python backend'
 site_author: 'Mario Huegi'
 #site_url: 'https://www.andre601.ch/mkdocs-template' # Uncomment to set a canonical URL
 
-# +--------------------------------------------------------------------------------------------------------+
-# |                                                                                                        |
-# | This setting allows you to define your own Copyright notice.                                           |
-# | The text is treated as HTML code so you can use things like <a> tags or &copy; to display the          |
-# | Copyright icon.                                                                                        |
-# |                                                                                                        |
-# | Where or IF the Copyright is displayed depends on the theme you use.                                   |
-# |                                                                                                        |
-# | Read More:                                                                                             |
-# | - https://www.mkdocs.org/user-guide/configuration/#copyright                                           |
-# |                                                                                                        |
-# +--------------------------------------------------------------------------------------------------------+
 copyright: |
   &copy; Author
 
-# +--------------------------------------------------------------------------------------------------------+
-# |                                                                                                        |
-# | The base folder to use.                                                                                |
-# | Any Markdown files you put into this folder will be turned into a static HTML page once you build or   |
-# | publish your page.                                                                                     |
-# |                                                                                                        |
-# | It is also used as the base directory for other settings like the "extra_css" or "extra_javascript"    |
-# | option.                                                                                                |
-# |                                                                                                        |
-# +--------------------------------------------------------------------------------------------------------+
 docs_dir: docs/
 
-
-# +--------------------------------------------------------------------------------------------------------+
-# |                                                                                                        |
-# | These options allow to define a Repository to link to.                                                 |
-# | The result will, depending on the theme, be a link somewhere shown on the page that links to the       |
-# | Repository with the specified repo_name.                                                               |
-# |                                                                                                        |
-# | This will also enable a "edit" button on the page itself that allows the direct editing of the page.   |
-# | You can disable this by setting "edit_uri" to an empty String.                                         |
-# |                                                                                                        |
-# | Read More:                                                                                             |
-# | - https://www.mkdocs.org/user-guide/configuration/#repo_name                                           |
-# | - https://www.mkdocs.org/user-guide/configuration/#repo_url                                            |
-# | - https://www.mkdocs.org/user-guide/configuration/#edit_uri                                            |
-# |                                                                                                        |
-# +--------------------------------------------------------------------------------------------------------+
 repo_name: naneos-org/python-naneos-devices
 repo_url: https://github.com/naneos-org/python-naneos-devices
 #edit_uri: tree/master/docs # Uncomment to define a different URI/URL for the "edit" option
 
-# +--------------------------------------------------------------------------------------------------------+
-# |                                                                                                        |
-# | The "nav" option is where you define the navigation to show in MkDocs.                                 |
-# |                                                                                                        |
-# | Depending on the theme you use will the resulting Navigation look different.                           |
-# |                                                                                                        |
-# | You can set different types of navigations. Either just the path, the path with a separate title or    |
-# | an external URL.                                                                                       |
-# |                                                                                                        |
-# | Read More:                                                                                             |
-# | - https://www.mkdocs.org/user-guide/configuration/#documentation-layout                                |
-# |                                                                                                        |
-# +--------------------------------------------------------------------------------------------------------+
 nav:
   - Welcome: index.md
 
-# +--------------------------------------------------------------------------------------------------------+
-# |                                                                                                        |
-# | The "theme" section allows you to define what theme to use.                                            |
-# | It is also used for theme-specific options, but also for advanced stuff such as theme-extensions, if   |
-# | the theme actually supports it.                                                                        |
-# |                                                                                                        |
-# | Read More:                                                                                             |
-# | - https://www.mkdocs.org/user-guide/configuration/#theme                                               |
-# |                                                                                                        |
-# +--------------------------------------------------------------------------------------------------------+
 theme:
-
-  # +------------------------------------------------------------------------------------------------------+
-  # |                                                                                                      |
-  # | The "name" option is where you define the theme to use.                                              |
-  # |                                                                                                      |
-  # | Note that not all themes are included by default and will require you to install them first.         |
-  # | The Material theme is one of them. See the "Read More" link for instructions on how to install it.   |
-  # |                                                                                                      |
-  # | Read More:                                                                                           |
-  # | - https://squidfunk.github.io/mkdocs-material/getting-started/                                       |
-  # |                                                                                                      |
-  # +------------------------------------------------------------------------------------------------------+
   name: 'material'
+  color_mode: 'auto' # auto, light, dark
+  user_color_mode_toggle: true # true, false
+  nav_style: 'primary' # primary, dark, light
   
-  # +------------------------------------------------------------------------------------------------------+
-  # |                                                                                                      |
-  # | The Material theme allows "theme-extsnions", meaning that you can override parts of it by either     |
-  # | overriding a particular file, or only parts (blocks) of it.                                          |
-  # |                                                                                                      |
-  # | If you want to override parts of Material, uncomment the "custom_dir" option below and set the       |
-  # | folder (relative to the mkdocs.yml file) where your theme extensions will be located at.             |
-  # |                                                                                                      |
-  # | Read More:                                                                                           |
-  # | - https://www.mkdocs.org/user-guide/configuration/#custom_dir                                        |
-  # | - https://squidfunk.github.io/mkdocs-material/customization/#extending-the-theme                     |
-  # |                                                                                                      |
-  # +------------------------------------------------------------------------------------------------------+
-  #custom_dir: 'theme'
-  
-  # +------------------------------------------------------------------------------------------------------+
-  # |                                                                                                      |
-  # | The "favicon" option allows you to set your own image/icon to use in the browser-tab.                |
-  # |                                                                                                      |
-  # | Pretty much all image types are supported, but it's recommended to use a PNG, SVG or ICO image for   |
-  # | the favicon.                                                                                         |
-  # |                                                                                                      |
-  # | The directory is relative to the "docs_dir".                                                         |
-  # |                                                                                                      |
-  # | Example: Having a favicon.png in docs/assets/images will result in the "favicon" setting showing     |
-  # |          'assets/images/favicon.png'                                                                 |
-  # |                                                                                                      |
-  # | Read More:                                                                                           |
-  # | - https://squidfunk.github.io/mkdocs-material/setup/changing-the-logo-and-icons/#favicon             |
-  # |                                                                                                      |
-  # +------------------------------------------------------------------------------------------------------+
-  #favicon: 'assets/images/favicon.png'
-  
-  # +------------------------------------------------------------------------------------------------------+
-  # |                                                                                                      |
-  # | The "palette" section is a Material option and allows you to define specific style options such as   |
-  # | Color-Scheme, and primary and secondary Color.                                                       |
-  # |                                                                                                      |
-  # | You can also define multiple palettes that can have different Color Schemses and primary and/or      |
-  # | secondary Colors.                                                                                    |
-  # |                                                                                                      |
-  # | Read More:                                                                                           |
-  # | - https://squidfunk.github.io/mkdocs-material/setup/changing-the-colors/                             |
-  # | - https://squidfunk.github.io/mkdocs-material/setup/changing-the-colors/#color-palette-toggle        |
-  # |                                                                                                      |
-  # +------------------------------------------------------------------------------------------------------+
   palette:
   
     # +----------------------------------------------------------------------------------------------------+
