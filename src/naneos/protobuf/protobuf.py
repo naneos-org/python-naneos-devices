@@ -12,7 +12,7 @@ import naneos.protobuf.protoV1_pb2 as pbScheme
 def create_combined_entry(
     devices: list[pbScheme.Device],
     abs_timestamp: int,
-    gateway_points: Optional[list[pbScheme.GatewayPoint]] = None,
+    gateway_points: Optional[list[pbScheme.GatewayPointLegacy]] = None,
     position_points: Optional[list[pbScheme.PositionPoint]] = None,
     wind_points: Optional[list[pbScheme.WindPoint]] = None,
 ) -> pbScheme.CombinedData:
@@ -22,7 +22,7 @@ def create_combined_entry(
     combined.devices.extend(devices)
 
     if gateway_points is not None:
-        combined.gateway_points.extend(gateway_points)
+        combined.gateway_points_legacy.extend(gateway_points)
 
     if position_points is not None:
         combined.position_points.extend(position_points)
@@ -85,7 +85,9 @@ def create_proto_p2_pro_cs(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme
     return device
 
 
-def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.DevicePoint]:
+def _create_device_point(
+    ser: pd.Series, abs_time: int
+) -> Optional[pbScheme.DevicePoint]:
     try:
         device_point = pbScheme.DevicePoint()
 
@@ -107,7 +109,9 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
             idiff_tmp = ser["diffusion_current"] if ser["diffusion_current"] > 0 else 0
             device_point.diffusion_current = int(idiff_tmp * 100.0)
         if "diffusion_current_offset" in ser:
-            device_point.diffusion_current_offset = int(ser["diffusion_current_offset"] * 100.0)
+            device_point.diffusion_current_offset = int(
+                ser["diffusion_current_offset"] * 100.0
+            )
         if "ucor_global" in ser:
             device_point.corona_voltage = int(ser["ucor_global"])
         elif "corona_voltage" in ser:

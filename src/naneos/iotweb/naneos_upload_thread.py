@@ -20,11 +20,18 @@ logger = get_naneos_logger(__name__)
 
 
 class NaneosUploadThread(Thread):
-    URL: ClassVar[str] = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
-    HEADERS: ClassVar[dict] = {"Content-Type": "application/json", "Accept": "application/json"}
+    URL: ClassVar[str] = (
+        "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
+    )
+    HEADERS: ClassVar[dict] = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
 
     def __init__(
-        self, data: list[tuple[int, str, pd.DataFrame]], callback: Optional[Callable[[bool], None]]
+        self,
+        data: list[tuple[int, str, pd.DataFrame]],
+        callback: Optional[Callable[[bool], None]],
     ) -> None:
         """Adding the data that should be uploaded to the database.
 
@@ -117,31 +124,36 @@ if __name__ == "__main__":
         def callback(ret: bool) -> None:
             print(f"Callback: {ret}")
 
-        data = [(int(777), str("P2pro"), df_p2_pro), (int(666), str("P2"), df_p2)]  # noqa: UP018
+        data = [
+            (int(777), str("P2pro"), df_p2_pro),
+            (int(666), str("P2"), df_p2),
+        ]  # noqa: UP018
         # NaneosUploadThread.upload(data)
 
         t = NaneosUploadThread(data, callback)
         t.start()
         t.join()
 
-    def active_method():
-        p2_pro = Partector2Pro(serial_number=8527)
-        time.sleep(30)
+    def active_method(serial_number: int):
+        p2_pro = Partector2Pro(serial_number=serial_number)
+        time.sleep(60)
 
         df = p2_pro.get_data_pandas()
 
         if df.empty:
             print("No data available")
             return
+        else:
+            print(df)
 
         def callback(ret: bool) -> None:
             print(f"Callback: {ret}")
 
-        data = [(int(8527), str("P2pro"), df)]
+        data = [(serial_number, str("P2pro"), df)]
         t = NaneosUploadThread(data, callback)
         t.start()
         t.join()
 
         p2_pro.close(blocking=True)
 
-    active_method()
+    active_method(8112)
