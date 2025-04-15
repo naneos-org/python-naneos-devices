@@ -39,9 +39,9 @@ class Partector2Pro(PartectorBluePrint):
             else:
                 self._data_structure = PARTECTOR2_PRO_DATA_STRUCTURE_V311
 
+            self._write_line("X0006!")  # activates verbose mode
             self._write_line("h2001!")  # activates harmonics output
             self._write_line("M0004!")  # activates size dist mode
-            self._write_line("X0006!")  # activates verbose mode
             self._write_line("A0001!")  # activates the antispikes
 
 
