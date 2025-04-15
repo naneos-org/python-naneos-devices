@@ -1,13 +1,12 @@
-from collections import deque
 import time
+from collections import deque
 from typing import Optional
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.scanner import AdvertisementData
-from numpy import byte
 
-from naneos.logger import LEVEL_DEBUG, LEVEL_INFO, get_naneos_logger
+from naneos.logger import LEVEL_INFO, get_naneos_logger
 from naneos.partector.blueprints._data_structure import Partector2DataStructure
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)

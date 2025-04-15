@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector import Partector2Pro
@@ -73,12 +73,14 @@ class Partector2ProCs(Partector2Pro):
 
         if "CS_on" in line:
             self._catalyst_state = self.CS_ON
-            self._callback_catalyst(True)
+            if self._callback_catalyst:
+                self._callback_catalyst(True)
             self._mark_cs_change()
             return
         elif "CS_off" in line:
             self._catalyst_state = self.CS_OFF
-            self._callback_catalyst(False)
+            if self._callback_catalyst:
+                self._callback_catalyst(False)
             self._mark_cs_change()
             return
 
@@ -109,7 +111,8 @@ class Partector2ProCs(Partector2Pro):
             logger.warning(f"Could not parse catalyst state in backup function: {excep}")
 
         if state in [0, 1] and self._catalyst_state != state:
-            self._callback_catalyst(state == 1)
+            if self._callback_catalyst:
+                self._callback_catalyst(state == 1)
             self._catalyst_state = state
             logger.warning(f"Set catalyst state to {state} by backup function to.")
 

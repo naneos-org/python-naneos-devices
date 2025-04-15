@@ -1,8 +1,8 @@
+import time
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import datetime, timezone
 from threading import Event, Thread
-import time
 from typing import Any, Callable, Optional, Union
 
 import pandas
@@ -393,9 +393,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._init_serial_data_structure()
         self.set_verbose_freq(verb_freq)
 
-    def _init_serial(
-        self, serial_number: Optional[int] = None, port: Optional[str] = None
-    ) -> None:
+    def _init_serial(self, serial_number: Optional[int] = None, port: Optional[str] = None) -> None:
         self._sn = serial_number
         self._port = port
 

@@ -1,5 +1,5 @@
-from threading import Event, Thread
 import time
+from threading import Event, Thread
 
 from naneos.logger.custom_logger import get_naneos_logger
 

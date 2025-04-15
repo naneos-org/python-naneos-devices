@@ -1,9 +1,5 @@
-import base64
-import datetime
-import time
 from typing import Optional
 
-from numpy import isin
 import pandas as pd
 
 import naneos.protobuf.protoV1_pb2 as pbScheme
@@ -85,9 +81,7 @@ def create_proto_p2_pro_cs(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme
     return device
 
 
-def _create_device_point(
-    ser: pd.Series, abs_time: int
-) -> Optional[pbScheme.DevicePoint]:
+def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.DevicePoint]:
     try:
         device_point = pbScheme.DevicePoint()
 
@@ -109,9 +103,7 @@ def _create_device_point(
             idiff_tmp = ser["diffusion_current"] if ser["diffusion_current"] > 0 else 0
             device_point.diffusion_current = int(idiff_tmp * 100.0)
         if "diffusion_current_offset" in ser:
-            device_point.diffusion_current_offset = int(
-                ser["diffusion_current_offset"] * 100.0
-            )
+            device_point.diffusion_current_offset = int(ser["diffusion_current_offset"] * 100.0)
         if "ucor_global" in ser:
             device_point.corona_voltage = int(ser["ucor_global"])
         elif "corona_voltage" in ser:

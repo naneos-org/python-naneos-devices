@@ -1,12 +1,24 @@
-from google.protobuf.internal import containers as _containers
+from typing import ClassVar as _ClassVar
+from typing import Iterable as _Iterable
+from typing import Mapping as _Mapping
+from typing import Optional as _Optional
+from typing import Union as _Union
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from google.protobuf.internal import containers as _containers
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class CombinedData(_message.Message):
-    __slots__ = ("abs_timestamp", "devices", "gateway_points_legacy", "position_points", "wind_points", "uplink")
+    __slots__ = (
+        "abs_timestamp",
+        "devices",
+        "gateway_points_legacy",
+        "position_points",
+        "wind_points",
+        "uplink",
+    )
     ABS_TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
     DEVICES_FIELD_NUMBER: _ClassVar[int]
     GATEWAY_POINTS_LEGACY_FIELD_NUMBER: _ClassVar[int]
@@ -19,7 +31,15 @@ class CombinedData(_message.Message):
     position_points: _containers.RepeatedCompositeFieldContainer[PositionPoint]
     wind_points: _containers.RepeatedCompositeFieldContainer[WindPoint]
     uplink: Uplink
-    def __init__(self, abs_timestamp: _Optional[int] = ..., devices: _Optional[_Iterable[_Union[Device, _Mapping]]] = ..., gateway_points_legacy: _Optional[_Iterable[_Union[GatewayPointLegacy, _Mapping]]] = ..., position_points: _Optional[_Iterable[_Union[PositionPoint, _Mapping]]] = ..., wind_points: _Optional[_Iterable[_Union[WindPoint, _Mapping]]] = ..., uplink: _Optional[_Union[Uplink, _Mapping]] = ...) -> None: ...
+    def __init__(
+        self,
+        abs_timestamp: _Optional[int] = ...,
+        devices: _Optional[_Iterable[_Union[Device, _Mapping]]] = ...,
+        gateway_points_legacy: _Optional[_Iterable[_Union[GatewayPointLegacy, _Mapping]]] = ...,
+        position_points: _Optional[_Iterable[_Union[PositionPoint, _Mapping]]] = ...,
+        wind_points: _Optional[_Iterable[_Union[WindPoint, _Mapping]]] = ...,
+        uplink: _Optional[_Union[Uplink, _Mapping]] = ...,
+    ) -> None: ...
 
 class Device(_message.Message):
     __slots__ = ("type", "serial_number", "device_points", "ui_curve")
@@ -31,10 +51,66 @@ class Device(_message.Message):
     serial_number: int
     device_points: _containers.RepeatedCompositeFieldContainer[DevicePoint]
     ui_curve: _containers.RepeatedCompositeFieldContainer[UiCurve]
-    def __init__(self, type: _Optional[int] = ..., serial_number: _Optional[int] = ..., device_points: _Optional[_Iterable[_Union[DevicePoint, _Mapping]]] = ..., ui_curve: _Optional[_Iterable[_Union[UiCurve, _Mapping]]] = ...) -> None: ...
+    def __init__(
+        self,
+        type: _Optional[int] = ...,
+        serial_number: _Optional[int] = ...,
+        device_points: _Optional[_Iterable[_Union[DevicePoint, _Mapping]]] = ...,
+        ui_curve: _Optional[_Iterable[_Union[UiCurve, _Mapping]]] = ...,
+    ) -> None: ...
 
 class DevicePoint(_message.Message):
-    __slots__ = ("timestamp", "device_status", "ldsa", "average_particle_diameter", "particle_number_concentration", "temperature", "relative_humidity", "battery_voltage", "particle_mass", "corona_voltage", "diffusion_current", "deposition_voltage", "flow", "ambient_pressure", "electrometer_offset", "electrometer_2_offset", "electrometer_gain", "electrometer_2_gain", "diffusion_current_offset", "particle_number_10nm", "particle_number_16nm", "particle_number_26nm", "particle_number_43nm", "particle_number_70nm", "particle_number_114nm", "particle_number_185nm", "particle_number_300nm", "surface", "sigma_size_dist", "steps_inversion", "current_dist_0", "current_dist_1", "current_dist_2", "current_dist_3", "current_dist_4", "pump_current", "pump_pwm", "cs_status", "diffusion_current_stddev", "diffusion_current_delay_on", "diffusion_current_delay_off", "pump_voltage", "differential_pressure", "channel_pressure", "supply_voltage_5V", "positive_voltage_3V3", "negative_voltage_3V3", "usb_cc_voltage", "firmware_version")
+    __slots__ = (
+        "timestamp",
+        "device_status",
+        "ldsa",
+        "average_particle_diameter",
+        "particle_number_concentration",
+        "temperature",
+        "relative_humidity",
+        "battery_voltage",
+        "particle_mass",
+        "corona_voltage",
+        "diffusion_current",
+        "deposition_voltage",
+        "flow",
+        "ambient_pressure",
+        "electrometer_offset",
+        "electrometer_2_offset",
+        "electrometer_gain",
+        "electrometer_2_gain",
+        "diffusion_current_offset",
+        "particle_number_10nm",
+        "particle_number_16nm",
+        "particle_number_26nm",
+        "particle_number_43nm",
+        "particle_number_70nm",
+        "particle_number_114nm",
+        "particle_number_185nm",
+        "particle_number_300nm",
+        "surface",
+        "sigma_size_dist",
+        "steps_inversion",
+        "current_dist_0",
+        "current_dist_1",
+        "current_dist_2",
+        "current_dist_3",
+        "current_dist_4",
+        "pump_current",
+        "pump_pwm",
+        "cs_status",
+        "diffusion_current_stddev",
+        "diffusion_current_delay_on",
+        "diffusion_current_delay_off",
+        "pump_voltage",
+        "differential_pressure",
+        "channel_pressure",
+        "supply_voltage_5V",
+        "positive_voltage_3V3",
+        "negative_voltage_3V3",
+        "usb_cc_voltage",
+        "firmware_version",
+    )
     TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
     DEVICE_STATUS_FIELD_NUMBER: _ClassVar[int]
     LDSA_FIELD_NUMBER: _ClassVar[int]
@@ -133,7 +209,58 @@ class DevicePoint(_message.Message):
     negative_voltage_3V3: int
     usb_cc_voltage: int
     firmware_version: int
-    def __init__(self, timestamp: _Optional[int] = ..., device_status: _Optional[int] = ..., ldsa: _Optional[int] = ..., average_particle_diameter: _Optional[int] = ..., particle_number_concentration: _Optional[int] = ..., temperature: _Optional[int] = ..., relative_humidity: _Optional[int] = ..., battery_voltage: _Optional[int] = ..., particle_mass: _Optional[int] = ..., corona_voltage: _Optional[int] = ..., diffusion_current: _Optional[int] = ..., deposition_voltage: _Optional[int] = ..., flow: _Optional[int] = ..., ambient_pressure: _Optional[int] = ..., electrometer_offset: _Optional[int] = ..., electrometer_2_offset: _Optional[int] = ..., electrometer_gain: _Optional[int] = ..., electrometer_2_gain: _Optional[int] = ..., diffusion_current_offset: _Optional[int] = ..., particle_number_10nm: _Optional[int] = ..., particle_number_16nm: _Optional[int] = ..., particle_number_26nm: _Optional[int] = ..., particle_number_43nm: _Optional[int] = ..., particle_number_70nm: _Optional[int] = ..., particle_number_114nm: _Optional[int] = ..., particle_number_185nm: _Optional[int] = ..., particle_number_300nm: _Optional[int] = ..., surface: _Optional[int] = ..., sigma_size_dist: _Optional[int] = ..., steps_inversion: _Optional[int] = ..., current_dist_0: _Optional[int] = ..., current_dist_1: _Optional[int] = ..., current_dist_2: _Optional[int] = ..., current_dist_3: _Optional[int] = ..., current_dist_4: _Optional[int] = ..., pump_current: _Optional[int] = ..., pump_pwm: _Optional[int] = ..., cs_status: _Optional[int] = ..., diffusion_current_stddev: _Optional[int] = ..., diffusion_current_delay_on: _Optional[int] = ..., diffusion_current_delay_off: _Optional[int] = ..., pump_voltage: _Optional[int] = ..., differential_pressure: _Optional[int] = ..., channel_pressure: _Optional[int] = ..., supply_voltage_5V: _Optional[int] = ..., positive_voltage_3V3: _Optional[int] = ..., negative_voltage_3V3: _Optional[int] = ..., usb_cc_voltage: _Optional[int] = ..., firmware_version: _Optional[int] = ...) -> None: ...
+    def __init__(
+        self,
+        timestamp: _Optional[int] = ...,
+        device_status: _Optional[int] = ...,
+        ldsa: _Optional[int] = ...,
+        average_particle_diameter: _Optional[int] = ...,
+        particle_number_concentration: _Optional[int] = ...,
+        temperature: _Optional[int] = ...,
+        relative_humidity: _Optional[int] = ...,
+        battery_voltage: _Optional[int] = ...,
+        particle_mass: _Optional[int] = ...,
+        corona_voltage: _Optional[int] = ...,
+        diffusion_current: _Optional[int] = ...,
+        deposition_voltage: _Optional[int] = ...,
+        flow: _Optional[int] = ...,
+        ambient_pressure: _Optional[int] = ...,
+        electrometer_offset: _Optional[int] = ...,
+        electrometer_2_offset: _Optional[int] = ...,
+        electrometer_gain: _Optional[int] = ...,
+        electrometer_2_gain: _Optional[int] = ...,
+        diffusion_current_offset: _Optional[int] = ...,
+        particle_number_10nm: _Optional[int] = ...,
+        particle_number_16nm: _Optional[int] = ...,
+        particle_number_26nm: _Optional[int] = ...,
+        particle_number_43nm: _Optional[int] = ...,
+        particle_number_70nm: _Optional[int] = ...,
+        particle_number_114nm: _Optional[int] = ...,
+        particle_number_185nm: _Optional[int] = ...,
+        particle_number_300nm: _Optional[int] = ...,
+        surface: _Optional[int] = ...,
+        sigma_size_dist: _Optional[int] = ...,
+        steps_inversion: _Optional[int] = ...,
+        current_dist_0: _Optional[int] = ...,
+        current_dist_1: _Optional[int] = ...,
+        current_dist_2: _Optional[int] = ...,
+        current_dist_3: _Optional[int] = ...,
+        current_dist_4: _Optional[int] = ...,
+        pump_current: _Optional[int] = ...,
+        pump_pwm: _Optional[int] = ...,
+        cs_status: _Optional[int] = ...,
+        diffusion_current_stddev: _Optional[int] = ...,
+        diffusion_current_delay_on: _Optional[int] = ...,
+        diffusion_current_delay_off: _Optional[int] = ...,
+        pump_voltage: _Optional[int] = ...,
+        differential_pressure: _Optional[int] = ...,
+        channel_pressure: _Optional[int] = ...,
+        supply_voltage_5V: _Optional[int] = ...,
+        positive_voltage_3V3: _Optional[int] = ...,
+        negative_voltage_3V3: _Optional[int] = ...,
+        usb_cc_voltage: _Optional[int] = ...,
+        firmware_version: _Optional[int] = ...,
+    ) -> None: ...
 
 class UiCurve(_message.Message):
     __slots__ = ("timestamp", "U_values", "I_values")
@@ -143,7 +270,12 @@ class UiCurve(_message.Message):
     timestamp: int
     U_values: _containers.RepeatedScalarFieldContainer[int]
     I_values: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, timestamp: _Optional[int] = ..., U_values: _Optional[_Iterable[int]] = ..., I_values: _Optional[_Iterable[int]] = ...) -> None: ...
+    def __init__(
+        self,
+        timestamp: _Optional[int] = ...,
+        U_values: _Optional[_Iterable[int]] = ...,
+        I_values: _Optional[_Iterable[int]] = ...,
+    ) -> None: ...
 
 class Uplink(_message.Message):
     __slots__ = ("type", "serial_number", "uplink_points")
@@ -153,10 +285,40 @@ class Uplink(_message.Message):
     type: int
     serial_number: int
     uplink_points: _containers.RepeatedCompositeFieldContainer[UplinkPoint]
-    def __init__(self, type: _Optional[int] = ..., serial_number: _Optional[int] = ..., uplink_points: _Optional[_Iterable[_Union[UplinkPoint, _Mapping]]] = ...) -> None: ...
+    def __init__(
+        self,
+        type: _Optional[int] = ...,
+        serial_number: _Optional[int] = ...,
+        uplink_points: _Optional[_Iterable[_Union[UplinkPoint, _Mapping]]] = ...,
+    ) -> None: ...
 
 class UplinkPoint(_message.Message):
-    __slots__ = ("timestamp", "firmware_version", "device_status", "cellular_signal", "battery_int_voltage", "voltage_in", "usb_voltage_out", "usb_cc_voltage", "temperature_int", "relative_humidity_int", "temperature_ext_1", "relative_humidity_ext_1", "temperature_ext_2", "relative_humidity_ext_2", "sraw_voc", "voc_index", "ambient_pressure", "co2_ppm_1", "co2_ppm_2", "pm1_0_mass", "pm2_5_mass", "pm4_0_mass", "pm10_0_mass", "water_level_adc_percent")
+    __slots__ = (
+        "timestamp",
+        "firmware_version",
+        "device_status",
+        "cellular_signal",
+        "battery_int_voltage",
+        "voltage_in",
+        "usb_voltage_out",
+        "usb_cc_voltage",
+        "temperature_int",
+        "relative_humidity_int",
+        "temperature_ext_1",
+        "relative_humidity_ext_1",
+        "temperature_ext_2",
+        "relative_humidity_ext_2",
+        "sraw_voc",
+        "voc_index",
+        "ambient_pressure",
+        "co2_ppm_1",
+        "co2_ppm_2",
+        "pm1_0_mass",
+        "pm2_5_mass",
+        "pm4_0_mass",
+        "pm10_0_mass",
+        "water_level_adc_percent",
+    )
     TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
     FIRMWARE_VERSION_FIELD_NUMBER: _ClassVar[int]
     DEVICE_STATUS_FIELD_NUMBER: _ClassVar[int]
@@ -205,10 +367,48 @@ class UplinkPoint(_message.Message):
     pm4_0_mass: int
     pm10_0_mass: int
     water_level_adc_percent: int
-    def __init__(self, timestamp: _Optional[int] = ..., firmware_version: _Optional[int] = ..., device_status: _Optional[int] = ..., cellular_signal: _Optional[int] = ..., battery_int_voltage: _Optional[int] = ..., voltage_in: _Optional[int] = ..., usb_voltage_out: _Optional[int] = ..., usb_cc_voltage: _Optional[int] = ..., temperature_int: _Optional[int] = ..., relative_humidity_int: _Optional[int] = ..., temperature_ext_1: _Optional[int] = ..., relative_humidity_ext_1: _Optional[int] = ..., temperature_ext_2: _Optional[int] = ..., relative_humidity_ext_2: _Optional[int] = ..., sraw_voc: _Optional[int] = ..., voc_index: _Optional[int] = ..., ambient_pressure: _Optional[int] = ..., co2_ppm_1: _Optional[int] = ..., co2_ppm_2: _Optional[int] = ..., pm1_0_mass: _Optional[int] = ..., pm2_5_mass: _Optional[int] = ..., pm4_0_mass: _Optional[int] = ..., pm10_0_mass: _Optional[int] = ..., water_level_adc_percent: _Optional[int] = ...) -> None: ...
+    def __init__(
+        self,
+        timestamp: _Optional[int] = ...,
+        firmware_version: _Optional[int] = ...,
+        device_status: _Optional[int] = ...,
+        cellular_signal: _Optional[int] = ...,
+        battery_int_voltage: _Optional[int] = ...,
+        voltage_in: _Optional[int] = ...,
+        usb_voltage_out: _Optional[int] = ...,
+        usb_cc_voltage: _Optional[int] = ...,
+        temperature_int: _Optional[int] = ...,
+        relative_humidity_int: _Optional[int] = ...,
+        temperature_ext_1: _Optional[int] = ...,
+        relative_humidity_ext_1: _Optional[int] = ...,
+        temperature_ext_2: _Optional[int] = ...,
+        relative_humidity_ext_2: _Optional[int] = ...,
+        sraw_voc: _Optional[int] = ...,
+        voc_index: _Optional[int] = ...,
+        ambient_pressure: _Optional[int] = ...,
+        co2_ppm_1: _Optional[int] = ...,
+        co2_ppm_2: _Optional[int] = ...,
+        pm1_0_mass: _Optional[int] = ...,
+        pm2_5_mass: _Optional[int] = ...,
+        pm4_0_mass: _Optional[int] = ...,
+        pm10_0_mass: _Optional[int] = ...,
+        water_level_adc_percent: _Optional[int] = ...,
+    ) -> None: ...
 
 class GatewayPointLegacy(_message.Message):
-    __slots__ = ("timestamp", "serial_number", "firmware_version", "free_memory", "free_heap", "largest_free_block_heap", "cellular_signal", "battery_int_soc", "battery_ext_soc", "battery_ext_voltage", "charging_ext_voltage")
+    __slots__ = (
+        "timestamp",
+        "serial_number",
+        "firmware_version",
+        "free_memory",
+        "free_heap",
+        "largest_free_block_heap",
+        "cellular_signal",
+        "battery_int_soc",
+        "battery_ext_soc",
+        "battery_ext_voltage",
+        "charging_ext_voltage",
+    )
     TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
     SERIAL_NUMBER_FIELD_NUMBER: _ClassVar[int]
     FIRMWARE_VERSION_FIELD_NUMBER: _ClassVar[int]
@@ -231,7 +431,20 @@ class GatewayPointLegacy(_message.Message):
     battery_ext_soc: int
     battery_ext_voltage: int
     charging_ext_voltage: int
-    def __init__(self, timestamp: _Optional[int] = ..., serial_number: _Optional[int] = ..., firmware_version: _Optional[int] = ..., free_memory: _Optional[int] = ..., free_heap: _Optional[int] = ..., largest_free_block_heap: _Optional[int] = ..., cellular_signal: _Optional[int] = ..., battery_int_soc: _Optional[int] = ..., battery_ext_soc: _Optional[int] = ..., battery_ext_voltage: _Optional[int] = ..., charging_ext_voltage: _Optional[int] = ...) -> None: ...
+    def __init__(
+        self,
+        timestamp: _Optional[int] = ...,
+        serial_number: _Optional[int] = ...,
+        firmware_version: _Optional[int] = ...,
+        free_memory: _Optional[int] = ...,
+        free_heap: _Optional[int] = ...,
+        largest_free_block_heap: _Optional[int] = ...,
+        cellular_signal: _Optional[int] = ...,
+        battery_int_soc: _Optional[int] = ...,
+        battery_ext_soc: _Optional[int] = ...,
+        battery_ext_voltage: _Optional[int] = ...,
+        charging_ext_voltage: _Optional[int] = ...,
+    ) -> None: ...
 
 class PositionPoint(_message.Message):
     __slots__ = ("timestamp", "latitude", "longitude")
@@ -241,7 +454,12 @@ class PositionPoint(_message.Message):
     timestamp: int
     latitude: float
     longitude: float
-    def __init__(self, timestamp: _Optional[int] = ..., latitude: _Optional[float] = ..., longitude: _Optional[float] = ...) -> None: ...
+    def __init__(
+        self,
+        timestamp: _Optional[int] = ...,
+        latitude: _Optional[float] = ...,
+        longitude: _Optional[float] = ...,
+    ) -> None: ...
 
 class WindPoint(_message.Message):
     __slots__ = ("timestamp", "wind_speed", "wind_angle")
@@ -251,4 +469,9 @@ class WindPoint(_message.Message):
     timestamp: int
     wind_speed: int
     wind_angle: int
-    def __init__(self, timestamp: _Optional[int] = ..., wind_speed: _Optional[int] = ..., wind_angle: _Optional[int] = ...) -> None: ...
+    def __init__(
+        self,
+        timestamp: _Optional[int] = ...,
+        wind_speed: _Optional[int] = ...,
+        wind_angle: _Optional[int] = ...,
+    ) -> None: ...

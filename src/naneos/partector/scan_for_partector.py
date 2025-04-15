@@ -61,9 +61,7 @@ class ScanPartector(PartectorBluePrint):
             self._connected = True
 
 
-def scan_for_serial_partector(
-    serial_number: int, partector_version: str
-) -> Optional[str]:
+def scan_for_serial_partector(serial_number: int, partector_version: str) -> Optional[str]:
     """Scans all possible ports using threads (fast)."""
     threads = []
     q_1 = Queue()
@@ -72,9 +70,7 @@ def scan_for_serial_partector(
     q_2_pro_cs = Queue()
 
     [
-        threads.append(
-            Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs))
-        )
+        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
         for port in ls_ports()
     ]
     [thread.start() for thread in threads]
@@ -108,9 +104,7 @@ def scan_for_serial_partectors(ports_exclude: Optional[list] = None) -> dict:
         ports_exclude = []
 
     [
-        threads.append(
-            Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs))
-        )
+        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
         for port in ls_ports(ports_exclude)
         if port not in ports_exclude
     ]
@@ -125,9 +119,7 @@ def scan_for_serial_partectors(ports_exclude: Optional[list] = None) -> dict:
     return {"P1": p1, "P2": p2, "P2pro": p2_pro, "P2proCS": p2_pro_cs}
 
 
-def __scan_port(
-    port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Queue
-) -> None:
+def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Queue) -> None:
     try:
         partector = ScanPartector(port=port)
 

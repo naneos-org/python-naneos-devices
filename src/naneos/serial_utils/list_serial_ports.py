@@ -1,6 +1,5 @@
-from pathlib import Path
 import sys
-from typing import Optional
+from pathlib import Path
 
 import serial
 import serial.tools.list_ports as ls

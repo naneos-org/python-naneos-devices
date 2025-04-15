@@ -20,9 +20,7 @@ logger = get_naneos_logger(__name__)
 
 
 class NaneosUploadThread(Thread):
-    URL: ClassVar[str] = (
-        "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
-    )
+    URL: ClassVar[str] = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
     HEADERS: ClassVar[dict] = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -136,7 +134,7 @@ if __name__ == "__main__":
 
     def active_method(serial_number: int):
         p2_pro = Partector2Pro(serial_number=serial_number)
-        time.sleep(30)
+        time.sleep(20)
 
         df = p2_pro.get_data_pandas()
 

@@ -1,7 +1,7 @@
 import datetime as dt
 
-from influxdb_client import InfluxDBClient
 import pandas as pd
+from influxdb_client.client.influxdb_client import InfluxDBClient
 
 from naneos.logger import get_naneos_logger
 
@@ -24,12 +24,12 @@ def get_query(bucket: str, serial_number: str, start: str, stop: str) -> str:
     return query
 
 
-def create_start_stop_timestamp(start: dt.datetime, stop: dt.datetime) -> list:
+def create_start_stop_timestamp(start_dt: dt.datetime, stop_dt: dt.datetime) -> list:
     """Returns a list of lists with start stop times in 1 day chunks in unix timesamps"""
     delta_seconds = 3600 * 24 * 2
 
-    start = int(start.timestamp())
-    stop = int(stop.timestamp())
+    start = int(start_dt.timestamp())
+    stop = int(stop_dt.timestamp())
 
     start_stop_times = []
 

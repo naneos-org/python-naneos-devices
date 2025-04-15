@@ -1,8 +1,7 @@
-from threading import Event, Thread
 import time
+from threading import Event, Thread
 from typing import Optional
 
-import serial
 import simplepyble
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
