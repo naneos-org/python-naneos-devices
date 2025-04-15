@@ -1,6 +1,5 @@
 import asyncio
 from collections import deque
-from distutils.command import upload
 from threading import Event, Thread
 import time
 from typing import Optional
@@ -50,7 +49,9 @@ class PartectorBle(Thread):
 
         data = []
         while len(self._partector_clients[serial_number]._data_queue) > 1:
-            data.append(self._partector_clients[serial_number]._data_queue.popleft().to_dict())
+            data.append(
+                self._partector_clients[serial_number]._data_queue.popleft().to_dict()
+            )
 
         return data
 
@@ -136,7 +137,9 @@ class PartectorBle(Thread):
         If the device is a old one, the advertisement data will be parsed and added to an partector_ble_device object.
         """
         for device, values in self._devices_to_check.items():
-            if values[0] not in self._partector_clients:  # check if SN is already in the dict
+            if (
+                values[0] not in self._partector_clients
+            ):  # check if SN is already in the dict
                 self._partector_clients[values[0]] = PartectorBleDevice(values[0])
 
             client = BleakClient(device, self._disconnected_callback, timeout=5)
@@ -157,7 +160,9 @@ class PartectorBle(Thread):
             await client.start_notify(self.CHAR_STD, my_ble_device.callback_std)
             await client.start_notify(self.CHAR_AUX, my_ble_device.callback_aux)
             await client.start_notify(self.CHAR_READ, my_ble_device.callback_read)
-            await client.start_notify(self.CHAR_SIZE_DIST, my_ble_device.callback_size_dist)
+            await client.start_notify(
+                self.CHAR_SIZE_DIST, my_ble_device.callback_size_dist
+            )
 
             my_ble_device.ble_client = client
             my_ble_device.data_format = "new"
@@ -190,7 +195,9 @@ class PartectorBle(Thread):
 
         logger.info("Disconnected from all BLE devices")
 
-    async def _detection_callback(self, device: BLEDevice, data: AdvertisementData) -> None:
+    async def _detection_callback(
+        self, device: BLEDevice, data: AdvertisementData
+    ) -> None:
         """Handles all the callbacks from the BleakScanner used in the scan method.
 
         Args:
@@ -224,7 +231,9 @@ class PartectorBle(Thread):
         """
         try:
             serial_number = next(
-                x.serial_number for x in self._partector_clients.values() if x.ble_client == client
+                x.serial_number
+                for x in self._partector_clients.values()
+                if x.ble_client == client
             )
             logger.info(f"Disconnected from {serial_number}")
             self._partector_clients.pop(serial_number)
