@@ -25,6 +25,6 @@ jobs:
           restore-keys: |
             mkdocs-material-
       - run: pip install mkdocs-material mkdocstrings[python] mkdocs-literate-nav mkdocs-gen-files mkdocs-api-autonav
-      - run: echo "PYTHONPATH=$PWD/src/naneos" >> $GITHUB_ENV
+      - run: echo "PYTHONPATH=$PWD/src" >> $GITHUB_ENV
       - run: mkdir -p docs
       - run: mkdocs gh-deploy --force
