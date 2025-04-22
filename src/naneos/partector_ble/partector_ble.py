@@ -234,21 +234,19 @@ class PartectorBle(Thread):
 if __name__ == "__main__":
     import pandas as pd
 
-    from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
-
     SN = 8150
     SN2 = 8112
 
-    partector_ble = PartectorBle(serial_numbers=[SN, SN2])
+    partector_ble = PartectorBle(serial_numbers=[SN2])
     partector_ble.start()
 
     try:
         while True:
+            time.sleep(5)
             upload_list = partector_ble.get_upload_list()
-            # print(upload_list)
-            upload_thread = NaneosUploadThread(upload_list, None)
-            upload_thread.start()
-            time.sleep(10)
+            print(upload_list)
+            # upload_thread = NaneosUploadThread(upload_list, None)
+            # upload_thread.start()
             print("Uploaded")
     except KeyboardInterrupt:
         pass

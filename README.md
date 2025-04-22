@@ -19,7 +19,7 @@ This repository contains a collection of Python scripts and utilities for our [n
 
 # Installation
 
-You can install the `naneos-devices` package using pip. Make sure you have Python 3.11 or higher installed. Open a terminal and run the following command:
+You can install the `naneos-devices` package using pip. Make sure you have Python 3.10 or higher installed. Open a terminal and run the following command:
 
 ```bash
 pip install naneos-devices

@@ -149,12 +149,18 @@ class PartectorBleDevice:
         return decoded_data
 
     @classmethod
-    def get_naneos_adv(cls, naneos_adv: bytearray) -> tuple[Optional[bytes], Optional[int]]:
+    def get_naneos_adv(cls, adv: AdvertisementData) -> tuple[Optional[bytes], Optional[int]]:
         """
         Returns the custom advertisement data from Naneos devices.
 
         We are violating the BLE standard here by using the manufacturer data field for our own purposes.
         """
+
+        data_ble = adv.manufacturer_data
+        part1 = next(iter(data_ble.keys())).to_bytes(2, "big")
+        part2 = next(iter(data_ble.values()))
+        naneos_adv = part1 + part2
+
         # security check 2: The data must be 22 bytes long
         if len(naneos_adv) != 22:
             return (None, None)
