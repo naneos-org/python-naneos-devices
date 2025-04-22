@@ -13,7 +13,7 @@
 [mit-license]: https://img.shields.io/badge/license-MIT-blue.svg
 <!-- hyperlinks -->
 
-[![Projektlogo](https://github.com/naneos-org/public-data/blob/master/img/logo_naneos.png?raw=true)](https://naneos.ch)
+[![Projektlogo](https://raw.githubusercontent.com/naneos-org/public-data/master/img/logo_naneos.png)](https://naneos.ch)
 
 This repository contains a collection of Python scripts and utilities for our [naneos particle solutions](https://naneos.ch) measurement devices. These scripts will provide various functionalities related to data acquisition, analysis, and visualization for your measurement devices.
 
