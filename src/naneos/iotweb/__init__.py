@@ -1,5 +1,7 @@
 from naneos.iotweb.download.downloader import download_from_iotweb
-from naneos.iotweb.iotweb import P1uploadThread
-from naneos.iotweb.partector2_pro_garage_upload import Partector2ProGarageUpload
+from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
 
-__all__ = ["P1uploadThread", "Partector2ProGarageUpload", "download_from_iotweb"]
+__all__ = [
+    "download_from_iotweb",
+    "NaneosUploadThread",
+]

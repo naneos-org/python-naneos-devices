@@ -13,7 +13,7 @@
 [mit-license]: https://img.shields.io/badge/license-MIT-blue.svg
 <!-- hyperlinks -->
 
-[![Projektlogo](assets/logo_naneos.png)](https://naneos.ch)
+[![Projektlogo](https://github.com/naneos-org/public-data/blob/master/img/logo_naneos.png?raw=true)](https://naneos.ch)
 
 This repository contains a collection of Python scripts and utilities for our [naneos particle solutions](https://naneos.ch) measurement devices. These scripts will provide various functionalities related to data acquisition, analysis, and visualization for your measurement devices.
 
@@ -32,53 +32,36 @@ To establish a serial connection with the Partector2 device and retrieve data, y
 ```python
 import time
 
-from naneos.partector import Partector1, Partector2, scan_for_serial_partectors
+from naneos.partector import Partector1, Partector2, Partector2Pro, scan_for_serial_partectors
 
-# Lists all available Partector2 devices
-x = scan_for_serial_partectors()
+PROD_NAMES = ["P1", "P2", "P2pro"]
 
-print(x)  # eg. {'P1': {}, 'P2': {8112: '/dev/cu.usbmodemDOSEMet_1'}, 'P2pro': {}, 'P2proCS': {}}
+# Lists all available Partector devices
+partectors = scan_for_serial_partectors()
+# print eg.: {'P1': {}, 'P2': {8112: '/dev/cu.usbmodemDOSEMet_1'}, 'P2pro': {}, 'P2proCS': {}}
+print(partectors)
 
-# Split dictionary into P1 and P2 devices
-p1 = x["P1"]
-p2 = x["P2"]
-p2_pro = x["P2pro"]
+for prod in PROD_NAMES:
+    if len(partectors[prod]) > 0:
+        for k, v in partectors[prod].items():
+            print(f"Found {prod} wit serial number {k} on port {v}")
+            if prod == "P1":
+                dev = Partector1(serial_number=k)
+            elif prod == "P2":
+                dev = Partector2(serial_number=k)
+            elif prod == "P2pro":
+                dev = Partector2Pro(serial_number=k)
+            else:
+                raise ValueError(f"Unknown product name: {prod}")
 
-if len(p1) > 0:
-    print("Found Partector1 devices:")
-    for k, v in p1.items():
-        print(f"Serial number: {k}, Port: {v}")
+            df = dev.get_data_pandas()
+            max_wait_time = time.time() + 15
+            while df.empty and time.time() < max_wait_time:
+                time.sleep(0.5)
+                df = dev.get_data_pandas()
 
-    # Connect to the first device with sn
-    p1_dev = Partector1(serial_number=next(iter(p1.keys())))
-    # or with port
-    # p1_dev = Partector1(port=next(iter(p1.values())))
-
-    time.sleep(2)
-
-    # Get the data as a pandas DataFrame
-    data = p1_dev.get_data_pandas()
-    print(data)
-
-    p1_dev.close()
-
-if len(p2) > 0:
-    print("Found Partector2 devices:")
-    for k, v in p2.items():
-        print(f"Serial number: {k}, Port: {v}")
-
-    # Connect to the first device with sn
-    p2_dev = Partector2(serial_number=next(iter(p2.keys())))
-    # or with port
-    # p2_dev = Partector2(port=next(iter(p2.values())))
-
-    time.sleep(2)
-
-    # Get the data as a pandas DataFrame
-    data = p2_dev.get_data_pandas()
-    print(data)
-
-    p2_dev.close()
+            print(df)
+            dev.close()
 ```
 
 Make sure to modify the code according to your specific requirements. Refer to the documentation and comments within the code for detailed explanations and usage instructions.
@@ -87,33 +70,22 @@ Make sure to modify the code according to your specific requirements. Refer to t
 
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
-<!-- ## Important commands when working locally with tox
-```bash
-tox -e clean #cleans the dist and docs/_build folder
-tox -e build #builds the package based on the last tag
-pipenv install -e . #installs the locally builded package
-
-tox -e docs #generates the documentation
-$
-tox -e publish  # to test your project uploads correctly in test.pypi.org
-tox -e publish -- --repository pypi  # to release your package to PyPI
-
-tox -av  # to list all the tasks available
-
-### Testing with tox
-# 1. Install the desired version with pyenv
-pyenv install 3.8.X 3.9.X, 3.10.X, 3.11.X, 3.12.X
-# 2. Set the desired versions global
-pyenv global 3.8.X 3.9.X 3.10.X 3.11.X 3.12.X
-# 3. Run tox
-tox
-```
-It's recommended to use a .pypirc file to store your credentials. See [here](https://packaging.python.org/en/latest/specifications/pypirc/) for more information. -->
-
 # Protobuf
 Use this command to create a py and pyi file from the proto file
 ```bash
 protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto 
+```
+
+# Testing
+I recommend working with uv.
+Testing with the local python venv in vscode GUI or with:
+```bash
+pytest
+```
+
+Testing every supported python version:
+```bash
+nox -s tests
 ```
 
 # Building executables
