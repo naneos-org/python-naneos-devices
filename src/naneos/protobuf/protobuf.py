@@ -29,48 +29,12 @@ def create_combined_entry(
     return combined
 
 
-def create_proto_p1(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
+def create_proto_device(sn: int, abs_time: int, df: pd.DataFrame, dev_type: str) -> pbScheme.Device:
+    LIST_DEVICES = ["P2", "P1", "P2pro", "P2proCS"]
+
     device = pbScheme.Device()
-    device.type = 1
-    device.serial_number = sn
-
-    device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
-    device_points = [x for x in device_points if x is not None]
-
-    device.device_points.extend(device_points)
-
-    return device
-
-
-def create_proto_p2(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
-    device = pbScheme.Device()
-    device.type = 0
-    device.serial_number = sn
-
-    device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
-    device_points = [x for x in device_points if x is not None]
-
-    device.device_points.extend(device_points)
-
-    return device
-
-
-def create_proto_p2_pro(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
-    device = pbScheme.Device()
-    device.type = 2
-    device.serial_number = sn
-
-    device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
-    device_points = [x for x in device_points if x is not None]
-
-    device.device_points.extend(device_points)
-
-    return device
-
-
-def create_proto_p2_pro_cs(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
-    device = pbScheme.Device()
-    device.type = 3
+    device.type = LIST_DEVICES.index(dev_type)
+    print(f"Device type: {dev_type}, index: {device.type}")
     device.serial_number = sn
 
     device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
