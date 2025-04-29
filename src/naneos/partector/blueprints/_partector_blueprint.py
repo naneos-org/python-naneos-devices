@@ -43,7 +43,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._legacy_data_structure: bool = False
 
     def close(
-        self, blocking: bool = False, shutdown: bool = False, verbose_reset: bool = True
+        self, blocking: bool = True, shutdown: bool = False, verbose_reset: bool = True
     ) -> None:
         """Closes the serial connection and stops the reading thread."""
         self._close(blocking, shutdown, verbose_reset)
