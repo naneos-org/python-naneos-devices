@@ -80,7 +80,7 @@ protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto
 I recommend working with uv.
 Testing with the local python venv in vscode GUI or with:
 ```bash
-pytest
+uv run --env-file .env pytest
 ```
 
 Testing every supported python version:
