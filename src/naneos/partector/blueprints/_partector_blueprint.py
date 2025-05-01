@@ -68,7 +68,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         checker_thread = Thread(target=self._checker_thread)
         checker_thread.start()
 
-        while not self.thread_event.wait(0.001):
+        while not self.thread_event.is_set():
             self._run()
 
         checker_thread.join()
