@@ -57,7 +57,7 @@ class PartectorBleDevice:
     def callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         decoded_data = self.decode_aux_characteristic(data)
         if self._data_queue:
-            for field in self._data_queue[-1].__dataclass_fields__:
+            for field in Partector2DataStructure.__dataclass_fields__:
                 if getattr(decoded_data, field) is not None:
                     # logger.info(f"Setting {field} to {getattr(decoded_data, field)}")
                     setattr(self._data_queue[-1], field, getattr(decoded_data, field))
@@ -67,7 +67,7 @@ class PartectorBleDevice:
     def callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         decoded_data = self.decode_size_dist_characteristic(data)
         if self._data_queue:
-            for field in self._data_queue[-1].__dataclass_fields__:
+            for field in Partector2DataStructure.__dataclass_fields__:
                 if getattr(decoded_data, field) is not None:
                     setattr(self._data_queue[-1], field, getattr(decoded_data, field))
 
