@@ -1,6 +1,6 @@
 import time
 
-from naneos.partector_ble.partector_ble import PartectorBle
+from naneos.partector_ble_old.partector_ble import PartectorBle
 
 
 def test_connection_to_partector():

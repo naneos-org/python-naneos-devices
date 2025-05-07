@@ -10,7 +10,7 @@ from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
 from naneos.logger import LEVEL_DEBUG, get_naneos_logger
-from naneos.partector_ble.partector_ble_device import PartectorBleDevice
+from naneos.partector_ble_old.partector_ble_device import PartectorBleDevice
 
 logger = get_naneos_logger(__name__, LEVEL_DEBUG)
 
