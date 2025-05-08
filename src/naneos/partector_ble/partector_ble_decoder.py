@@ -2,6 +2,10 @@ from typing import Optional
 
 from bleak.backends.scanner import AdvertisementData
 
+from naneos.logger import LEVEL_INFO, get_naneos_logger
+
+logger = get_naneos_logger(__name__, LEVEL_INFO)
+
 
 class PartectorBleDecoder:
     """
@@ -55,6 +59,6 @@ class PartectorBleDecoder:
         if not cls._check_data_format(adv_bytes):
             return None
 
-        print(f"Serial Number: {cls.get_serial_number(adv_bytes)}")  # just for debug reasons
+        logger.debug(f"Serial Number: {cls.get_serial_number(adv_bytes)}")  # just for debug reasons
 
         return adv_bytes
