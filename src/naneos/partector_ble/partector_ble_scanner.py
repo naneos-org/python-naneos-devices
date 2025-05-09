@@ -14,7 +14,12 @@ logger = get_naneos_logger(__name__, LEVEL_INFO)
 
 class PartectorBleScanner:
     """
-    PartectorBleScanner manages the BLE scanning process and runs in the loop that is passed to it.
+    Context-managed BLE scanner for Partector devices.
+
+    This scanner runs in the provided asyncio event loop and collects advertisement data
+    from BLE devices named "P2" or "PartectorBT". Decoded advertisement payloads are
+    pushed into an asyncio.Queue for further processing. Can be used with `async with`
+    for automatic startup and cleanup.
     """
 
     BLE_NAMES_NANEOS = {"P2", "PartectorBT"}  # P2 on windows, PartectorBT on linux / mac
@@ -82,7 +87,7 @@ class PartectorBleScanner:
         if device.name not in self.BLE_NAMES_NANEOS:
             return None
 
-        decoded_adv = PartectorBleDecoder.decode_std_chareristic(adv)
+        decoded_adv: bytes | None = PartectorBleDecoder.decode_std_chareristic(adv)
 
         if decoded_adv:
             if self._queue.full():  # if the queue is full, make space by removing the oldest item
