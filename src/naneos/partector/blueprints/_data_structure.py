@@ -4,6 +4,19 @@ from typing import Optional, Union
 
 @dataclass
 class Partector2DataStructure:
+    AUX_FIELD_NAMES = {
+        "corona_voltage",
+        "diffusion_current",
+        "deposition_voltage",
+        "flow_from_dp",
+        "ambient_pressure",
+        "em_amplitude1",
+        "em_amplitude2",
+        "em_gain1",
+        "em_gain2",
+        "diffusion_current_offset",
+    }
+
     def to_dict(self, remove_nan=True) -> dict[str, Union[int, float]]:
         if remove_nan:
             return {
@@ -16,49 +29,50 @@ class Partector2DataStructure:
 
     # mandatory
     unix_timestamp: Optional[int] = None
+    serial_number: Optional[int] = None
 
     # optional
     runtime_min: Optional[float] = None
     device_status: Optional[int] = None
     ldsa: Optional[float] = None
-    particle_number: Optional[int] = None
+    particle_number: Optional[float] = None
     particle_diameter: Optional[float] = None
     particle_mass: Optional[float] = None
     particle_surface: Optional[float] = None
     diffusion_current: Optional[float] = None
     diffusion_current_offset: Optional[float] = None
-    corona_voltage: Optional[int] = None
+    corona_voltage: Optional[float] = None
     hires_adc1: Optional[float] = None
     hires_adc2: Optional[float] = None
     em_amplitude1: Optional[float] = None
     em_amplitude2: Optional[float] = None
-    em_gain1: Optional[int] = None
-    em_gain2: Optional[int] = None
+    em_gain1: Optional[float] = None
+    em_gain2: Optional[float] = None
     temperature: Optional[float] = None
-    relativ_humidity: Optional[int] = None
-    deposition_voltage: Optional[int] = None
+    relative_humidity: Optional[float] = None
+    deposition_voltage: Optional[float] = None
     battery_voltage: Optional[float] = None
     flow_from_dp: Optional[float] = None
-    differential_pressure: Optional[int] = None
+    differential_pressure: Optional[float] = None
     ambient_pressure: Optional[float] = None
     sigma: Optional[float] = None
     pump_current: Optional[float] = None
-    pump_pwm: Optional[int] = None
-    dist_steps: Optional[int] = None
-    dist_particle_number_10nm: Optional[int] = None
-    dist_particle_number_16nm: Optional[int] = None
-    dist_particle_number_26nm: Optional[int] = None
-    dist_particle_number_43nm: Optional[int] = None
-    dist_particle_number_70nm: Optional[int] = None
-    dist_particle_number_114nm: Optional[int] = None
-    dist_particle_number_185nm: Optional[int] = None
-    dist_particle_number_300nm: Optional[int] = None
+    pump_pwm: Optional[float] = None
+    dist_steps: Optional[float] = None
+    dist_particle_number_10nm: Optional[float] = None
+    dist_particle_number_16nm: Optional[float] = None
+    dist_particle_number_26nm: Optional[float] = None
+    dist_particle_number_43nm: Optional[float] = None
+    dist_particle_number_70nm: Optional[float] = None
+    dist_particle_number_114nm: Optional[float] = None
+    dist_particle_number_185nm: Optional[float] = None
+    dist_particle_number_300nm: Optional[float] = None
     dist_current_0: Optional[float] = None
     dist_current_1: Optional[float] = None
     dist_current_2: Optional[float] = None
     dist_current_3: Optional[float] = None
     dist_current_4: Optional[float] = None
-    cs_status: Optional[int] = None
+    cs_status: Optional[float] = None
 
 
 PARTECTOR1_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {

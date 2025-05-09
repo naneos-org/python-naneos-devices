@@ -87,7 +87,7 @@ class PartectorBleDevice:
             particle_diameter=int.from_bytes(data[3:5], byteorder="little"),
             particle_number=int.from_bytes(data[5:8], byteorder="little"),
             temperature=int.from_bytes(data[8:9], byteorder="little"),
-            relativ_humidity=int.from_bytes(data[9:10], byteorder="little"),
+            relative_humidity=int.from_bytes(data[9:10], byteorder="little"),
             device_status=int.from_bytes(data[10:12], byteorder="little")
             + (((int(data[19]) >> 1) & 0b01111111) << 16),
             battery_voltage=int.from_bytes(data[12:14], byteorder="little") / 100.0,

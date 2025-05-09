@@ -87,12 +87,11 @@ class PartectorBleScanner:
         if device.name not in self.BLE_NAMES_NANEOS:
             return None
 
-        decoded_adv: bytes | None = PartectorBleDecoder.decode_partector_advertisement(adv)
+        decoded_adv = PartectorBleDecoder.decode_partector_advertisement(adv)
 
         if decoded_adv:
             if self._queue.full():  # if the queue is full, make space by removing the oldest item
                 await self._queue.get()
-
             await self._queue.put(decoded_adv)
 
     async def scan(self) -> None:

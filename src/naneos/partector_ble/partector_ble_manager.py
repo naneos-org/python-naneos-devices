@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from typing import Optional
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
@@ -31,7 +32,7 @@ class PartectorBleManager(threading.Thread):
         # Create a new asyncio event loop for this thread, because bleak uses asyncio
         self._async_loop = asyncio.new_event_loop()
 
-        self._async_scanner_queue: asyncio.Queue[bytes] = asyncio.Queue(
+        self._async_scanner_queue: asyncio.Queue[tuple[bytes, Optional[bytes]]] = asyncio.Queue(
             maxsize=self.SCANNER_QUEUE_SIZE
         )
         self._async_scanner: PartectorBleScanner = PartectorBleScanner(
@@ -63,15 +64,15 @@ class PartectorBleManager(threading.Thread):
         logger.debug("PartectorBleManager stopped.")
 
     # == BLE Processing Methods ====================================================================
-    async def _async_process_scan_data(self, scan: bytes) -> None:
+    async def _async_process_scan_data(self, scan: tuple[bytes, Optional[bytes]]) -> None:
         """
         Process the scan data asynchronously.
 
         Args:
             scan (bytes): The scan data to process.
         """
-        serial_number = PartectorBleStdAdvDecoder.get_serial_number(scan)
-        logger.info(f"Processing scan data for: {serial_number}")
+        data = PartectorBleStdAdvDecoder.decode_partector_advertised_data(scan)
+        print(data)
 
     async def _async_run(self) -> None:
         while not self._stop_event.is_set():

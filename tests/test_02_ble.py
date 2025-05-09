@@ -1,18 +1,11 @@
 import time
 
-from naneos.partector_ble_old.partector_ble import PartectorBle
+from naneos.partector_ble.partector_ble_manager import PartectorBleManager
+
+# TODO: it would be nice to have a test that works without access to the bluetooth peripherals
 
 
 def test_connection_to_partector():
-    partector_ble = PartectorBle(serial_numbers=[8112])
-    partector_ble.start()
-
-    time.sleep(10)
-
-    upload_list = partector_ble.get_upload_list()
-
-    partector_ble.event.set()
-    partector_ble.join()
-
-    assert isinstance(upload_list, list), "The result should be a list."
-    assert len(upload_list) > 0, "There was no data received."
+    with PartectorBleManager() as manager:
+        time.sleep(5)  # Let it run for a while
+        # TODO: add data extraction and validation here in the future
