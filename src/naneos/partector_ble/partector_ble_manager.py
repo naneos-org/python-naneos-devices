@@ -18,9 +18,13 @@ class PartectorBleManager(threading.Thread):
 
     SCANNER_QUEUE_SIZE = 100
 
+    # == Lifecycle and Context Management ==========================================================
     def __init__(self) -> None:
         super().__init__()
+        self._setup()
+        self.start()
 
+    def _setup(self) -> None:
         self._stop_event = threading.Event()
 
         # Create a new asyncio event loop for this thread, because bleak uses asyncio
@@ -31,11 +35,15 @@ class PartectorBleManager(threading.Thread):
         )
         self._async_scanner: PartectorBleScanner = PartectorBleScanner(
             loop=self._async_loop,
-            auto_start=True,
             queue=self._async_scanner_queue,
         )
+        self._async_scanner.start()
 
-        self.start()
+    def __enter__(self) -> PartectorBleManager:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.stop()
 
     def __del__(self) -> None:
         try:
@@ -44,12 +52,7 @@ class PartectorBleManager(threading.Thread):
         except Exception:
             pass  # Avoid raising exceptions during garbage collection
 
-    def __enter__(self) -> PartectorBleManager:
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.stop()
-
+    # == Public Methods ============================================================================
     def stop(self) -> None:
         """
         Stop the BLE manager and blocks until it is stopped.
@@ -58,7 +61,8 @@ class PartectorBleManager(threading.Thread):
         self.join()
         logger.debug("PartectorBleManager stopped.")
 
-    async def async_process_scan_data(self, scan: bytes) -> None:
+    # == BLE Processing Methods ====================================================================
+    async def _async_process_scan_data(self, scan: bytes) -> None:
         """
         Process the scan data asynchronously.
 
@@ -67,7 +71,7 @@ class PartectorBleManager(threading.Thread):
         """
         logger.info(f"Processing scan data: {scan!r}")
 
-    async def async_run(self) -> None:
+    async def _async_run(self) -> None:
         while not self._stop_event.is_set():
             try:
                 await asyncio.sleep(0.5)  # Sleep to prevent busy waiting
@@ -75,7 +79,7 @@ class PartectorBleManager(threading.Thread):
                 # Process the async scanner queue
                 while not self._async_scanner_queue.empty():
                     scan = await self._async_scanner_queue.get()
-                    await self.async_process_scan_data(scan)
+                    await self._async_process_scan_data(scan)
 
             except Exception as e:
                 logger.exception(e)
@@ -88,7 +92,7 @@ class PartectorBleManager(threading.Thread):
         Runs the asyncio event loop and processes BLE scan data until the stop event is set.
         """
         try:
-            self._async_loop.run_until_complete(self.async_run())
+            self._async_loop.run_until_complete(self._async_run())
         except Exception as e:
             logger.exception(e)
         finally:
@@ -98,7 +102,7 @@ class PartectorBleManager(threading.Thread):
 
 
 if __name__ == "__main__":
-    # old way of using the manager
+    # classic way of using the manager
     # ble_manager = PartectorBleManager()
     # time.sleep(5)  # Let it run for a while
     # ble_manager.stop()
@@ -106,4 +110,3 @@ if __name__ == "__main__":
     # usage with context manager
     with PartectorBleManager() as manager:
         time.sleep(5)  # Let it run for a while
-        # The manager will automatically stop when exiting the context
