@@ -25,10 +25,6 @@ class PartectorBleScanner:
         if auto_start:
             self.start()
 
-    def __del__(self) -> None:
-        """Destructor for the scanner."""
-        self.stop()
-
     def start(self) -> None:
         """Starts the scanner."""
         if not self._stop_event.is_set():
@@ -36,11 +32,14 @@ class PartectorBleScanner:
             return None
 
         self._stop_event.clear()
-        self._loop.create_task(self.scan())
+        self._task = self._loop.create_task(self.scan())
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Stops the scanner."""
         self._stop_event.set()
+        if (hasattr(self, "_task") and self._task) and not self._task.done():
+            await self._task
+        logger.debug("PartectorBleScanner stopped.")
 
     async def _detection_callback(self, device: BLEDevice, adv: AdvertisementData) -> None:
         """Handles the callbacks from the BleakScanner used in the scan method.
@@ -68,7 +67,7 @@ class PartectorBleScanner:
 
         while not self._stop_event.is_set():
             async with scanner:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.8)
 
 
 async def main():
@@ -76,10 +75,9 @@ async def main():
     queue_scanner = asyncio.Queue(maxsize=100)
     scanner = PartectorBleScanner(loop=loop, auto_start=True, queue=queue_scanner)
     try:
-        await asyncio.sleep(5)  # Asynchronous sleep to allow the loop to run
+        await asyncio.sleep(2)  # Asynchronous sleep to allow the loop to run
     finally:
-        scanner.stop()
-        await asyncio.sleep(1)  # Allow cleanup tasks to complete
+        await scanner.stop()
 
     while not queue_scanner.empty():
         data = await queue_scanner.get()
