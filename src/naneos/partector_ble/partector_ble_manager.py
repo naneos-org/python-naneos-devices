@@ -6,6 +6,7 @@ import time
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
+from naneos.partector_ble.partector_ble_std_adv_decoder import PartectorBleStdAdvDecoder
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)
 
@@ -69,7 +70,8 @@ class PartectorBleManager(threading.Thread):
         Args:
             scan (bytes): The scan data to process.
         """
-        logger.info(f"Processing scan data: {scan!r}")
+        serial_number = PartectorBleStdAdvDecoder.get_serial_number(scan)
+        logger.info(f"Processing scan data for: {serial_number}")
 
     async def _async_run(self) -> None:
         while not self._stop_event.is_set():

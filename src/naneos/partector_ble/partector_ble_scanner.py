@@ -56,7 +56,7 @@ class PartectorBleScanner:
         if not self._stop_event.is_set():
             self._loop.create_task(self.stop())
 
-    # == Public Interface ==========================================================================
+    # == Public Methods ============================================================================
     def start(self) -> None:
         """Starts the scanner."""
         if not self._stop_event.is_set():
@@ -87,7 +87,7 @@ class PartectorBleScanner:
         if device.name not in self.BLE_NAMES_NANEOS:
             return None
 
-        decoded_adv: bytes | None = PartectorBleDecoder.decode_std_chareristic(adv)
+        decoded_adv: bytes | None = PartectorBleDecoder.decode_partector_advertisement(adv)
 
         if decoded_adv:
             if self._queue.full():  # if the queue is full, make space by removing the oldest item
