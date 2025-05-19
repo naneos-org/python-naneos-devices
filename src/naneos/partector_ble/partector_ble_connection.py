@@ -5,6 +5,7 @@ import asyncio
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakDeviceNotFoundError
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
 
@@ -78,6 +79,10 @@ class PartectorBleConnection:
             except asyncio.TimeoutError:
                 logger.warning(f"Probably a old device {self._serial_number}, retrying soon.")
                 # self._add_old_device_data(values)
+                # TODO: mark as connected or old device
+                continue
+            except BleakDeviceNotFoundError:
+                # TODO: mark as connected or old device
                 continue
             except Exception as e:
                 logger.exception(f"Exception for {self._serial_number} connection: {e}")
