@@ -6,8 +6,9 @@ import time
 from typing import Optional
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
+from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
-from naneos.partector_ble.partector_ble_std_adv_decoder import PartectorBleStdAdvDecoder
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)
 
@@ -71,8 +72,11 @@ class PartectorBleManager(threading.Thread):
         Args:
             scan (bytes): The scan data to process.
         """
-        data = PartectorBleStdAdvDecoder.decode_partector_advertised_data(scan)
-        print(data)
+        data = PartectorBleDecoderStd.decode(scan[0], data_structure=None)
+        if scan[1]:
+            data = PartectorBleDecoderAux.decode(scan[1], data_structure=data)
+
+        logger.debug(f"got data {data.ldsa} LDSA from {data.serial_number}")
 
     async def _async_run(self) -> None:
         while not self._stop_event.is_set():

@@ -4,6 +4,18 @@ from typing import Optional, Union
 
 @dataclass
 class Partector2DataStructure:
+    STD_FIELD_NAMES = {
+        "serial_number",
+        "ldsa",
+        "particle_diameter",
+        "particle_number",
+        "temperature",
+        "relative_humidity",
+        "device_status",
+        "battery_voltage",
+        "particle_mass",
+    }
+
     AUX_FIELD_NAMES = {
         "corona_voltage",
         "diffusion_current",
