@@ -21,17 +21,24 @@ class PartectorBleManager(threading.Thread):
 
     def stop(self) -> None:
         self._stop_event.set()
-        if self._loop and self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
 
     def run(self) -> None:
-        asyncio.run(self._main())
+        try:
+            asyncio.run(self._main())
+        except RuntimeError as e:
+            logger.exception(f"BLEManager loop exited with: {e}")
 
-    async def _main(self) -> None:
+    async def _main(self):
         self._loop = asyncio.get_event_loop()
-        async with PartectorBleScanner(loop=self._loop, queue=self._queue):
-            logger.info("Scanner started.")
-            await self._scanner_loop()
+        try:
+            async with PartectorBleScanner(loop=self._loop, queue=self._queue):
+                logger.info("Scanner started.")
+                await self._scanner_loop()
+        except asyncio.CancelledError:
+            logger.info("BLEManager cancelled.")
+        finally:
+            # Optional: connections abbrechen
+            logger.info("BLEManager cleanup complete.")
 
     async def _scanner_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -52,9 +59,11 @@ class PartectorBleManager(threading.Thread):
             except Exception as e:
                 logger.exception(f"Error in scanner loop: {e}")
 
+        logger.info("Scanner loop stopped.")
+
     async def _handle_connection(self, device: BLEDevice, serial: int) -> None:
         try:
-            async with PartectorBleConnection(device=device, loop=self._loop):
+            async with PartectorBleConnection(device=device, loop=self._loop, serial=serial):
                 logger.info(f"Connected to device {serial}")
                 while not self._stop_event.is_set():
                     await asyncio.sleep(1)
@@ -71,10 +80,14 @@ if __name__ == "__main__":
     manager = PartectorBleManager()
     manager.start()
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Stopping BLEManager...")
-        manager.stop()
-        manager.join()
+    time.sleep(10)  # Allow some time for the scanner to start
+    manager.stop()
+    manager.join()
+
+    # try:
+    #     while True:
+    #         time.sleep(1)
+    # except KeyboardInterrupt:
+    #     print("Stopping BLEManager...")
+    #     manager.stop()
+    #     manager.join()

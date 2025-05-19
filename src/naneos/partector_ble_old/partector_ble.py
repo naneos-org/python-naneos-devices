@@ -237,7 +237,7 @@ if __name__ == "__main__":
     SN = 8150
     SN2 = 8112
 
-    partector_ble = PartectorBle(serial_numbers=[SN2])
+    partector_ble = PartectorBle(serial_numbers=[SN])
     partector_ble.start()
 
     try:

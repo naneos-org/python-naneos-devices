@@ -20,7 +20,7 @@ class PartectorBleConnection:
     CHAR_SIZE_DIST = "e7add784-b042-4876-aae1-112855353cc1"
 
     # == Lifecycle and Context Management ==========================================================
-    def __init__(self, device: BLEDevice, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(self, device: BLEDevice, loop: asyncio.AbstractEventLoop, serial: int) -> None:
         """
         Initializes the BLE connection with the given device, event loop, and queue.
 
@@ -28,13 +28,15 @@ class PartectorBleConnection:
             device (BLEDevice): The BLE device to connect to.
             loop (asyncio.AbstractEventLoop): The event loop to run the connection in.
         """
+        self._serial_number = serial
+
         self._loop = loop
         self._stop_event = asyncio.Event()
         self._stop_event.set()  # stopped by default
         self._task: asyncio.Task | None = None
 
         self._device = device
-        self._client = BleakClient(device, self._disconnect_callback, timeout=5)
+        self._client = BleakClient(device, self._disconnect_callback, timeout=2)
 
     async def __aenter__(self) -> PartectorBleConnection:
         self.start()
@@ -73,9 +75,12 @@ class PartectorBleConnection:
                 logger.info(f"Connected to {self._device.name} ({self._device.address})")
                 await self._client.start_notify(self.CHAR_STD, self._callback_std)
                 logger.info(f"Started notification on {self.CHAR_STD}")
-
+            except asyncio.TimeoutError:
+                logger.warning(f"Probably a old device {self._serial_number}, retrying soon.")
+                # self._add_old_device_data(values)
+                continue
             except Exception as e:
-                logger.error(f"Error in connection: {e}")
+                logger.exception(f"Exception for {self._serial_number} connection: {e}")
                 await asyncio.sleep(0.5)
 
         if self._client.is_connected:
@@ -117,7 +122,7 @@ async def main():
         logger.info("No device found with serial number 8112.")
         return
 
-    async with PartectorBleConnection(device=device, loop=loop):
+    async with PartectorBleConnection(device=device, loop=loop, serial=8112):
         await asyncio.sleep(5)
 
 
