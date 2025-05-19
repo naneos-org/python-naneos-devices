@@ -29,6 +29,17 @@ class Partector2DataStructure:
         "diffusion_current_offset",
     }
 
+    SIZE_DIST_FIELD_NAMES = {
+        "dist_particle_number_10nm",
+        "dist_particle_number_16nm",
+        "dist_particle_number_26nm",
+        "dist_particle_number_43nm",
+        "dist_particle_number_70nm",
+        "dist_particle_number_114nm",
+        "dist_particle_number_185nm",
+        "dist_particle_number_300nm",
+    }
+
     def to_dict(self, remove_nan=True) -> dict[str, Union[int, float]]:
         if remove_nan:
             return {

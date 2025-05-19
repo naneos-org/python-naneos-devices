@@ -1,119 +1,80 @@
-from __future__ import annotations
-
 import asyncio
 import threading
-import time
-from typing import Optional
+from typing import Dict
+
+from bleak.backends.device import BLEDevice
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
-from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
 from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
+from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)
 
 
 class PartectorBleManager(threading.Thread):
-    """
-    PartectorBleManager manages the full BLE process to our devices and runs in a separate thread.
-    It uses the Bleak library to scan for BLE devices and processes the scan data asynchronously.
-    """
-
-    SCANNER_QUEUE_SIZE = 100
-
-    # == Lifecycle and Context Management ==========================================================
     def __init__(self) -> None:
-        super().__init__()
-        self._setup()
-        self.start()
-
-    def _setup(self) -> None:
+        super().__init__(daemon=True)
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._connections: Dict[int, asyncio.Task] = {}  # key: serial_number
         self._stop_event = threading.Event()
 
-        # Create a new asyncio event loop for this thread, because bleak uses asyncio
-        self._async_loop = asyncio.new_event_loop()
-
-        self._async_scanner_queue: asyncio.Queue[tuple[bytes, Optional[bytes]]] = asyncio.Queue(
-            maxsize=self.SCANNER_QUEUE_SIZE
-        )
-        self._async_scanner: PartectorBleScanner = PartectorBleScanner(
-            loop=self._async_loop,
-            queue=self._async_scanner_queue,
-        )
-        self._async_scanner.start()
-
-    def __enter__(self) -> PartectorBleManager:
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.stop()
-
-    def __del__(self) -> None:
-        try:
-            if not self._stop_event.is_set():
-                self.stop()
-        except Exception:
-            pass  # Avoid raising exceptions during garbage collection
-
-    # == Public Methods ============================================================================
     def stop(self) -> None:
-        """
-        Stop the BLE manager and blocks until it is stopped.
-        """
         self._stop_event.set()
-        self.join()
-        logger.debug("PartectorBleManager stopped.")
-
-    # == BLE Processing Methods ====================================================================
-    async def _async_process_scan_data(self, scan: tuple[bytes, Optional[bytes]]) -> None:
-        """
-        Process the scan data asynchronously.
-
-        Args:
-            scan (bytes): The scan data to process.
-        """
-        data = PartectorBleDecoderStd.decode(scan[0], data_structure=None)
-        if scan[1]:
-            data = PartectorBleDecoderAux.decode(scan[1], data_structure=data)
-
-        logger.debug(f"got data {data.ldsa} LDSA from {data.serial_number}")
-
-    async def _async_run(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                await asyncio.sleep(0.5)  # Sleep to prevent busy waiting
-
-                # Process the async scanner queue
-                while not self._async_scanner_queue.empty():
-                    scan = await self._async_scanner_queue.get()
-                    await self._async_process_scan_data(scan)
-
-            except Exception as e:
-                logger.exception(e)
-
-        # stopping the async objects that need a clean shutdown
-        await self._async_scanner.stop()
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._loop.stop)
 
     def run(self) -> None:
-        """
-        Runs the asyncio event loop and processes BLE scan data until the stop event is set.
-        """
+        asyncio.run(self._main())
+
+    async def _main(self) -> None:
+        self._loop = asyncio.get_event_loop()
+        async with PartectorBleScanner(loop=self._loop, queue=self._queue):
+            logger.info("Scanner started.")
+            await self._scanner_loop()
+
+    async def _scanner_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                device, adv_data = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+
+                decoded = PartectorBleDecoderStd.decode(adv_data[0], data_structure=None)
+                serial = decoded.serial_number
+                if not serial or serial in self._connections:
+                    continue
+
+                logger.info(f"New device detected: serial={serial}, address={device.address}")
+                task = self._loop.create_task(self._handle_connection(device, serial))
+                self._connections[serial] = task
+
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.exception(f"Error in scanner loop: {e}")
+
+    async def _handle_connection(self, device: BLEDevice, serial: int) -> None:
         try:
-            self._async_loop.run_until_complete(self._async_run())
+            async with PartectorBleConnection(device=device, loop=self._loop):
+                logger.info(f"Connected to device {serial}")
+                while not self._stop_event.is_set():
+                    await asyncio.sleep(1)
         except Exception as e:
-            logger.exception(e)
+            logger.warning(f"Connection to {serial} failed: {e}")
         finally:
-            if not self._async_loop.is_closed():
-                self._async_loop.stop()
-                self._async_loop.close()
+            logger.info(f"Disconnected from device {serial}")
+            self._connections.pop(serial, None)
 
 
 if __name__ == "__main__":
-    # classic way of using the manager
-    # ble_manager = PartectorBleManager()
-    # time.sleep(5)  # Let it run for a while
-    # ble_manager.stop()
+    import time
 
-    # usage with context manager
-    with PartectorBleManager() as manager:
-        time.sleep(5)  # Let it run for a while
+    manager = PartectorBleManager()
+    manager.start()
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Stopping BLEManager...")
+        manager.stop()
+        manager.join()
