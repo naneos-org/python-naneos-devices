@@ -37,7 +37,8 @@ class PartectorBleConnection:
         self._task: asyncio.Task | None = None
 
         self._device = device
-        self._client = BleakClient(device, self._disconnect_callback, timeout=2)
+        # 5 seconds timeout is needed on windows for the connection to be established
+        self._client = BleakClient(device, self._disconnect_callback, timeout=5)
 
     async def __aenter__(self) -> PartectorBleConnection:
         self.start()
@@ -59,11 +60,11 @@ class PartectorBleConnection:
 
     async def stop(self) -> None:
         """Stops the scanner."""
-        logger.debug("Stopping PartectorBleConnection...")
+        logger.info("Stopping PartectorBleConnection...")
         self._stop_event.set()
         if self._task and not self._task.done():
             await self._task
-        logger.debug("PartectorBleConnection stopped.")
+        logger.info("PartectorBleConnection stopped.")
 
     async def handle_connection(self) -> None:
         while not self._stop_event.is_set():
