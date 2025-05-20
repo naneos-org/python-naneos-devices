@@ -89,6 +89,8 @@ class PartectorBleConnection:
                 logger.exception(f"Exception for {self._serial_number} connection: {e}")
 
         if self._client.is_connected:
+            await self._client.stop_notify(self.CHAR_STD)
+            logger.info(f"Stopped notification on {self.CHAR_STD}")
             await self._client.disconnect()
 
     def _disconnect_callback(self, client: BleakClient) -> None:
