@@ -97,11 +97,13 @@ class PartectorBleConnection:
 
         try:
             await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["std"]), timeout=5)
+            await asyncio.sleep(1)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self._serial_number}: Failed to stop notify: {e}")
 
         try:
             await asyncio.wait_for(self._client.disconnect(), timeout=5)
+            await asyncio.sleep(1)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self._serial_number}: Failed to disconnect: {e}")
 
@@ -146,5 +148,10 @@ async def _find_device_with_serial(queue: asyncio.Queue, target_serial: int) -> 
     return None
 
 
+async def main_x(x):
+    for _ in range(x):
+        await main()
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main_x(10))
