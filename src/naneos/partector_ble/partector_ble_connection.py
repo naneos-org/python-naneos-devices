@@ -68,8 +68,8 @@ class PartectorBleConnection:
     async def handle_connection(self) -> None:
         while not self._stop_event.is_set():
             try:
+                await asyncio.sleep(0.5)
                 if self._client.is_connected:
-                    await asyncio.sleep(0.5)
                     continue
 
                 await self._client.connect()
@@ -77,7 +77,7 @@ class PartectorBleConnection:
                 await self._client.start_notify(self.CHAR_STD, self._callback_std)
                 logger.info(f"Started notification on {self.CHAR_STD}")
             except asyncio.TimeoutError:
-                logger.warning(f"Probably a old device {self._serial_number}, retrying soon.")
+                logger.warning(f"Probably an old device {self._serial_number}, retrying soon.")
                 # self._add_old_device_data(values)
                 # TODO: mark as connected or old device
                 continue
@@ -86,7 +86,6 @@ class PartectorBleConnection:
                 continue
             except Exception as e:
                 logger.exception(f"Exception for {self._serial_number} connection: {e}")
-                await asyncio.sleep(0.5)
 
         if self._client.is_connected:
             await self._client.disconnect()
@@ -128,7 +127,7 @@ async def main():
         return
 
     async with PartectorBleConnection(device=device, loop=loop, serial=8112):
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
 
 
 if __name__ == "__main__":
