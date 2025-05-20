@@ -51,20 +51,18 @@ class PartectorBleConnection:
     def start(self) -> None:
         """Starts the scanner."""
         if not self._stop_event.is_set():
-            logger.warning("You called PartectorBleConnection.start() but is already running.")
+            logger.warning("SN{self._serial_number}: start() called while already running")
             return
 
-        logger.debug("Starting PartectorBleConnection...")
         self._stop_event.clear()
         self._task = self._loop.create_task(self.handle_connection())
 
     async def stop(self) -> None:
         """Stops the scanner."""
-        logger.info("Stopping PartectorBleConnection...")
         self._stop_event.set()
         if self._task and not self._task.done():
             await self._task
-        logger.info("PartectorBleConnection stopped.")
+        logger.info(f"SN{self._serial_number}: PartectorBleConnection stopped")
 
     async def handle_connection(self) -> None:
         while not self._stop_event.is_set():
@@ -74,36 +72,42 @@ class PartectorBleConnection:
                     continue
 
                 await self._client.connect()
-                logger.info(f"Connected to {self._device.name} ({self._device.address})")
                 await self._client.start_notify(self.CHAR_STD, self._callback_std)
-                logger.info(f"Started notification on {self.CHAR_STD}")
+                logger.info(f"SN{self._serial_number}: Connected to {self._device.address}")
             except asyncio.TimeoutError:
-                logger.warning(f"Probably an old device {self._serial_number}, retrying soon.")
+                logger.warning(f"SN{self._serial_number}: Connection timeout.")
+                await asyncio.sleep(4.5)
                 # self._add_old_device_data(values)
                 # TODO: mark as connected or old device
-                continue
             except BleakDeviceNotFoundError:
+                logger.warning(f"SN{self._serial_number}: Device not found.")
+                await asyncio.sleep(4.5)
                 # TODO: mark as connected or old device
-                continue
             except Exception as e:
-                logger.exception(f"Exception for {self._serial_number} connection: {e}")
+                logger.exception(f"SN{self._serial_number}: Unknown exception: {e}")
+                await asyncio.sleep(4.5)
 
         if self._client.is_connected:
-            await self._client.stop_notify(self.CHAR_STD)
-            logger.info(f"Stopped notification on {self.CHAR_STD}")
-            await self._client.disconnect()
+            try:
+                await asyncio.wait_for(self._client.stop_notify(self.CHAR_STD), timeout=5)
+            except Exception as e:
+                logger.exception(f"SN{self._serial_number}: stop_notify CHAR_STD: {e}")
+            try:
+                await asyncio.wait_for(self._client.disconnect(), timeout=5)
+            except Exception as e:
+                logger.exception(f"SN{self._serial_number}: Disconnect failed: {e}")
 
     def _disconnect_callback(self, client: BleakClient) -> None:
         """
         Callback function to be called when the client is disconnected.
         """
-        logger.info(f"Disconnected from {self._device.name} ({self._device.address})")
+        logger.debug(f"SN{self._serial_number}: Disconnect callback called")
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """
         Callback function to be called when data is received from the standard characteristic.
         """
-        logger.info(f"Received data from {self._device.name}: {data.hex()}")
+        logger.info(f"SN{self._serial_number}: Received data: {data.hex()}")
 
 
 async def main():
