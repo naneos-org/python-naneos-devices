@@ -63,7 +63,7 @@ class PartectorBleManager(threading.Thread):
 
     async def _handle_connection(self, device: BLEDevice, serial: int) -> None:
         try:
-            async with PartectorBleConnection(device=device, loop=self._loop, serial=serial):
+            async with PartectorBleConnection(device=device, loop=self._loop, serial_number=serial):
                 logger.info(f"Connected to device {serial}")
                 while not self._stop_event.is_set():
                     await asyncio.sleep(1)
