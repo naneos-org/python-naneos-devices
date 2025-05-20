@@ -115,7 +115,7 @@ async def main():
 
     # using the context manager
     async with PartectorBleScanner(loop=loop, queue=queue_scanner):
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
 
     # Print the contents of the queue
     while not queue_scanner.empty():

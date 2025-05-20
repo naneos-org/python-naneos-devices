@@ -41,7 +41,7 @@ class PartectorBleConnection:
         self._stop_event = asyncio.Event()
         self._stop_event.set()  # stopped by default
         # 5 seconds timeout is needed on windows for the connection to be established
-        self._client = BleakClient(device, self._disconnect_callback, timeout=5)
+        self._client = BleakClient(device, self._disconnect_callback, timeout=30)
 
     async def __aenter__(self) -> PartectorBleConnection:
         self.start()
@@ -67,42 +67,53 @@ class PartectorBleConnection:
         logger.info(f"SN{self._serial_number}: PartectorBleConnection stopped")
 
     async def _run(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                await asyncio.sleep(0.5)
-                if self._client.is_connected:
-                    continue
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    await asyncio.sleep(0.5)
+                    if self._client.is_connected:
+                        continue
 
-                await self._client.connect()
-                await self._client.start_notify(self.CHAR_UUIDS["std"], self._callback_std)
-                logger.info(f"SN{self._serial_number}: Connected to {self._device.address}")
-            except asyncio.TimeoutError:
-                logger.warning(f"SN{self._serial_number}: Connection timeout.")
-                await asyncio.sleep(4.5)
-                # self._add_old_device_data(values)
-                # TODO: mark as connected or old device
-            except BleakDeviceNotFoundError:
-                logger.warning(f"SN{self._serial_number}: Device not found.")
-                await asyncio.sleep(4.5)
-                # TODO: mark as connected or old device
-            except Exception as e:
-                logger.exception(f"SN{self._serial_number}: Unknown exception: {e}")
-                await asyncio.sleep(4.5)
-
-        await self._disconnect_gracefully()
+                    await self._client.connect()
+                    await self._client.start_notify(self.CHAR_UUIDS["std"], self._callback_std)
+                    await self._client.start_notify(self.CHAR_UUIDS["aux"], self._callback_aux)
+                    await self._client.start_notify(self.CHAR_UUIDS["size_dist"], self._callback_size_dist)
+                    logger.info(f"SN{self._serial_number}: Connected to {self._device.address}")
+                except asyncio.TimeoutError:
+                    logger.warning(f"SN{self._serial_number}: Connection timeout.")
+                    await asyncio.sleep(4.5)
+                    # self._add_old_device_data(values)
+                    # TODO: mark as connected or old device
+                except BleakDeviceNotFoundError:
+                    logger.warning(f"SN{self._serial_number}: Device not found.")
+                    await asyncio.sleep(4.5)
+                    # TODO: mark as connected or old device
+                except Exception as e:
+                    logger.warning(f"SN{self._serial_number}: Unknown exception: {e}")
+                    await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            logger.warning(f"SN{self._serial_number}: _run task cancelled.")
+        except Exception as e:
+            logger.exception(f"SN{self._serial_number}: _run task failed: {e}")
+        finally:
+            await self._disconnect_gracefully()
 
     async def _disconnect_gracefully(self) -> None:
         if not self._client.is_connected:
             return
 
         try:
-            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["std"]), timeout=5)
-            await asyncio.sleep(1)  # wait for windows to free resources
+            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["std"]), timeout=30)
+            await asyncio.sleep(0.5)  # wait for windows to free resources
+            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["aux"]), timeout=30)
+            await asyncio.sleep(0.5)  # wait for windows to free resources
+            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["size_dist"]), timeout=30)
+            await asyncio.sleep(0.5)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self._serial_number}: Failed to stop notify: {e}")
 
         try:
-            await asyncio.wait_for(self._client.disconnect(), timeout=5)
+            await asyncio.wait_for(self._client.disconnect(), timeout=30)
             await asyncio.sleep(1)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self._serial_number}: Failed to disconnect: {e}")
@@ -113,7 +124,15 @@ class PartectorBleConnection:
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic)."""
-        logger.info(f"SN{self._serial_number}: Received data: {data.hex()}")
+        logger.info(f"SN{self._serial_number}: Received std: {data.hex()}")
+    
+    def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
+        """Callback on data received (aux characteristic)."""
+        logger.info(f"SN{self._serial_number}: Received aux: {data.hex()}")
+
+    def _callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
+        """Callback on data received (size_dist characteristic)."""
+        logger.info(f"SN{self._serial_number}: Received size: {data.hex()}")
 
 
 async def main():
@@ -125,7 +144,7 @@ async def main():
     queue = asyncio.Queue(maxsize=100)
 
     async with PartectorBleScanner(loop=loop, queue=queue):
-        await asyncio.sleep(2)
+        await asyncio.sleep(4)
 
     device = await _find_device_with_serial(queue, target_serial=SN)
     if not device:
@@ -154,4 +173,4 @@ async def main_x(x):
 
 
 if __name__ == "__main__":
-    asyncio.run(main_x(10))
+    asyncio.run(main_x(20))
