@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Optional
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -34,7 +35,7 @@ class PartectorBleConnection:
             loop (asyncio.AbstractEventLoop): The event loop to run the connection in.
             serial_number (int): The serial number of the device.
         """
-        self._serial_number = serial_number
+        self.SERIAL_NUMBER = serial_number
         self._device = device
         self._loop = loop
         self._task: asyncio.Task | None = None
@@ -64,7 +65,7 @@ class PartectorBleConnection:
         self._stop_event.set()
         if self._task and not self._task.done():
             await self._task
-        logger.info(f"SN{self._serial_number}: PartectorBleConnection stopped")
+        logger.info(f"SN{self.SERIAL_NUMBER}: PartectorBleConnection stopped")
 
     async def _run(self) -> None:
         try:
@@ -80,23 +81,23 @@ class PartectorBleConnection:
                     await self._client.start_notify(
                         self.CHAR_UUIDS["size_dist"], self._callback_size_dist
                     )
-                    logger.info(f"SN{self._serial_number}: Connected to {self._device.address}")
+                    logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
                 except asyncio.TimeoutError:
-                    logger.warning(f"SN{self._serial_number}: Connection timeout.")
+                    logger.warning(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
                     await asyncio.sleep(4.5)
                     # self._add_old_device_data(values)
                     # TODO: mark as connected or old device
                 except BleakDeviceNotFoundError:
-                    logger.warning(f"SN{self._serial_number}: Device not found.")
+                    logger.warning(f"SN{self.SERIAL_NUMBER}: Device not found.")
                     await asyncio.sleep(4.5)
                     # TODO: mark as connected or old device
                 except Exception as e:
-                    logger.warning(f"SN{self._serial_number}: Unknown exception: {e}")
+                    logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
-            logger.warning(f"SN{self._serial_number}: _run task cancelled.")
+            logger.warning(f"SN{self.SERIAL_NUMBER}: _run task cancelled.")
         except Exception as e:
-            logger.exception(f"SN{self._serial_number}: _run task failed: {e}")
+            logger.exception(f"SN{self.SERIAL_NUMBER}: _run task failed: {e}")
         finally:
             await self._disconnect_gracefully()
 
@@ -114,61 +115,81 @@ class PartectorBleConnection:
             )
             await asyncio.sleep(0.5)  # wait for windows to free resources
         except Exception as e:
-            logger.exception(f"SN{self._serial_number}: Failed to stop notify: {e}")
+            logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to stop notify: {e}")
 
         try:
             await asyncio.wait_for(self._client.disconnect(), timeout=30)
             await asyncio.sleep(1)  # wait for windows to free resources
         except Exception as e:
-            logger.exception(f"SN{self._serial_number}: Failed to disconnect: {e}")
+            logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to disconnect: {e}")
 
     def _disconnect_callback(self, client: BleakClient) -> None:
         """Callback on disconnect."""
-        logger.debug(f"SN{self._serial_number}: Disconnect callback called")
+        logger.debug(f"SN{self.SERIAL_NUMBER}: Disconnect callback called")
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic)."""
-        logger.info(f"SN{self._serial_number}: Received std: {data.hex()}")
+        logger.info(f"SN{self.SERIAL_NUMBER}: Received std: {data.hex()}")
 
     def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (aux characteristic)."""
-        logger.info(f"SN{self._serial_number}: Received aux: {data.hex()}")
+        logger.info(f"SN{self.SERIAL_NUMBER}: Received aux: {data.hex()}")
 
     def _callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (size_dist characteristic)."""
-        logger.info(f"SN{self._serial_number}: Received size: {data.hex()}")
+        logger.info(f"SN{self.SERIAL_NUMBER}: Received size: {data.hex()}")
 
 
 async def main():
     from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
-    SN = 8617
+    SNS = {8112, 8617}
+    device_dict = {}  # serial number to device mapping
+    conn_list = []  # serial number to connection mapping
 
     loop = asyncio.get_event_loop()
     queue = asyncio.Queue(maxsize=100)
 
     async with PartectorBleScanner(loop=loop, queue=queue):
-        await asyncio.sleep(4)
+        await asyncio.sleep(5)
 
-    device = await _find_device_with_serial(queue, target_serial=SN)
-    if not device:
-        logger.info(f"No device found with serial number {SN}.")
+    device_dict = await _map_sn_to_device(queue)
+    if not device_dict:
         return
 
-    async with PartectorBleConnection(device=device, loop=loop, serial_number=SN):
-        await asyncio.sleep(10)
+    device_dict = {k: v for k, v in device_dict.items() if k in SNS}
+
+    # start connections for all devices
+    for serial_number, device in device_dict.items():
+        conn_list.append(
+            PartectorBleConnection(device=device, loop=loop, serial_number=serial_number)
+        )
+        conn_list[-1].start()
+
+    await asyncio.sleep(10)
+
+    # stop connections for all devices
+    for conn in conn_list:
+        await conn.stop()
 
 
-async def _find_device_with_serial(queue: asyncio.Queue, target_serial: int) -> BLEDevice | None:
+async def _map_sn_to_device(
+    queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]],
+) -> Optional[dict[int, BLEDevice]]:
     from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
 
+    device_dict = {}
     while not queue.empty():
         device, data = await queue.get()
         serial = PartectorBleDecoderStd.decode(data[0], data_structure=None).serial_number
-        logger.info(f"Found device with serial {serial}")
-        if serial == target_serial:
-            return device
-    return None
+        if serial:
+            device_dict[serial] = device
+
+    if not device_dict:
+        logger.info("No devices found.")
+        return None
+
+    return device_dict
 
 
 async def main_x(x):
