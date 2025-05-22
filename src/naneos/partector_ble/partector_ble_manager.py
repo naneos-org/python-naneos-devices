@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import time
 from typing import Dict
 
 from bleak.backends.device import BLEDevice
@@ -67,6 +68,14 @@ class PartectorBleManager(threading.Thread):
 
         logger.info("Scanner loop stopped.")
 
+        # wait for all connections to finish
+        for serial in list(self._connections.keys()):
+            if not self._connections[serial].done():
+                logger.info(f"Waiting for connection task {serial} to finish.")
+                await self._connections[serial]
+            self._connections.pop(serial, None)
+            logger.info(f"Connection task {serial} finished and popped.")
+
     async def _handle_connection(self, device: BLEDevice, serial: int) -> None:
         try:
             async with PartectorBleConnection(
@@ -79,18 +88,14 @@ class PartectorBleManager(threading.Thread):
         except Exception as e:
             logger.warning(f"Connection to {serial} failed: {e}")
         finally:
-            # terminate the connection
-
             logger.info(f"Disconnected from device {serial}")
-            self._connections.pop(serial, None)
 
 
 if __name__ == "__main__":
-    import time
-
     manager = PartectorBleManager()
     manager.start()
 
-    time.sleep(20)  # Allow some time for the scanner to start
+    time.sleep(10)  # Allow some time for the scanner to start
     manager.stop()
     manager.join()
+    logger.info("BLEManager ENDNDNDN.")
