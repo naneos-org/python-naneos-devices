@@ -163,21 +163,21 @@ class PartectorBleConnection:
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic)."""
         self._data.unix_timestamp = int(time.time() * 1000)
-        PartectorBleDecoderStd.decode(data, data_structure=self._data)
+        self._data = PartectorBleDecoderStd.decode(data, data_structure=self._data)
 
         logger.debug(f"SN{self.SERIAL_NUMBER}: Received std: {data.hex()}")
 
     def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (aux characteristic)."""
         self._data.unix_timestamp = int(time.time() * 1000)
-        PartectorBleDecoderAux.decode(data, data_structure=self._data)
+        self._data = PartectorBleDecoderAux.decode(data, data_structure=self._data)
 
         logger.debug(f"SN{self.SERIAL_NUMBER}: Received aux: {data.hex()}")
 
     def _callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (size_dist characteristic)."""
         self._data.unix_timestamp = int(time.time() * 1000)
-        PartectorBleDecoderSize.decode(data, data_structure=self._data)
+        self._data = PartectorBleDecoderSize.decode(data, data_structure=self._data)
 
         logger.debug(f"SN{self.SERIAL_NUMBER}: Received size: {data.hex()}")
 
