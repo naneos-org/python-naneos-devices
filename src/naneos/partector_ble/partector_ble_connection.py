@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Optional
 
 from bleak import BleakClient
@@ -9,6 +10,10 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDeviceNotFoundError
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.partector.blueprints._data_structure import Partector2DataStructure
+from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
+from naneos.partector_ble.decoder.partector_ble_decoder_size import PartectorBleDecoderSize
+from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)
 
@@ -23,9 +28,21 @@ class PartectorBleConnection:
         "size_dist": "e7add784-b042-4876-aae1-112855353cc1",
     }
 
+    # static methods ###############################################################################
+    @staticmethod
+    def create_connection_queue() -> asyncio.Queue[Partector2DataStructure]:
+        """Create a queue for the scanner."""
+        queue_connection: asyncio.Queue[Partector2DataStructure] = asyncio.Queue(maxsize=100)
+
+        return queue_connection
+
     # == Lifecycle and Context Management ==========================================================
     def __init__(
-        self, device: BLEDevice, loop: asyncio.AbstractEventLoop, serial_number: int
+        self,
+        device: BLEDevice,
+        loop: asyncio.AbstractEventLoop,
+        serial_number: int,
+        queue: asyncio.Queue[Partector2DataStructure],
     ) -> None:
         """
         Initializes the BLE connection with the given device, event loop, and queue.
@@ -36,6 +53,10 @@ class PartectorBleConnection:
             serial_number (int): The serial number of the device.
         """
         self.SERIAL_NUMBER = serial_number
+        self._data = Partector2DataStructure()
+        self._next_ts = 0.0
+        self._queue = queue
+
         self._device = device
         self._loop = loop
         self._task: asyncio.Task | None = None
@@ -69,10 +90,21 @@ class PartectorBleConnection:
 
     async def _run(self) -> None:
         try:
+            self._next_ts = int(time.time()) + 1.0
+
             while not self._stop_event.is_set():
                 try:
-                    await asyncio.sleep(0.5)
+                    wait = self._next_ts - time.time()
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                        self._next_ts += 1.0
+                    else:
+                        logger.warning(f"SN{self.SERIAL_NUMBER}: Waiting time negative: {wait}")
+                        self._next_ts = int(time.time()) + 1.0
+
                     if self._client.is_connected:
+                        self._queue.put_nowait(self._data)
+                        self._data = Partector2DataStructure()
                         continue
 
                     await self._client.connect()
@@ -82,6 +114,7 @@ class PartectorBleConnection:
                         self.CHAR_UUIDS["size_dist"], self._callback_size_dist
                     )
                     logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
+                    self._next_ts = int(time.time()) + 1.0
                 except asyncio.TimeoutError:
                     logger.warning(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
                     await asyncio.sleep(4.5)
@@ -129,15 +162,24 @@ class PartectorBleConnection:
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic)."""
-        logger.info(f"SN{self.SERIAL_NUMBER}: Received std: {data.hex()}")
+        self._data.unix_timestamp = int(time.time() * 1000)
+        PartectorBleDecoderStd.decode(data, data_structure=self._data)
+
+        logger.debug(f"SN{self.SERIAL_NUMBER}: Received std: {data.hex()}")
 
     def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (aux characteristic)."""
-        logger.info(f"SN{self.SERIAL_NUMBER}: Received aux: {data.hex()}")
+        self._data.unix_timestamp = int(time.time() * 1000)
+        PartectorBleDecoderAux.decode(data, data_structure=self._data)
+
+        logger.debug(f"SN{self.SERIAL_NUMBER}: Received aux: {data.hex()}")
 
     def _callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (size_dist characteristic)."""
-        logger.info(f"SN{self.SERIAL_NUMBER}: Received size: {data.hex()}")
+        self._data.unix_timestamp = int(time.time() * 1000)
+        PartectorBleDecoderSize.decode(data, data_structure=self._data)
+
+        logger.debug(f"SN{self.SERIAL_NUMBER}: Received size: {data.hex()}")
 
 
 async def main():
@@ -148,6 +190,7 @@ async def main():
 
     loop = asyncio.get_event_loop()
     queue_scanner = PartectorBleScanner.create_scanner_queue()
+    queue_connection = PartectorBleConnection.create_connection_queue()
 
     async with PartectorBleScanner(loop=loop, queue=queue_scanner):
         await asyncio.sleep(5)
@@ -161,7 +204,9 @@ async def main():
     # start connections for all devices
     for serial_number, device in device_dict.items():
         conn_list.append(
-            PartectorBleConnection(device=device, loop=loop, serial_number=serial_number)
+            PartectorBleConnection(
+                device=device, loop=loop, serial_number=serial_number, queue=queue_connection
+            )
         )
         conn_list[-1].start()
 
@@ -171,12 +216,15 @@ async def main():
     for conn in conn_list:
         await conn.stop()
 
+    # print the data from the queue
+    while not queue_connection.empty():
+        data = await queue_connection.get()
+        print(data)
+
 
 async def _map_sn_to_device(
     queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]],
 ) -> Optional[dict[int, BLEDevice]]:
-    from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
-
     device_dict = {}
     while not queue.empty():
         device, data = await queue.get()

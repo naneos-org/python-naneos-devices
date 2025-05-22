@@ -18,6 +18,7 @@ class PartectorBleManager(threading.Thread):
         self._stop_event = threading.Event()
 
         self._queue_scanner = PartectorBleScanner.create_scanner_queue()
+        self._queue_connection = PartectorBleConnection.create_connection_queue()
         self._connections: Dict[int, asyncio.Task] = {}  # key: serial_number
 
     def stop(self) -> None:
@@ -47,6 +48,11 @@ class PartectorBleManager(threading.Thread):
 
                 decoded = PartectorBleDecoderStd.decode(adv_data[0], data_structure=None)
                 serial = decoded.serial_number
+
+                while not self._queue_connection.empty():
+                    data = await self._queue_connection.get()
+                    logger.info(f"Data from device {data.serial_number}: {data}")
+
                 if not serial or serial in self._connections:
                     continue
 
@@ -63,10 +69,13 @@ class PartectorBleManager(threading.Thread):
 
     async def _handle_connection(self, device: BLEDevice, serial: int) -> None:
         try:
-            async with PartectorBleConnection(device=device, loop=self._loop, serial_number=serial):
+            async with PartectorBleConnection(
+                device=device, loop=self._loop, serial_number=serial, queue=self._queue_connection
+            ):
                 logger.info(f"Connected to device {serial}")
                 while not self._stop_event.is_set():
                     await asyncio.sleep(1)
+
         except Exception as e:
             logger.warning(f"Connection to {serial} failed: {e}")
         finally:
@@ -82,6 +91,6 @@ if __name__ == "__main__":
     manager = PartectorBleManager()
     manager.start()
 
-    time.sleep(10)  # Allow some time for the scanner to start
+    time.sleep(20)  # Allow some time for the scanner to start
     manager.stop()
     manager.join()
