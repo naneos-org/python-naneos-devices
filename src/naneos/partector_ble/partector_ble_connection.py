@@ -77,7 +77,9 @@ class PartectorBleConnection:
                     await self._client.connect()
                     await self._client.start_notify(self.CHAR_UUIDS["std"], self._callback_std)
                     await self._client.start_notify(self.CHAR_UUIDS["aux"], self._callback_aux)
-                    await self._client.start_notify(self.CHAR_UUIDS["size_dist"], self._callback_size_dist)
+                    await self._client.start_notify(
+                        self.CHAR_UUIDS["size_dist"], self._callback_size_dist
+                    )
                     logger.info(f"SN{self._serial_number}: Connected to {self._device.address}")
                 except asyncio.TimeoutError:
                     logger.warning(f"SN{self._serial_number}: Connection timeout.")
@@ -107,7 +109,9 @@ class PartectorBleConnection:
             await asyncio.sleep(0.5)  # wait for windows to free resources
             await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["aux"]), timeout=30)
             await asyncio.sleep(0.5)  # wait for windows to free resources
-            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["size_dist"]), timeout=30)
+            await asyncio.wait_for(
+                self._client.stop_notify(self.CHAR_UUIDS["size_dist"]), timeout=30
+            )
             await asyncio.sleep(0.5)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self._serial_number}: Failed to stop notify: {e}")
@@ -125,7 +129,7 @@ class PartectorBleConnection:
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic)."""
         logger.info(f"SN{self._serial_number}: Received std: {data.hex()}")
-    
+
     def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (aux characteristic)."""
         logger.info(f"SN{self._serial_number}: Received aux: {data.hex()}")
@@ -138,7 +142,7 @@ class PartectorBleConnection:
 async def main():
     from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
-    SN = 8112
+    SN = 8617
 
     loop = asyncio.get_event_loop()
     queue = asyncio.Queue(maxsize=100)

@@ -37,7 +37,6 @@ class PartectorBleManager(threading.Thread):
         except asyncio.CancelledError:
             logger.info("BLEManager cancelled.")
         finally:
-            # Optional: connections abbrechen
             logger.info("BLEManager cleanup complete.")
 
     async def _scanner_loop(self) -> None:
@@ -70,6 +69,8 @@ class PartectorBleManager(threading.Thread):
         except Exception as e:
             logger.warning(f"Connection to {serial} failed: {e}")
         finally:
+            # terminate the connection
+
             logger.info(f"Disconnected from device {serial}")
             self._connections.pop(serial, None)
 
