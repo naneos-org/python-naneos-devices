@@ -41,11 +41,23 @@ class Partector2DataStructure:
     }
 
     @staticmethod
+    def add_serial_data_to_dict(
+        devices: dict, data: "Partector2DataStructure"
+    ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
+        if data.serial_number not in devices:
+            devices[data.serial_number] = {"serial": [], "connected": [], "advertisement": []}
+
+        if len(devices[data.serial_number]["serial"]) > 300:
+            devices[data.serial_number]["serial"].pop(0)
+        devices[data.serial_number]["serial"].append(data)
+        return devices
+
+    @staticmethod
     def add_connected_data_to_dict(
         devices: dict, data: "Partector2DataStructure"
     ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
         if data.serial_number not in devices:
-            devices[data.serial_number] = {"connected": [], "advertisement": []}
+            devices[data.serial_number] = {"serial": [], "connected": [], "advertisement": []}
 
         if len(devices[data.serial_number]["connected"]) > 300:
             devices[data.serial_number]["connected"].pop(0)
@@ -57,7 +69,7 @@ class Partector2DataStructure:
         devices: dict, data: "Partector2DataStructure"
     ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
         if data.serial_number not in devices:
-            devices[data.serial_number] = {"connected": [], "advertisement": []}
+            devices[data.serial_number] = {"serial": [], "connected": [], "advertisement": []}
 
         if len(devices[data.serial_number]["advertisement"]) > 300:
             devices[data.serial_number]["advertisement"].pop(0)

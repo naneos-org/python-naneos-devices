@@ -1,4 +1,5 @@
 import asyncio
+import pickle
 import threading
 import time
 from typing import Dict
@@ -25,6 +26,12 @@ class PartectorBleManager(threading.Thread):
         self._connections: Dict[int, asyncio.Task] = {}  # key: serial_number
 
         self._data: dict[int, dict[str, list[Partector2DataStructure]]] = {}
+
+    def get_data(self) -> dict[int, dict[str, list[Partector2DataStructure]]]:
+        """Returns the data dictionary and deletes it."""
+        data = self._data
+        self._data = {}
+        return data
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -112,12 +119,27 @@ class PartectorBleManager(threading.Thread):
             self._data = Partector2DataStructure.add_connected_data_to_dict(self._data, data)
 
 
-if __name__ == "__main__":
+def main():
     manager = PartectorBleManager()
     manager.start()
 
-    time.sleep(10)  # Allow some time for the scanner to start
+    time.sleep(60)  # Allow some time for the scanner to start
     manager.stop()
     manager.join()
 
-    print(manager._data)
+    data = manager.get_data()
+
+    with open("partector_data.pkl", "wb") as f:
+        pickle.dump(data, f)
+
+
+def read_pickle_file(file_path: str) -> dict[int, dict[str, list[Partector2DataStructure]]]:
+    with open(file_path, "rb") as f:
+        data = pickle.load(f)
+    return data
+
+
+if __name__ == "__main__":
+    # main()
+
+    print(read_pickle_file("partector_data.pkl"))
