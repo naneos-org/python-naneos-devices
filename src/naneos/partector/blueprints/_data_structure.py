@@ -40,6 +40,30 @@ class Partector2DataStructure:
         "dist_particle_number_300nm",
     }
 
+    @staticmethod
+    def add_connected_data_to_dict(
+        devices: dict, data: "Partector2DataStructure"
+    ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
+        if data.serial_number not in devices:
+            devices[data.serial_number] = {"connected": [], "advertisement": []}
+
+        if len(devices[data.serial_number]["connected"]) > 300:
+            devices[data.serial_number]["connected"].pop(0)
+        devices[data.serial_number]["connected"].append(data)
+        return devices
+
+    @staticmethod
+    def add_advertisement_data_to_dict(
+        devices: dict, data: "Partector2DataStructure"
+    ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
+        if data.serial_number not in devices:
+            devices[data.serial_number] = {"connected": [], "advertisement": []}
+
+        if len(devices[data.serial_number]["advertisement"]) > 300:
+            devices[data.serial_number]["advertisement"].pop(0)
+        devices[data.serial_number]["advertisement"].append(data)
+        return devices
+
     def to_dict(self, remove_nan=True) -> dict[str, Union[int, float]]:
         if remove_nan:
             return {

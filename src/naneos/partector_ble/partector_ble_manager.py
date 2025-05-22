@@ -24,8 +24,7 @@ class PartectorBleManager(threading.Thread):
         self._queue_connection = PartectorBleConnection.create_connection_queue()
         self._connections: Dict[int, asyncio.Task] = {}  # key: serial_number
 
-        self._list_scanner: list[Partector2DataStructure] = []
-        self._list_connection: list[Partector2DataStructure] = []
+        self._data: dict[int, dict[str, list[Partector2DataStructure]]] = {}
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -94,9 +93,7 @@ class PartectorBleManager(threading.Thread):
             if not decoded.serial_number:
                 continue
 
-            if len(self._list_scanner) > 300:
-                self._list_scanner.pop(0)
-            self._list_scanner.append(decoded)
+            self._data = Partector2DataStructure.add_advertisement_data_to_dict(self._data, decoded)
 
             to_check[decoded.serial_number] = device
 
@@ -112,7 +109,7 @@ class PartectorBleManager(threading.Thread):
     async def _connection_queue_routine(self) -> None:
         while not self._queue_connection.empty():
             data = await self._queue_connection.get()
-            logger.info(f"Data from device {data.serial_number}: {data}")
+            self._data = Partector2DataStructure.add_connected_data_to_dict(self._data, data)
 
 
 if __name__ == "__main__":
@@ -122,3 +119,5 @@ if __name__ == "__main__":
     time.sleep(10)  # Allow some time for the scanner to start
     manager.stop()
     manager.join()
+
+    print(manager._data)
