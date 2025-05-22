@@ -144,7 +144,6 @@ async def main():
     from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
     SNS = {8112, 8617}
-    device_dict = {}  # serial number to device mapping
     conn_list = []  # serial number to connection mapping
 
     loop = asyncio.get_event_loop()

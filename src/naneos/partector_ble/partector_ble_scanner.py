@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Optional
 
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
@@ -10,6 +11,17 @@ from naneos.logger import LEVEL_INFO, get_naneos_logger
 from naneos.partector_ble.partector_ble_decoder import PartectorBleDecoder
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)
+
+
+async def ble_create_loop_and_queue() -> tuple[
+    asyncio.AbstractEventLoop, asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]]
+]:
+    """Create an event loop and a queue for the scanner."""
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]] = asyncio.Queue(
+        maxsize=100
+    )
+    return loop, queue
 
 
 class PartectorBleScanner:
@@ -26,7 +38,11 @@ class PartectorBleScanner:
     BLE_NAMES_NANEOS = {"P2", "PartectorBT"}  # P2 on windows, PartectorBT on linux / mac
 
     # == Lifecycle and Context Management ==========================================================
-    def __init__(self, loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> None:
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]],
+    ) -> None:
         """
         Initializes the scanner with the given event loop and queue.
 
@@ -99,29 +115,3 @@ class PartectorBleScanner:
             except Exception as e:
                 logger.exception(e)
                 await asyncio.sleep(self.SCAN_INTERVAL)  # small backoff before retry
-
-
-async def main():
-    loop = asyncio.get_event_loop()
-    queue_scanner = asyncio.Queue(maxsize=100)
-
-    # classic way of using the scanner
-    # scanner = PartectorBleScanner(loop=loop, queue=queue_scanner)
-    # scanner.start()
-    # try:
-    #     await asyncio.sleep(2)  # Asynchronous sleep to allow the loop to run
-    # finally:
-    #     await scanner.stop()≤
-
-    # using the context manager
-    async with PartectorBleScanner(loop=loop, queue=queue_scanner):
-        await asyncio.sleep(5)
-
-    # Print the contents of the queue
-    while not queue_scanner.empty():
-        data = await queue_scanner.get()
-        logger.info(f"Received data: {data}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
