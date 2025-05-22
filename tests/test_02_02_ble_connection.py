@@ -31,6 +31,7 @@ async def async_test_connection(with_context_manager: bool) -> None:
     """Helper function to test the scanner."""
     loop = asyncio.get_event_loop()
     queue_scanner = PartectorBleScanner.create_scanner_queue()
+    queue_connection = PartectorBleConnection.create_connection_queue()
     conn_list = []  # serial number to connection mapping
 
     if with_context_manager:
@@ -53,7 +54,9 @@ async def async_test_connection(with_context_manager: bool) -> None:
     # start connections for all devices
     for serial_number, device in device_dict.items():
         conn_list.append(
-            PartectorBleConnection(device=device, loop=loop, serial_number=serial_number)
+            PartectorBleConnection(
+                device=device, loop=loop, serial_number=serial_number, queue=queue_connection
+            )
         )
         conn_list[-1].start()
 

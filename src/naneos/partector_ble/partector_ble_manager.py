@@ -119,17 +119,21 @@ class PartectorBleManager(threading.Thread):
             self._data = Partector2DataStructure.add_connected_data_to_dict(self._data, data)
 
 
-def main():
+def get_data_from_manager() -> dict[int, dict[str, list[Partector2DataStructure]]]:
     manager = PartectorBleManager()
     manager.start()
 
-    time.sleep(60)  # Allow some time for the scanner to start
+    time.sleep(10)  # Allow some time for the scanner to start
     manager.stop()
     manager.join()
 
-    data = manager.get_data()
+    return manager.get_data()
 
-    with open("partector_data.pkl", "wb") as f:
+
+def save_data_to_pickle(
+    data: dict[int, dict[str, list[Partector2DataStructure]]], file_path: str
+) -> None:
+    with open(file_path, "wb") as f:
         pickle.dump(data, f)
 
 
@@ -140,6 +144,8 @@ def read_pickle_file(file_path: str) -> dict[int, dict[str, list[Partector2DataS
 
 
 if __name__ == "__main__":
-    # main()
+    data = get_data_from_manager()
+    print(data)
 
-    print(read_pickle_file("partector_data.pkl"))
+    # save_data_to_pickle(data, "partector_data.pkl")
+    # print(read_pickle_file("partector_data.pkl"))
