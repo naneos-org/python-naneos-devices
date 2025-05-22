@@ -15,23 +15,24 @@ logger = get_naneos_logger(__name__, LEVEL_INFO)
 class PartectorBleManager(threading.Thread):
     def __init__(self) -> None:
         super().__init__(daemon=True)
-        self._queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-        self._connections: Dict[int, asyncio.Task] = {}  # key: serial_number
         self._stop_event = threading.Event()
+
+        self._queue_scanner = PartectorBleScanner.create_scanner_queue()
+        self._connections: Dict[int, asyncio.Task] = {}  # key: serial_number
 
     def stop(self) -> None:
         self._stop_event.set()
 
     def run(self) -> None:
         try:
-            asyncio.run(self._main())
+            asyncio.run(self._async_run())
         except RuntimeError as e:
             logger.exception(f"BLEManager loop exited with: {e}")
 
-    async def _main(self):
+    async def _async_run(self):
         self._loop = asyncio.get_event_loop()
         try:
-            async with PartectorBleScanner(loop=self._loop, queue=self._queue):
+            async with PartectorBleScanner(loop=self._loop, queue=self._queue_scanner):
                 logger.info("Scanner started.")
                 await self._scanner_loop()
         except asyncio.CancelledError:
@@ -42,7 +43,7 @@ class PartectorBleManager(threading.Thread):
     async def _scanner_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
-                device, adv_data = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                device, adv_data = await asyncio.wait_for(self._queue_scanner.get(), timeout=1.0)
 
                 decoded = PartectorBleDecoderStd.decode(adv_data[0], data_structure=None)
                 serial = decoded.serial_number
@@ -84,11 +85,3 @@ if __name__ == "__main__":
     time.sleep(10)  # Allow some time for the scanner to start
     manager.stop()
     manager.join()
-
-    # try:
-    #     while True:
-    #         time.sleep(1)
-    # except KeyboardInterrupt:
-    #     print("Stopping BLEManager...")
-    #     manager.stop()
-    #     manager.join()

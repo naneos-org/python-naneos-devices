@@ -147,12 +147,12 @@ async def main():
     conn_list = []  # serial number to connection mapping
 
     loop = asyncio.get_event_loop()
-    queue = asyncio.Queue(maxsize=100)
+    queue_scanner = PartectorBleScanner.create_scanner_queue()
 
-    async with PartectorBleScanner(loop=loop, queue=queue):
+    async with PartectorBleScanner(loop=loop, queue=queue_scanner):
         await asyncio.sleep(5)
 
-    device_dict = await _map_sn_to_device(queue)
+    device_dict = await _map_sn_to_device(queue_scanner)
     if not device_dict:
         return
 
@@ -197,4 +197,4 @@ async def main_x(x):
 
 
 if __name__ == "__main__":
-    asyncio.run(main_x(20))
+    asyncio.run(main_x(3))

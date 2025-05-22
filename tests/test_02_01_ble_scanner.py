@@ -4,10 +4,7 @@ from typing import Optional
 
 from bleak.backends.device import BLEDevice
 
-from naneos.partector_ble.partector_ble_scanner import (
-    PartectorBleScanner,
-    ble_create_loop_and_queue,
-)
+from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
 
 async def check_queue(
@@ -28,7 +25,8 @@ async def check_queue(
 
 async def async_test_scanner(with_context_manager: bool) -> None:
     """Helper function to test the scanner."""
-    loop, queue_scanner = await ble_create_loop_and_queue()
+    loop = asyncio.get_event_loop()
+    queue_scanner = PartectorBleScanner.create_scanner_queue()
 
     if with_context_manager:
         async with PartectorBleScanner(loop=loop, queue=queue_scanner) as scanner:

@@ -13,17 +13,6 @@ from naneos.partector_ble.partector_ble_decoder import PartectorBleDecoder
 logger = get_naneos_logger(__name__, LEVEL_INFO)
 
 
-async def ble_create_loop_and_queue() -> tuple[
-    asyncio.AbstractEventLoop, asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]]
-]:
-    """Create an event loop and a queue for the scanner."""
-    loop = asyncio.get_event_loop()
-    queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]] = asyncio.Queue(
-        maxsize=100
-    )
-    return loop, queue
-
-
 class PartectorBleScanner:
     """
     Context-managed BLE scanner for Partector devices.
@@ -36,6 +25,16 @@ class PartectorBleScanner:
 
     SCAN_INTERVAL = 0.8  # seconds
     BLE_NAMES_NANEOS = {"P2", "PartectorBT"}  # P2 on windows, PartectorBT on linux / mac
+
+    # static methods ###############################################################################
+    @staticmethod
+    def create_scanner_queue() -> asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]]:
+        """Create a queue for the scanner."""
+        queue_scanner: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]] = (
+            asyncio.Queue(maxsize=100)
+        )
+
+        return queue_scanner
 
     # == Lifecycle and Context Management ==========================================================
     def __init__(

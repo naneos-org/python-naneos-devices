@@ -4,10 +4,7 @@ from typing import Optional
 from bleak.backends.device import BLEDevice
 
 from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
-from naneos.partector_ble.partector_ble_scanner import (
-    PartectorBleScanner,
-    ble_create_loop_and_queue,
-)
+from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
 SNS = {8112, 8617}  # serial numbers to connect to for testing
 
@@ -32,7 +29,8 @@ async def _map_sn_to_device(
 
 async def async_test_connection(with_context_manager: bool) -> None:
     """Helper function to test the scanner."""
-    loop, queue_scanner = await ble_create_loop_and_queue()
+    loop = asyncio.get_event_loop()
+    queue_scanner = PartectorBleScanner.create_scanner_queue()
     conn_list = []  # serial number to connection mapping
 
     if with_context_manager:
