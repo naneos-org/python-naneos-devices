@@ -1,6 +1,6 @@
 from typing import Optional
 
-from naneos.partector.blueprints._data_structure import Partector2DataStructure
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.decoder.partector_ble_decoder_blueprint import (
     PartectorBleDecoderBlueprint,
 )
@@ -17,7 +17,7 @@ class PartectorBleDecoderStd(PartectorBleDecoderBlueprint):
     ELEMET_DEVICE_STATE_2 = 19
 
     OFFSET_LDSA = slice(0, 3)
-    OFFSET_PARTICLE_DIAMETER = slice(3, 5)
+    OFFSET_AVERAGE_PARTICLE_DIAMETER = slice(3, 5)
     OFFSET_PARTICLE_NUMBER = slice(5, 8)
     OFFSET_TEMPERATURE = slice(8, 9)
     OFFSET_RELATIVE_HUMIDITY = slice(9, 10)
@@ -38,16 +38,16 @@ class PartectorBleDecoderStd(PartectorBleDecoderBlueprint):
 
     @classmethod
     def decode(
-        cls, data: bytes, data_structure: Optional[Partector2DataStructure] = None
-    ) -> Partector2DataStructure:
+        cls, data: bytes, data_structure: Optional[NaneosDeviceDataPoint] = None
+    ) -> NaneosDeviceDataPoint:
         """
         Decode the advertisement data from the Partector device.
         """
-        decoded_data = Partector2DataStructure(
+        decoded_data = NaneosDeviceDataPoint(
             serial_number=cls.get_serial_number(data),
             ldsa=cls._get_ldsa(data),
-            particle_diameter=cls._get_diameter(data),
-            particle_number=cls._get_particle_number(data),
+            average_particle_diameter=cls._get_diameter(data),
+            particle_number_concentration=cls._get_particle_number(data),
             temperature=cls._get_temperature(data),
             relative_humidity=cls._get_relative_humidity(data),
             device_status=cls._get_device_state(data),
@@ -59,7 +59,7 @@ class PartectorBleDecoderStd(PartectorBleDecoderBlueprint):
             return decoded_data
 
         # Fill the given data_structure with the decoded data
-        for field in Partector2DataStructure.STD_FIELD_NAMES:
+        for field in NaneosDeviceDataPoint.BLE_STD_FIELD_NAMES:
             setattr(data_structure, field, getattr(decoded_data, field))
         return data_structure
 
@@ -77,7 +77,7 @@ class PartectorBleDecoderStd(PartectorBleDecoderBlueprint):
         """
         Get the particle diameter from the advertisement data.
         """
-        val = float(int.from_bytes(data[cls.OFFSET_PARTICLE_DIAMETER], byteorder="little"))
+        val = float(int.from_bytes(data[cls.OFFSET_AVERAGE_PARTICLE_DIAMETER], byteorder="little"))
         return val
 
     @classmethod

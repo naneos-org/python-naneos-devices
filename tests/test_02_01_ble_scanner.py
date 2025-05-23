@@ -1,14 +1,14 @@
 import asyncio
 import warnings
-from typing import Optional
 
 from bleak.backends.device import BLEDevice
 
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
 
 async def check_queue(
-    queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]],
+    queue: asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]],
 ) -> None:
     if queue.empty():
         warnings.warn("No BLE devices found.", UserWarning)
@@ -18,9 +18,7 @@ async def check_queue(
         device, data = await queue.get()
         assert device is not None
         assert data is not None
-        assert len(data) == 2
-        assert isinstance(data[0], bytes)
-        assert isinstance(data[1], (bytes, type(None)))
+        assert data.serial_number is not None
 
 
 async def async_test_scanner(with_context_manager: bool) -> None:

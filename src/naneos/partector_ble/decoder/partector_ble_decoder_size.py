@@ -1,6 +1,6 @@
 from typing import Optional
 
-from naneos.partector.blueprints._data_structure import Partector2DataStructure
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.decoder.partector_ble_decoder_blueprint import (
     PartectorBleDecoderBlueprint,
 )
@@ -14,27 +14,27 @@ class PartectorBleDecoderSize(PartectorBleDecoderBlueprint):
     # == External used methods =====================================================================
     @classmethod
     def decode(
-        cls, data: bytes, data_structure: Optional[Partector2DataStructure] = None
-    ) -> Partector2DataStructure:
+        cls, data: bytes, data_structure: Optional[NaneosDeviceDataPoint] = None
+    ) -> NaneosDeviceDataPoint:
         """
         Decode the auxiliary characteristic data from the Partector device.
         """
-        decoded_data = Partector2DataStructure(
-            dist_particle_number_10nm=cls._get_10nm(data),
-            dist_particle_number_16nm=cls._get_10nm(data),
-            dist_particle_number_26nm=cls._get_26nm(data),
-            dist_particle_number_43nm=cls._get_43nm(data),
-            dist_particle_number_70nm=cls._get_70nm(data),
-            dist_particle_number_114nm=cls._get_114nm(data),
-            dist_particle_number_185nm=cls._get_185nm(data),
-            dist_particle_number_300nm=cls._get_300nm(data),
+        decoded_data = NaneosDeviceDataPoint(
+            particle_number_10nm=cls._get_10nm(data),
+            particle_number_16nm=cls._get_10nm(data),
+            particle_number_26nm=cls._get_26nm(data),
+            particle_number_43nm=cls._get_43nm(data),
+            particle_number_70nm=cls._get_70nm(data),
+            particle_number_114nm=cls._get_114nm(data),
+            particle_number_185nm=cls._get_185nm(data),
+            particle_number_300nm=cls._get_300nm(data),
         )
 
         if not data_structure:
             return decoded_data
 
         # Fill the given data_structure with the decoded data
-        for field in Partector2DataStructure.SIZE_DIST_FIELD_NAMES:
+        for field in NaneosDeviceDataPoint.BLE_SIZE_DIST_FIELD_NAMES:
             setattr(data_structure, field, getattr(decoded_data, field))
         return data_structure
 

@@ -3,23 +3,21 @@ from typing import Optional
 
 from bleak.backends.device import BLEDevice
 
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
-SNS = {8112, 8617}  # serial numbers to connect to for testing
+SNS = {8617}  # serial numbers to connect to for testing
 
 
 async def _map_sn_to_device(
-    queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]],
+    queue: asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]],
 ) -> Optional[dict[int, BLEDevice]]:
-    from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
-
     device_dict = {}
     while not queue.empty():
         device, data = await queue.get()
-        serial = PartectorBleDecoderStd.decode(data[0], data_structure=None).serial_number
-        if serial:
-            device_dict[serial] = device
+        if data.serial_number:
+            device_dict[data.serial_number] = device
 
     if not device_dict:
         return None

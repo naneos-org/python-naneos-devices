@@ -1,79 +1,109 @@
 from dataclasses import dataclass
 from typing import Optional, Union
 
+import pandas as pd
+
+# NaneosDeviceDataDict should have format {serial_number: pd.DataFrame}
+# the pd.DataFrame is multiindex with unix_timestamp and connection_type as index
+
 
 @dataclass
-class Partector2DataStructure:
-    STD_FIELD_NAMES = {
+class NaneosDeviceDataPoint:
+    BLE_STD_FIELD_NAMES = {
         "serial_number",
         "ldsa",
-        "particle_diameter",
-        "particle_number",
+        "average_particle_diameter",
+        "particle_number_concentration",
         "temperature",
         "relative_humidity",
         "device_status",
         "battery_voltage",
         "particle_mass",
     }
-
-    AUX_FIELD_NAMES = {
+    BLE_AUX_FIELD_NAMES = {
         "corona_voltage",
         "diffusion_current",
         "deposition_voltage",
         "flow_from_dp",
         "ambient_pressure",
-        "em_amplitude1",
-        "em_amplitude2",
-        "em_gain1",
-        "em_gain2",
+        "electrometer_1_amplitude",
+        "electrometer_2_amplitude",
+        "electrometer_1_gain",
+        "electrometer_2_gain",
         "diffusion_current_offset",
     }
-
-    SIZE_DIST_FIELD_NAMES = {
-        "dist_particle_number_10nm",
-        "dist_particle_number_16nm",
-        "dist_particle_number_26nm",
-        "dist_particle_number_43nm",
-        "dist_particle_number_70nm",
-        "dist_particle_number_114nm",
-        "dist_particle_number_185nm",
-        "dist_particle_number_300nm",
+    BLE_SIZE_DIST_FIELD_NAMES = {
+        "particle_number_10nm",
+        "particle_number_16nm",
+        "particle_number_26nm",
+        "particle_number_43nm",
+        "particle_number_70nm",
+        "particle_number_114nm",
+        "particle_number_185nm",
+        "particle_number_300nm",
     }
 
     @staticmethod
     def add_serial_data_to_dict(
-        devices: dict, data: "Partector2DataStructure"
-    ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
+        devices: dict, data: "NaneosDeviceDataPoint"
+    ) -> dict[int, pd.DataFrame]:
         if data.serial_number not in devices:
-            devices[data.serial_number] = {"serial": [], "connected": [], "advertisement": []}
+            devices[data.serial_number] = pd.DataFrame()
 
-        if len(devices[data.serial_number]["serial"]) > 300:
-            devices[data.serial_number]["serial"].pop(0)
-        devices[data.serial_number]["serial"].append(data)
+        # remove oldes row if there are more than 300 rows
+        if len(devices[data.serial_number]) > 300:
+            devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
+        # add new row
+        new_row = data.to_pandas_series(remove_nan=False).to_frame().T
+        new_row["connection_type"] = "serial"
+        new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
+        new_row.index = new_row.index.astype("int")  # convert index to int
+        devices[data.serial_number] = pd.concat(
+            [devices[data.serial_number], new_row], ignore_index=False
+        )
+
         return devices
 
     @staticmethod
     def add_connected_data_to_dict(
-        devices: dict, data: "Partector2DataStructure"
-    ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
+        devices: dict, data: "NaneosDeviceDataPoint"
+    ) -> dict[int, pd.DataFrame]:
         if data.serial_number not in devices:
-            devices[data.serial_number] = {"serial": [], "connected": [], "advertisement": []}
+            devices[data.serial_number] = pd.DataFrame()
 
-        if len(devices[data.serial_number]["connected"]) > 300:
-            devices[data.serial_number]["connected"].pop(0)
-        devices[data.serial_number]["connected"].append(data)
+        # remove oldes row if there are more than 300 rows
+        if len(devices[data.serial_number]) > 300:
+            devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
+        # add new row with an coulmn connection_type = "connected"
+        new_row = data.to_pandas_series(remove_nan=False).to_frame().T
+        new_row["connection_type"] = "connected"
+        new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
+        new_row.index = new_row.index.astype("int")  # convert index to int
+        devices[data.serial_number] = pd.concat(
+            [devices[data.serial_number], new_row], ignore_index=False
+        )
+
         return devices
 
     @staticmethod
     def add_advertisement_data_to_dict(
-        devices: dict, data: "Partector2DataStructure"
-    ) -> dict[int, dict[str, list["Partector2DataStructure"]]]:
+        devices: dict, data: "NaneosDeviceDataPoint"
+    ) -> dict[int, pd.DataFrame]:
         if data.serial_number not in devices:
-            devices[data.serial_number] = {"serial": [], "connected": [], "advertisement": []}
+            devices[data.serial_number] = pd.DataFrame()
 
-        if len(devices[data.serial_number]["advertisement"]) > 300:
-            devices[data.serial_number]["advertisement"].pop(0)
-        devices[data.serial_number]["advertisement"].append(data)
+        # remove oldes row if there are more than 300 rows
+        if len(devices[data.serial_number]) > 300:
+            devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
+        # add new row
+        new_row = data.to_pandas_series(remove_nan=False).to_frame().T
+        new_row["connection_type"] = "advertisement"
+        new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
+        new_row.index = new_row.index.astype("int")  # convert index to int
+        devices[data.serial_number] = pd.concat(
+            [devices[data.serial_number], new_row], ignore_index=False
+        )
+
         return devices
 
     def to_dict(self, remove_nan=True) -> dict[str, Union[int, float]]:
@@ -86,54 +116,74 @@ class Partector2DataStructure:
         else:
             return {key: getattr(self, key) for key in self.__dataclass_fields__}
 
+    def to_pandas_series(self, remove_nan=True) -> pd.Series:
+        """
+        Convert the dataclass instance to a pandas Series.
+        """
+        data_dict = self.to_dict(remove_nan=remove_nan)
+        return pd.Series(data_dict)
+
     # mandatory
     unix_timestamp: Optional[int] = None
     serial_number: Optional[int] = None
+    firmware_version: Optional[str] = None
 
     # optional
     runtime_min: Optional[float] = None
     device_status: Optional[int] = None
     ldsa: Optional[float] = None
-    particle_number: Optional[float] = None
-    particle_diameter: Optional[float] = None
+    particle_number_concentration: Optional[float] = None
+    average_particle_diameter: Optional[float] = None
     particle_mass: Optional[float] = None
     particle_surface: Optional[float] = None
     diffusion_current: Optional[float] = None
     diffusion_current_offset: Optional[float] = None
+    diffusion_current_stddev: Optional[float] = None
+    diffusion_current_delay_on: Optional[float] = None
+    diffusion_current_delay_off: Optional[float] = None
     corona_voltage: Optional[float] = None
-    hires_adc1: Optional[float] = None
-    hires_adc2: Optional[float] = None
-    em_amplitude1: Optional[float] = None
-    em_amplitude2: Optional[float] = None
-    em_gain1: Optional[float] = None
-    em_gain2: Optional[float] = None
+    hires_adc1: Optional[float] = None  # momentanwert em 1
+    hires_adc2: Optional[float] = None  # momentanwert em 2
+    electrometer_1_amplitude: Optional[float] = None
+    electrometer_2_amplitude: Optional[float] = None
+    electrometer_1_gain: Optional[float] = None
+    electrometer_2_gain: Optional[float] = None
     temperature: Optional[float] = None
     relative_humidity: Optional[float] = None
     deposition_voltage: Optional[float] = None
     battery_voltage: Optional[float] = None
     flow_from_dp: Optional[float] = None
-    differential_pressure: Optional[float] = None
     ambient_pressure: Optional[float] = None
-    sigma: Optional[float] = None
+    channel_pressure: Optional[float] = None
+    differential_pressure: Optional[float] = None
+    pump_voltage: Optional[float] = None
     pump_current: Optional[float] = None
     pump_pwm: Optional[float] = None
-    dist_steps: Optional[float] = None
-    dist_particle_number_10nm: Optional[float] = None
-    dist_particle_number_16nm: Optional[float] = None
-    dist_particle_number_26nm: Optional[float] = None
-    dist_particle_number_43nm: Optional[float] = None
-    dist_particle_number_70nm: Optional[float] = None
-    dist_particle_number_114nm: Optional[float] = None
-    dist_particle_number_185nm: Optional[float] = None
-    dist_particle_number_300nm: Optional[float] = None
-    dist_current_0: Optional[float] = None
-    dist_current_1: Optional[float] = None
-    dist_current_2: Optional[float] = None
-    dist_current_3: Optional[float] = None
-    dist_current_4: Optional[float] = None
+    particle_number_10nm: Optional[float] = None
+    particle_number_16nm: Optional[float] = None
+    particle_number_26nm: Optional[float] = None
+    particle_number_43nm: Optional[float] = None
+    particle_number_70nm: Optional[float] = None
+    particle_number_114nm: Optional[float] = None
+    particle_number_185nm: Optional[float] = None
+    particle_number_300nm: Optional[float] = None
+    sigma_size_dist: Optional[float] = None
+    steps_inversion: Optional[float] = None
+    current_dist_0: Optional[float] = None
+    current_dist_1: Optional[float] = None
+    current_dist_2: Optional[float] = None
+    current_dist_3: Optional[float] = None
+    current_dist_4: Optional[float] = None
+
+    supply_voltage_5V: Optional[float] = None
+    positive_voltage_3V3: Optional[float] = None
+    negative_voltage_3V3: Optional[float] = None
+    usb_cc_voltage: Optional[float] = None
+
     cs_status: Optional[float] = None
 
 
+# TODO: from here on its old code, need to be updated
 PARTECTOR1_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp_ms": int,
     "runtime_min": float,
@@ -255,7 +305,7 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, Union[type[int], type[float]]] = {
     "LDSA": float,
     "surface": float,  # not existing in protobuf
     "particle_mass": float,
-    "sigma": float,  # not existing in protobuf
+    "sigma_size_dist": float,  # not existing in protobuf
     "idiff_global": float,
     "ucor_global": int,
     "deposition_voltage": int,
@@ -293,7 +343,7 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V336: dict[str, Union[type[int], type[float]]] = {
     "LDSA": float,
     "surface": float,  # not existing in protobuf
     "particle_mass": float,
-    "sigma": float,  # not existing in protobuf
+    "sigma_size_dist": float,  # not existing in protobuf
     "idiff_global": float,
     "ucor_global": int,
     "deposition_voltage": int,
@@ -331,7 +381,7 @@ PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, Union[type[int], type[float]]] 
     "LDSA": float,
     "surface": float,  # not existing in protobuf
     "particle_mass": float,
-    "sigma": float,  # not existing in protobuf
+    "sigma_size_dist": float,  # not existing in protobuf
     "idiff_global": float,
     "ucor_global": int,
     "deposition_voltage": int,

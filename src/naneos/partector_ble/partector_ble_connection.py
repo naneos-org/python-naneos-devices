@@ -10,7 +10,7 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDeviceNotFoundError
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
-from naneos.partector.blueprints._data_structure import Partector2DataStructure
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
 from naneos.partector_ble.decoder.partector_ble_decoder_size import PartectorBleDecoderSize
 from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
@@ -30,9 +30,9 @@ class PartectorBleConnection:
 
     # static methods ###############################################################################
     @staticmethod
-    def create_connection_queue() -> asyncio.Queue[Partector2DataStructure]:
+    def create_connection_queue() -> asyncio.Queue[NaneosDeviceDataPoint]:
         """Create a queue for the scanner."""
-        queue_connection: asyncio.Queue[Partector2DataStructure] = asyncio.Queue(maxsize=100)
+        queue_connection: asyncio.Queue[NaneosDeviceDataPoint] = asyncio.Queue(maxsize=100)
 
         return queue_connection
 
@@ -42,7 +42,7 @@ class PartectorBleConnection:
         device: BLEDevice,
         loop: asyncio.AbstractEventLoop,
         serial_number: int,
-        queue: asyncio.Queue[Partector2DataStructure],
+        queue: asyncio.Queue[NaneosDeviceDataPoint],
     ) -> None:
         """
         Initializes the BLE connection with the given device, event loop, and queue.
@@ -53,7 +53,7 @@ class PartectorBleConnection:
             serial_number (int): The serial number of the device.
         """
         self.SERIAL_NUMBER = serial_number
-        self._data = Partector2DataStructure()
+        self._data = NaneosDeviceDataPoint()
         self._next_ts = 0.0
         self._queue = queue
 
@@ -103,7 +103,7 @@ class PartectorBleConnection:
 
                     if self._client.is_connected:
                         self._queue.put_nowait(self._data)
-                        self._data = Partector2DataStructure()
+                        self._data = NaneosDeviceDataPoint()
                         continue
 
                     await self._client.connect()
@@ -116,12 +116,12 @@ class PartectorBleConnection:
                     self._next_ts = int(time.time()) + 1.0
                 except asyncio.TimeoutError:
                     logger.warning(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
-                    await asyncio.sleep(4.5)
+                    await asyncio.sleep(30)
                     # self._add_old_device_data(values)
                     # TODO: mark as connected or old device
                 except BleakDeviceNotFoundError:
                     logger.warning(f"SN{self.SERIAL_NUMBER}: Device not found.")
-                    await asyncio.sleep(4.5)
+                    await asyncio.sleep(30)
                     # TODO: mark as connected or old device
                 except Exception as e:
                     logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
@@ -161,7 +161,7 @@ class PartectorBleConnection:
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic)."""
-        self._data.unix_timestamp = int(time.time() * 1000)
+        self._data.unix_timestamp = int(time.time()) * 1000
         self._data = PartectorBleDecoderStd.decode(data, data_structure=self._data)
 
         logger.debug(f"SN{self.SERIAL_NUMBER}: Received std: {data.hex()}")
@@ -222,14 +222,13 @@ async def main():
 
 
 async def _map_sn_to_device(
-    queue: asyncio.Queue[tuple[BLEDevice, tuple[bytes, Optional[bytes]]]],
+    queue: asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]],
 ) -> Optional[dict[int, BLEDevice]]:
     device_dict = {}
     while not queue.empty():
         device, data = await queue.get()
-        serial = PartectorBleDecoderStd.decode(data[0], data_structure=None).serial_number
-        if serial:
-            device_dict[serial] = device
+        if data.serial_number:
+            device_dict[data.serial_number] = device
 
     if not device_dict:
         logger.info("No devices found.")

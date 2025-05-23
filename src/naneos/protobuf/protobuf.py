@@ -115,15 +115,15 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
         elif "ambient_pressure" in ser:
             device_point.ambient_pressure = int(ser["ambient_pressure"] * 10.0)
         if "em_gain1" in ser:  # multiplicator ???
-            device_point.electrometer_gain = int(ser["em_gain1"] * 100.0)
+            device_point.electrometer_1_gain = int(ser["em_gain1"] * 100.0)
         if "em_gain2" in ser:
             device_point.electrometer_2_gain = int(ser["em_gain2"] * 100.0)
 
         # P2 Pro
         if "surface" in ser:
-            device_point.surface = int(ser["surface"] * 100.0)
+            device_point.particle_surface = int(ser["surface"] * 100.0)
         elif "particle_surface" in ser:
-            device_point.surface = int(ser["particle_surface"] * 100.0)
+            device_point.particle_surface = int(ser["particle_surface"] * 100.0)
         if "particle_mass" in ser:
             device_point.particle_mass = int(ser["particle_mass"] * 100.0)
         if "sigma" in ser:

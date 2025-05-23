@@ -1,6 +1,6 @@
 from typing import Optional
 
-from naneos.partector.blueprints._data_structure import Partector2DataStructure
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.decoder.partector_ble_decoder_blueprint import (
     PartectorBleDecoderBlueprint,
 )
@@ -27,21 +27,21 @@ class PartectorBleDecoderAux(PartectorBleDecoderBlueprint):
     # == External used methods =====================================================================
     @classmethod
     def decode(
-        cls, data: bytes, data_structure: Optional[Partector2DataStructure] = None
-    ) -> Partector2DataStructure:
+        cls, data: bytes, data_structure: Optional[NaneosDeviceDataPoint] = None
+    ) -> NaneosDeviceDataPoint:
         """
         Decode the auxiliary characteristic data from the Partector device.
         """
-        decoded_data = Partector2DataStructure(
+        decoded_data = NaneosDeviceDataPoint(
             corona_voltage=cls._get_corona_voltage(data),
             diffusion_current=cls._get_diffusion_current(data),
             deposition_voltage=cls._get_deposition_voltage(data),
             flow_from_dp=cls._get_flow_from_dp(data),
             ambient_pressure=cls._get_ambient_pressure(data),
-            em_amplitude1=cls._get_em_amplitude_1(data),
-            em_amplitude2=cls._get_em_amplitude_2(data),
-            em_gain1=cls._get_em_gain_1(data),
-            em_gain2=cls._get_em_gain_2(data),
+            electrometer_1_amplitude=cls._get_em_amplitude_1(data),
+            electrometer_2_amplitude=cls._get_em_amplitude_2(data),
+            electrometer_1_gain=cls._get_em_gain_1(data),
+            electrometer_2_gain=cls._get_em_gain_2(data),
             diffusion_current_offset=cls._get_diffusion_current_offset(data),
         )
 
@@ -49,7 +49,7 @@ class PartectorBleDecoderAux(PartectorBleDecoderBlueprint):
             return decoded_data
 
         # Fill the given data_structure with the decoded data
-        for field in Partector2DataStructure.AUX_FIELD_NAMES:
+        for field in NaneosDeviceDataPoint.BLE_AUX_FIELD_NAMES:
             setattr(data_structure, field, getattr(decoded_data, field))
         return data_structure
 
