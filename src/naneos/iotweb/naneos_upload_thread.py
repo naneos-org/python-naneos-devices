@@ -45,7 +45,7 @@ class NaneosUploadThread(Thread):
                 else:
                     self._callback(False)
         except Exception as e:
-            logger.error(f"Error in upload: {e}")
+            logger.exception(f"Error in upload: {e}")
             if self._callback:
                 self._callback(False)  # delete data because it was corrupted
 

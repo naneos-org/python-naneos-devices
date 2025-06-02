@@ -42,6 +42,120 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._time_last_message_received = time.time()
         self._legacy_data_structure: bool = False
 
+    #########################################
+    ### Init methods
+    def _init(
+        self,
+        serial_number: Optional[int] = None,
+        port: Optional[str] = None,
+        verb_freq: int = 1,
+        hw_version: str = "None",
+    ) -> None:
+        self._hw_version = hw_version
+        self._shutdown_partector = False
+        self._init_serial(serial_number, port)
+        self._init_thread()
+        self._init_data_structures()
+        self._init_clear_buffers()
+        self.start()
+
+        self._init_get_device_info()
+
+        self._init_serial_data_structure()
+        self.set_verbose_freq(verb_freq)
+
+    def _init_serial(self, serial_number: Optional[int] = None, port: Optional[str] = None) -> None:
+        self._sn = serial_number
+        self._port = port
+
+        self._init_serial_sn_search()
+        self._init_serial_connection()
+
+        self._check_connection()
+
+    def _init_serial_sn_search(self) -> None:
+        from naneos.partector import scan_for_serial_partector
+
+        if self._sn is not None:
+            for _ in range(self.SERIAL_INIT_SCAN_RETRIES):
+                self._port = scan_for_serial_partector(self._sn, self._hw_version)
+                if self._port:
+                    break
+            if not self._port:
+                logger.warning(f"SN{self._sn} not found! Checker is running in the background.")
+        elif self._port is None:
+            raise Exception("No serial number or port given!")
+
+    def _init_serial_connection(self) -> None:
+        tries = 0
+        tries_start = time.time()
+
+        while time.time() - tries_start < self.SERIAL_INIT_RETRIES_TIMEOUT_S:
+            tries += 1
+
+            try:
+                self._ser = serial.Serial(
+                    port=self._port,
+                    baudrate=self.SERIAL_BAUDRATE,
+                    timeout=self.SERIAL_TIMEOUT,
+                )
+            except serial.SerialException:
+                continue
+            if self._ser.is_open:
+                self.set_verbose_freq(0)
+                time.sleep(10e-3)
+                self._ser.reset_input_buffer()
+                break
+            self._ser.close()
+
+        if not self._ser.is_open:
+            logger.error(f"SN{self._sn} on port {self._port} could not be opened! Tries: {tries}")
+        if tries > 1:
+            logger.warning(f"SN{self._sn} on port {self._port} needed {tries} tries to connect.")
+
+    def _check_connection(self) -> None:
+        if self._ser.is_open:
+            self._connected = True
+            logger.info(f"Connected to SN{self._sn} on {self._port}")
+        else:
+            self._connected = False
+            logger.warning(f"Could not connect to SN{self._sn} on {self._port}")
+
+    def _init_thread(self) -> None:
+        self.name = f"naneos-partector-thread_{self._sn}"
+        self.thread_event = Event()
+
+    def _init_data_structures(self) -> None:
+        self.custom_info_str = "0"
+        self.custom_info_size = 0
+        # will be declared in child class
+        self._data_structure: dict[str, type[Union[int, float]]] = {}
+        self._queue: deque[list[Union[int, str]]] = deque(maxlen=self.SERIAL_QUEUE_MAXSIZE)
+        self._queue_info: deque[list[Union[int, str]]] = deque(
+            maxlen=self.SERIAL_INFO_QUEUE_MAXSIZE
+        )
+
+    @abstractmethod
+    def _init_serial_data_structure(self) -> None:
+        pass
+
+    def _init_clear_buffers(self) -> None:
+        if not self._connected:
+            return
+
+        time.sleep(10e-3)
+        if isinstance(self._ser, serial.Serial):
+            self._ser.reset_input_buffer()
+
+    def _init_get_device_info(self) -> None:
+        try:
+            if self._sn is None:
+                self._sn = self._get_serial_number_secure()
+            self._fw = self.get_firmware_version()
+            logger.debug(f"Connected to SN{self._sn} on {self._port}")
+        except Exception:
+            logger.warning("Could not get device info!")
+
     def close(
         self, blocking: bool = True, shutdown: bool = False, verbose_reset: bool = True
     ) -> None:
@@ -137,7 +251,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     def clear_data_cache(self) -> None:
         """Clears the data cache."""
         # self._queue.clear()
-        if self._queue:
+        if isinstance(self._queue, deque) and len(self._queue) > 0:
             self._queue = deque([self._queue.pop()], maxlen=self.SERIAL_QUEUE_MAXSIZE)
 
     def get_data_list(self) -> list[list[Union[int, float]]]:
@@ -164,7 +278,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             data = self.get_data_list()
 
         columns = list(self._data_structure.keys())
-        df = pandas.DataFrame(data, columns=columns).set_index("unix_timestamp_ms")
+        df = pandas.DataFrame(data, columns=columns).set_index("unix_timestamp")
         df = df[~df.index.duplicated(keep="last")]
         return df
 
@@ -217,10 +331,13 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
         data = [unix_timestamp] + line.split("\t")
 
-        # print(f"Received line length: {len(data)}, soll length: {len(self._data_structure)}")
+        print(
+            f"Received line length: {len(data)}, soll length: {len(self._data_structure)}, {data}"
+        )
 
         self._notify_message_received()
         if len(data) == len(self._data_structure):
+            print("Appending data to queue.")
             self._queue.append(data)
         # this is legacy mode, where the data structure is not known exactly
         elif len(data) > len(self._data_structure) and self._legacy_data_structure:
@@ -371,120 +488,6 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         return line_parsed
 
-    #########################################
-    ### Init methods
-    def _init(
-        self,
-        serial_number: Optional[int] = None,
-        port: Optional[str] = None,
-        verb_freq: int = 1,
-        hw_version: str = "None",
-    ) -> None:
-        self._hw_version = hw_version
-        self._shutdown_partector = False
-        self._init_serial(serial_number, port)
-        self._init_thread()
-        self._init_data_structures()
-        self._init_clear_buffers()
-        self.start()
-
-        self._init_get_device_info()
-
-        self._init_serial_data_structure()
-        self.set_verbose_freq(verb_freq)
-
-    def _init_serial(self, serial_number: Optional[int] = None, port: Optional[str] = None) -> None:
-        self._sn = serial_number
-        self._port = port
-
-        self._init_serial_sn_search()
-        self._init_serial_connection()
-
-        self._check_connection()
-
-    def _init_serial_sn_search(self) -> None:
-        from naneos.partector import scan_for_serial_partector
-
-        if self._sn is not None:
-            for _ in range(self.SERIAL_INIT_SCAN_RETRIES):
-                self._port = scan_for_serial_partector(self._sn, self._hw_version)
-                if self._port:
-                    break
-            if not self._port:
-                logger.warning(f"SN{self._sn} not found! Checker is running in the background.")
-        elif self._port is None:
-            raise Exception("No serial number or port given!")
-
-    def _init_serial_connection(self) -> None:
-        tries = 0
-        tries_start = time.time()
-
-        while time.time() - tries_start < self.SERIAL_INIT_RETRIES_TIMEOUT_S:
-            tries += 1
-
-            try:
-                self._ser = serial.Serial(
-                    port=self._port,
-                    baudrate=self.SERIAL_BAUDRATE,
-                    timeout=self.SERIAL_TIMEOUT,
-                )
-            except serial.SerialException:
-                continue
-            if self._ser.is_open:
-                self.set_verbose_freq(0)
-                time.sleep(10e-3)
-                self._ser.reset_input_buffer()
-                break
-            self._ser.close()
-
-        if not self._ser.is_open:
-            logger.error(f"SN{self._sn} on port {self._port} could not be opened! Tries: {tries}")
-        if tries > 1:
-            logger.warning(f"SN{self._sn} on port {self._port} needed {tries} tries to connect.")
-
-    def _check_connection(self) -> None:
-        if self._ser.is_open:
-            self._connected = True
-            logger.info(f"Connected to SN{self._sn} on {self._port}")
-        else:
-            self._connected = False
-            logger.warning(f"Could not connect to SN{self._sn} on {self._port}")
-
-    def _init_thread(self) -> None:
-        self.name = f"naneos-partector-thread_{self._sn}"
-        self.thread_event = Event()
-
-    def _init_data_structures(self) -> None:
-        self.custom_info_str = "0"
-        self.custom_info_size = 0
-        # will be declared in child class
-        self._data_structure: dict[str, type[Union[int, float]]] = {}
-        self._queue: deque[list[Union[int, str]]] = deque(maxlen=self.SERIAL_QUEUE_MAXSIZE)
-        self._queue_info: deque[list[Union[int, str]]] = deque(
-            maxlen=self.SERIAL_INFO_QUEUE_MAXSIZE
-        )
-
-    @abstractmethod
-    def _init_serial_data_structure(self) -> None:
-        pass
-
-    def _init_clear_buffers(self) -> None:
-        if not self._connected:
-            return
-
-        time.sleep(10e-3)
-        if isinstance(self._ser, serial.Serial):
-            self._ser.reset_input_buffer()
-
-    def _init_get_device_info(self) -> None:
-        try:
-            if self._sn is None:
-                self._sn = self._get_serial_number_secure()
-            self._fw = self.get_firmware_version()
-            logger.debug(f"Connected to SN{self._sn} on {self._port}")
-        except Exception:
-            logger.warning("Could not get device info!")
-
 
 if __name__ == "__main__":
     from naneos.partector import Partector2, Partector2ProCs  # noqa: F401
@@ -492,7 +495,7 @@ if __name__ == "__main__":
     def test_callback(state: bool) -> None:
         logger.info(f"Catalyst state changed to {state}.")
 
-    partector = Partector2(serial_number=8112)
+    partector = Partector2(serial_number=8617)
 
     time.sleep(30)
 

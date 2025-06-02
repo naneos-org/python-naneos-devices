@@ -64,19 +64,19 @@ class ScanPartector(PartectorBluePrint):
 def scan_for_serial_partector(serial_number: int, partector_version: str) -> Optional[str]:
     """Scans all possible ports using threads (fast)."""
     threads = []
-    q_1 = Queue()
-    q_2 = Queue()
-    q_2_pro = Queue()
-    q_2_pro_cs = Queue()
+    q_1: Queue = Queue()
+    q_2: Queue = Queue()
+    q_2_pro: Queue = Queue()
+    q_2_pro_cs: Queue = Queue()
 
-    [
+    for port in ls_ports():
         threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
-        for port in ls_ports()
-    ]
-    [thread.start() for thread in threads]
-    [thread.join() for thread in threads]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
 
-    q = Queue()
+    q: Queue = Queue()
     if partector_version == "P1":
         q = q_1
     elif partector_version == "P2":
@@ -98,18 +98,21 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
 def scan_for_serial_partectors(ports_exclude: Optional[list] = None) -> dict:
     """Scans all possible ports using threads (fast)."""
     threads = []
-    q_1, q_2, q_2_pro, q_2_pro_cs = (Queue() for _ in range(4))
+    q_1: Queue = Queue()
+    q_2: Queue = Queue()
+    q_2_pro: Queue = Queue()
+    q_2_pro_cs: Queue = Queue()
 
     if ports_exclude is None:
         ports_exclude = []
 
-    [
-        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
-        for port in ls_ports(ports_exclude)
-        if port not in ports_exclude
-    ]
-    [thread.start() for thread in threads]
-    [thread.join() for thread in threads]
+    for port in ls_ports():
+        if port not in ports_exclude:
+            threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
 
     p1 = {k: v for x in tuple(q_1.queue) for (k, v) in x.items()}
     p2 = {k: v for x in tuple(q_2.queue) for (k, v) in x.items()}
@@ -147,3 +150,4 @@ def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Q
 
 if __name__ == "__main__":
     print(scan_for_serial_partectors())
+    # print(scan_for_serial_partector(8617, "P2pro"))
