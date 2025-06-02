@@ -7,8 +7,39 @@ import pandas as pd
 # the pd.DataFrame is multiindex with unix_timestamp and connection_type as index
 
 
+def sort_and_clean_naneos_data(data: dict[int, pd.DataFrame]) -> dict[int, pd.DataFrame]:
+    """
+    Sorts the DataFrame by unix_timestamp and connection_type, and removes columns with all NaN values.
+    """
+    data_return = {}
+
+    for serial, df in data.items():
+        df = df.dropna(axis=1, how="all")  # drop columns with all NaN values
+
+        if "connection_type" in df.columns:
+            df.reset_index(inplace=True)
+            df.set_index(["unix_timestamp", "connection_type"], inplace=True)
+            df = df.sort_index(level=[0, 1], ascending=[True, True])
+            # drop connection_type index and make it a column
+            df.reset_index(level=1, drop=False, inplace=True)
+            df = df[~df.index.duplicated(keep="last")]
+            # if there are rows with device type 2 and 0 remove all 0 rows
+            if "device_type" in df.columns:
+                if (df["device_type"] == 0).any() and (df["device_type"] == 2).any():
+                    df = df[df["device_type"] != 0]
+
+        data_return[serial] = df
+
+    return data_return
+
+
 @dataclass
 class NaneosDeviceDataPoint:
+    DEV_TYPE_P2 = 0
+    DEV_TYPE_P1 = 1
+    DEV_TYPE_P2PRO = 2
+    DEV_TYPE_P2PRO_CS = 3
+
     BLE_STD_FIELD_NAMES = {
         "serial_number",
         "ldsa",
@@ -127,6 +158,7 @@ class NaneosDeviceDataPoint:
     unix_timestamp: Optional[int] = None
     serial_number: Optional[int] = None
     firmware_version: Optional[str] = None
+    device_type: Optional[int] = 0  # 0: P2, 1: P1, 2: P2PRO, 3: P2PRO_CS
 
     # optional
     runtime_min: Optional[float] = None

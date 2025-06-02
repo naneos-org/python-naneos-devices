@@ -3,6 +3,7 @@ from typing import Optional
 import pandas as pd
 
 import naneos.protobuf.protoV1_pb2 as pbScheme
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 
 
 def create_combined_entry(
@@ -29,12 +30,16 @@ def create_combined_entry(
     return combined
 
 
-def create_proto_device(sn: int, abs_time: int, df: pd.DataFrame, dev_type: str) -> pbScheme.Device:
+def create_proto_device(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
     LIST_DEVICES = ["P2", "P1", "P2pro", "P2proCS"]
 
     device = pbScheme.Device()
-    device.type = LIST_DEVICES.index(dev_type)
-    print(f"Device type: {dev_type}, index: {device.type}")
+    device.type = (
+        int(df["device_type"].iloc[-1])
+        if "device_type" in df
+        else NaneosDeviceDataPoint.DEV_TYPE_P2
+    )
+    print(f"Device type: {device.type}, index: {device.type}")
     device.serial_number = sn
 
     device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
@@ -108,6 +113,8 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
             device_point.particle_number_concentration = int(ser["number"])
         elif "particle_number" in ser:
             device_point.particle_number_concentration = int(ser["particle_number"])
+        elif "particle_number_concentration" in ser:
+            device_point.particle_number_concentration = int(ser["particle_number_concentration"])
         if "dP" in ser:  # differential_pressure
             pass
         if "P_average" in ser:

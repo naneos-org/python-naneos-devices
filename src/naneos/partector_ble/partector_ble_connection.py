@@ -53,6 +53,7 @@ class PartectorBleConnection:
             serial_number (int): The serial number of the device.
         """
         self.SERIAL_NUMBER = serial_number
+        self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2  # Thats the deafault value
         self._data = NaneosDeviceDataPoint()
         self._next_ts = 0.0
         self._queue = queue
@@ -102,6 +103,7 @@ class PartectorBleConnection:
                         self._next_ts = int(time.time()) + 1.0
 
                     if self._client.is_connected:
+                        self._data.device_type = self._device_type
                         self._queue.put_nowait(self._data)
                         self._data = NaneosDeviceDataPoint()
                         continue
@@ -175,6 +177,7 @@ class PartectorBleConnection:
 
     def _callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (size_dist characteristic)."""
+        self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2PRO
         self._data.unix_timestamp = int(time.time() * 1000)
         self._data = PartectorBleDecoderSize.decode(data, data_structure=self._data)
 

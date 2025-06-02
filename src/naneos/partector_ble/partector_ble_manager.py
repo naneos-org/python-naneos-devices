@@ -7,8 +7,12 @@ from typing import Dict
 import pandas as pd
 from bleak.backends.device import BLEDevice
 
+from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
 from naneos.logger import LEVEL_INFO, get_naneos_logger
-from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
+from naneos.partector.blueprints._data_structure import (
+    NaneosDeviceDataPoint,
+    sort_and_clean_naneos_data,
+)
 from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
@@ -135,24 +139,30 @@ def read_pickle_file(file_path: str) -> dict[int, pd.DataFrame]:
 
 
 if __name__ == "__main__":
-    data = get_data_from_manager()
+    manager = PartectorBleManager()
+    manager.start()
+
+    for _ in range(10):
+        time.sleep(10)  # Allow some time for the scanner to start
+        data = manager.get_data()
+        # check if there is a key with value 8617
+        if 8617 in data:
+            data_8617 = {}
+            data_8617[8617] = data[8617]
+            data_8617 = sort_and_clean_naneos_data(data_8617)
+            print(data_8617)
+            uploader = NaneosUploadThread(
+                data_8617, callback=lambda success: print(f"Upload success: {success}")
+            )
+            uploader.start()
+            uploader.join()
+
+    manager.stop()
+    manager.join()
+
+    # data = get_data_from_manager()
     # data = read_pickle_file("partector_data.pkl")
-
-    for serial, df in data.items():
-        print(f"Serial: {serial}")
-        df = df.dropna(axis=1, how="all")  # drop columns with all NaN values
-
-        # check if column connection_type is present
-        if "connection_type" in df.columns:
-            df.reset_index(inplace=True)
-            df.set_index(["unix_timestamp", "connection_type"], inplace=True)
-            df = df.sort_index(level=[0, 1], ascending=[True, True])
-            # drop connection_type index and make it a column
-            df.reset_index(level=1, drop=False, inplace=True)
-            df = df[~df.index.duplicated(keep="last")]
-
-        print(df.describe())
-
-        print()
-
     # save_data_to_pickle(data, "partector_data.pkl")
+
+    # data = sort_and_clean_naneos_data(data)
+    # print(data)
