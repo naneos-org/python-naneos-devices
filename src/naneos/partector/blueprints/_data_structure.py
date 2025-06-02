@@ -3,9 +3,6 @@ from typing import Optional, Union
 
 import pandas as pd
 
-# NaneosDeviceDataDict should have format {serial_number: pd.DataFrame}
-# the pd.DataFrame is multiindex with unix_timestamp and connection_type as index
-
 
 def sort_and_clean_naneos_data(data: dict[int, pd.DataFrame]) -> dict[int, pd.DataFrame]:
     """
@@ -159,60 +156,60 @@ class NaneosDeviceDataPoint:
     serial_number: Optional[int] = None
     firmware_version: Optional[str] = None
     device_type: Optional[int] = 0  # 0: P2, 1: P1, 2: P2PRO, 3: P2PRO_CS
+    device_status: Optional[int] = None  # bitmask
 
     # optional
-    runtime_min: Optional[float] = None
-    device_status: Optional[int] = None
-    ldsa: Optional[float] = None
-    particle_number_concentration: Optional[float] = None
-    average_particle_diameter: Optional[float] = None
-    particle_mass: Optional[float] = None
-    particle_surface: Optional[float] = None
-    diffusion_current: Optional[float] = None
-    diffusion_current_offset: Optional[float] = None
-    diffusion_current_stddev: Optional[float] = None
-    diffusion_current_delay_on: Optional[float] = None
-    diffusion_current_delay_off: Optional[float] = None
-    corona_voltage: Optional[float] = None
+    runtime_min: Optional[float] = None  # minutes since start
+    ldsa: Optional[float] = None  # um**2/cm**3
+    particle_number_concentration: Optional[float] = None  # particles/cm**3
+    average_particle_diameter: Optional[float] = None  # nm
+    particle_mass: Optional[float] = None  # ug/m**3
+    particle_surface: Optional[float] = None  # um**2/m**3
+    diffusion_current: Optional[float] = None  # nA
+    diffusion_current_offset: Optional[float] = None  # nA
+    diffusion_current_stddev: Optional[float] = None  # nA
+    diffusion_current_delay_on: Optional[float] = None  # sec
+    diffusion_current_delay_off: Optional[float] = None  # sec
+    corona_voltage: Optional[float] = None  # V
     hires_adc1: Optional[float] = None  # momentanwert em 1
     hires_adc2: Optional[float] = None  # momentanwert em 2
-    electrometer_1_amplitude: Optional[float] = None
-    electrometer_2_amplitude: Optional[float] = None
-    electrometer_1_gain: Optional[float] = None
-    electrometer_2_gain: Optional[float] = None
-    temperature: Optional[float] = None
-    relative_humidity: Optional[float] = None
-    deposition_voltage: Optional[float] = None
-    battery_voltage: Optional[float] = None
-    flow_from_dp: Optional[float] = None
-    ambient_pressure: Optional[float] = None
-    channel_pressure: Optional[float] = None
-    differential_pressure: Optional[float] = None
-    pump_voltage: Optional[float] = None
-    pump_current: Optional[float] = None
-    pump_pwm: Optional[float] = None
-    particle_number_10nm: Optional[float] = None
-    particle_number_16nm: Optional[float] = None
-    particle_number_26nm: Optional[float] = None
-    particle_number_43nm: Optional[float] = None
-    particle_number_70nm: Optional[float] = None
-    particle_number_114nm: Optional[float] = None
-    particle_number_185nm: Optional[float] = None
-    particle_number_300nm: Optional[float] = None
-    sigma_size_dist: Optional[float] = None
-    steps_inversion: Optional[float] = None
-    current_dist_0: Optional[float] = None
-    current_dist_1: Optional[float] = None
-    current_dist_2: Optional[float] = None
-    current_dist_3: Optional[float] = None
-    current_dist_4: Optional[float] = None
+    electrometer_1_amplitude: Optional[float] = None  # mV
+    electrometer_2_amplitude: Optional[float] = None  # mV
+    electrometer_1_gain: Optional[float] = None  # mV #TODO: check this unit
+    electrometer_2_gain: Optional[float] = None  # mV #TODO: check this unit
+    temperature: Optional[float] = None  # Celsius
+    relative_humidity: Optional[float] = None  # percent 0-100
+    deposition_voltage: Optional[float] = None  # V
+    battery_voltage: Optional[float] = None  # V
+    flow_from_dp: Optional[float] = None  # l/min
+    ambient_pressure: Optional[float] = None  # hPa
+    channel_pressure: Optional[float] = None  # hPa
+    differential_pressure: Optional[float] = None  # Pa
+    pump_voltage: Optional[float] = None  # V
+    pump_current: Optional[float] = None  # mA
+    pump_pwm: Optional[float] = None  # percent 0-100
+    particle_number_10nm: Optional[float] = None  # /cm^3/log(d)
+    particle_number_16nm: Optional[float] = None  # /cm^3/log(d)
+    particle_number_26nm: Optional[float] = None  # /cm^3/log(d)
+    particle_number_43nm: Optional[float] = None  # /cm^3/log(d)
+    particle_number_70nm: Optional[float] = None  # /cm^3/log(d)
+    particle_number_114nm: Optional[float] = None  # /cm^3/log(d)
+    particle_number_185nm: Optional[float] = None  # /cm^3/log(d)
+    particle_number_300nm: Optional[float] = None  # /cm^3/log(d)
+    sigma_size_dist: Optional[float] = None  # gsd
+    steps_inversion: Optional[float] = None  # steps count
+    current_dist_0: Optional[float] = None  # mV
+    current_dist_1: Optional[float] = None  # mV
+    current_dist_2: Optional[float] = None  # mV
+    current_dist_3: Optional[float] = None  # mV
+    current_dist_4: Optional[float] = None  # mV
 
-    supply_voltage_5V: Optional[float] = None
-    positive_voltage_3V3: Optional[float] = None
-    negative_voltage_3V3: Optional[float] = None
-    usb_cc_voltage: Optional[float] = None
+    supply_voltage_5V: Optional[float] = None  # V
+    positive_voltage_3V3: Optional[float] = None  # V
+    negative_voltage_3V3: Optional[float] = None  # V
+    usb_cc_voltage: Optional[float] = None  # V
 
-    cs_status: Optional[float] = None
+    cs_status: Optional[float] = None  # boolean, true or false
 
 
 # TODO: from here on its old code, need to be updated
