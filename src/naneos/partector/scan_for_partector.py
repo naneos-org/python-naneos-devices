@@ -106,9 +106,8 @@ def scan_for_serial_partectors(ports_exclude: Optional[list] = None) -> dict:
     if ports_exclude is None:
         ports_exclude = []
 
-    for port in ls_ports():
-        if port not in ports_exclude:
-            threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
+    for port in ls_ports(ports_exclude=ports_exclude):
+        threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
     for thread in threads:
         thread.start()
     for thread in threads:
