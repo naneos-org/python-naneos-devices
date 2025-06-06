@@ -37,6 +37,10 @@ class NaneosDeviceDataPoint:
     DEV_TYPE_P2PRO = 2
     DEV_TYPE_P2PRO_CS = 3
 
+    CONN_TYPE_SERIAL = "serial"
+    CONN_TYPE_CONNECTED = "connected"
+    CONN_TYPE_ADVERTISEMENT = "advertisement"
+
     BLE_STD_FIELD_NAMES = {
         "serial_number",
         "ldsa",
@@ -72,7 +76,7 @@ class NaneosDeviceDataPoint:
     }
 
     @staticmethod
-    def add_serial_data_to_dict(
+    def add_data_point_to_dict(
         devices: dict, data: "NaneosDeviceDataPoint"
     ) -> dict[int, pd.DataFrame]:
         if data.serial_number not in devices:
@@ -83,49 +87,6 @@ class NaneosDeviceDataPoint:
             devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
         # add new row
         new_row = data.to_pandas_series(remove_nan=False).to_frame().T
-        new_row["connection_type"] = "serial"
-        new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
-        new_row.index = new_row.index.astype("int")  # convert index to int
-        devices[data.serial_number] = pd.concat(
-            [devices[data.serial_number], new_row], ignore_index=False
-        )
-
-        return devices
-
-    @staticmethod
-    def add_connected_data_to_dict(
-        devices: dict, data: "NaneosDeviceDataPoint"
-    ) -> dict[int, pd.DataFrame]:
-        if data.serial_number not in devices:
-            devices[data.serial_number] = pd.DataFrame()
-
-        # remove oldes row if there are more than 300 rows
-        if len(devices[data.serial_number]) > 300:
-            devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
-        # add new row with an coulmn connection_type = "connected"
-        new_row = data.to_pandas_series(remove_nan=False).to_frame().T
-        new_row["connection_type"] = "connected"
-        new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
-        new_row.index = new_row.index.astype("int")  # convert index to int
-        devices[data.serial_number] = pd.concat(
-            [devices[data.serial_number], new_row], ignore_index=False
-        )
-
-        return devices
-
-    @staticmethod
-    def add_advertisement_data_to_dict(
-        devices: dict, data: "NaneosDeviceDataPoint"
-    ) -> dict[int, pd.DataFrame]:
-        if data.serial_number not in devices:
-            devices[data.serial_number] = pd.DataFrame()
-
-        # remove oldes row if there are more than 300 rows
-        if len(devices[data.serial_number]) > 300:
-            devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
-        # add new row
-        new_row = data.to_pandas_series(remove_nan=False).to_frame().T
-        new_row["connection_type"] = "advertisement"
         new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
         new_row.index = new_row.index.astype("int")  # convert index to int
         devices[data.serial_number] = pd.concat(
@@ -154,7 +115,8 @@ class NaneosDeviceDataPoint:
     # mandatory
     unix_timestamp: Optional[int] = None
     serial_number: Optional[int] = None
-    firmware_version: Optional[str] = None
+    connection_type: Optional[str] = None  # "serial", "connected", "advertisement"
+    firmware_version: Optional[int] = None
     device_type: Optional[int] = 0  # 0: P2, 1: P1, 2: P2PRO, 3: P2PRO_CS
     device_status: Optional[int] = None  # bitmask
 

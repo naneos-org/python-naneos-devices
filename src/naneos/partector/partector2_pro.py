@@ -1,9 +1,12 @@
 from typing import Optional
 
+import pandas as pd
+
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_V320,
     PARTECTOR2_PRO_DATA_STRUCTURE_V311,
     PARTECTOR2_PRO_DATA_STRUCTURE_V336,
+    NaneosDeviceDataPoint,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
@@ -20,8 +23,7 @@ class Partector2Pro(PartectorBluePrint):
 
     def _init_serial_data_structure(self) -> None:
         """This gets passed here and is set in the set_verbose_freq method."""
-        # TODO: My idea is to remove that completely and set the data structure in the set_verbose_freq method for all devices
-        pass
+        self.device_type = NaneosDeviceDataPoint.DEV_TYPE_P2PRO
 
     def _set_verbose_freq(self, freq: int) -> None:
         if freq == 0:
@@ -54,11 +56,16 @@ if __name__ == "__main__":
     assert partectors["P2pro"], "No Partector found!"
     serial_number, port = next(iter(partectors["P2pro"].items()))
 
+    data: dict[int, pd.DataFrame] = {}
     p2_pro = Partector2Pro(port=port)
 
     for _ in range(5):
         time.sleep(5)
-        df = p2_pro.get_data_pandas()
+        data_points = p2_pro.get_data()
+        for point in data_points:
+            data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
+
+        df = next(iter(data.values()), pd.DataFrame())
         if not df.empty:
             print(f"Sn: {p2_pro._sn}, Port: {p2_pro._port}")
             print(df)

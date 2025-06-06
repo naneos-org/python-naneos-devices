@@ -5,6 +5,7 @@ import pandas as pd
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
 from naneos.partector import Partector1, Partector2, Partector2Pro, scan_for_serial_partectors
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)
 
@@ -14,33 +15,35 @@ class PartectorSerialManager(threading.Thread):
         super().__init__(daemon=True)
         self._stop_event = threading.Event()
 
+        self._data: dict[int, pd.DataFrame] = {}
+
         self._connected_p1: dict[str, Partector1] = {}
         self._connected_p2: dict[str, Partector2] = {}
         self._connected_p2_pro: dict[str, Partector2Pro] = {}
 
     def get_data(self) -> dict[int, pd.DataFrame]:
-        """Returns the data dictionary and deletes it."""
-        data = {}
+        """Fetches the data from all connected devices and returns it."""
+        self._fetch_data()
+        data = self._data
+        self._data = {}
+        return data
 
+    def _fetch_data(self):
+        """Returns the data dictionary and deletes it."""
         for port in list(self._connected_p1.keys()):
-            df = self._connected_p1[port].get_data_pandas()
-            sn = self._connected_p1[port]._sn
-            if not df.empty and sn is not None:
-                data[sn] = df
+            points = self._connected_p1[port].get_data()
+            for point in points:
+                self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, point)
 
         for port in list(self._connected_p2.keys()):
-            df = self._connected_p2[port].get_data_pandas()
-            sn = self._connected_p2[port]._sn
-            if not df.empty and sn is not None:
-                data[sn] = df
+            points = self._connected_p2[port].get_data()
+            for point in points:
+                self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, point)
 
         for port in list(self._connected_p2_pro.keys()):
-            df = self._connected_p2_pro[port].get_data_pandas()
-            sn = self._connected_p2_pro[port]._sn
-            if not df.empty and sn is not None:
-                data[sn] = df
-
-        return data
+            points = self._connected_p2_pro[port].get_data()
+            for point in points:
+                self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, point)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -65,6 +68,8 @@ class PartectorSerialManager(threading.Thread):
                     ports_exclude=self.get_connected_addresses()
                 )
                 self._connect_to_new_ports(possible_ports)
+
+                self._fetch_data()  # Fetch data from all connected devices
 
                 time.sleep(1.0)  # Sleep to avoid busy waiting
 

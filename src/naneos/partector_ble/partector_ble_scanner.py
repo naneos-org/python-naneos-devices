@@ -108,6 +108,7 @@ class PartectorBleScanner:
         if adv_data[1]:
             decoded = PartectorBleDecoderAux.decode(adv_data[1], data_structure=decoded)
         decoded.unix_timestamp = int(time.time()) * 1000
+        decoded.connection_type = NaneosDeviceDataPoint.CONN_TYPE_ADVERTISEMENT
 
         if self._queue.full():  # if the queue is full, make space by removing the oldest item
             await self._queue.get()

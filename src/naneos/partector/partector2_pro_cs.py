@@ -3,7 +3,10 @@ from typing import Any, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector import Partector2Pro
-from naneos.partector.blueprints._data_structure import PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315
+from naneos.partector.blueprints._data_structure import (
+    PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315,
+    NaneosDeviceDataPoint,
+)
 
 logger = get_naneos_logger(__name__)
 
@@ -30,6 +33,7 @@ class Partector2ProCs(Partector2Pro):
         super().__init__(serial_number, port, verb_freq, "P2proCS")
 
     def _init_serial_data_structure(self) -> None:
+        self.device_type = NaneosDeviceDataPoint.DEV_TYPE_P2PRO_CS
         self._data_structure = PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315
 
     def _set_verbose_freq(self, freq: int) -> None:
@@ -134,7 +138,12 @@ if __name__ == "__main__":
     start = time.time()
     df = pd.DataFrame()
     while time.time() - start < 30:
-        df_tmp = p2.get_data_pandas()
+        data_points = p2.get_data()
+        data: dict[int, pd.DataFrame] = {}
+        for point in data_points:
+            data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
+        df_tmp = next(iter(data.values()), pd.DataFrame())
+
         if len(df_tmp) > 0:
             df = pd.concat([df, df_tmp])
         time.sleep(0.01)

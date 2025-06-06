@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 from threading import Event, Thread
 from typing import Any, Callable, Optional, Union
 
-import pandas
 import serial
 
 from naneos.logger.custom_logger import get_naneos_logger
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector.blueprints._partector_defaults import PartectorDefaults
 
 logger = get_naneos_logger(__name__)
@@ -35,6 +35,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._init(serial_number, port, verb_freq, hw_version)
 
     def _init_variables(self) -> None:
+        self.device_type: int = 0  # gets initalized by child class
         self._connected = False
         self._sn: Optional[int] = None
         self._port: Optional[str] = ""
@@ -258,33 +259,22 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         if isinstance(self._queue, deque) and len(self._queue) > 0:
             self._queue = deque([self._queue.pop()], maxlen=self.SERIAL_QUEUE_MAXSIZE)
 
-    def get_data_list(self) -> list[list[Union[int, float]]]:
-        """Returns the cache as list with timestamp as first element."""
-        data_casted: list[list[Union[int, float]]] = []
-        # data all but not not the last element
-        data = list(self._queue)[0:-1]
+    def get_data(self) -> list[NaneosDeviceDataPoint]:
+        points: list[NaneosDeviceDataPoint] = []
+
+        serial_data = list(self._queue)[0:-1]
         self.clear_data_cache()
 
-        for line in data:
+        for line in serial_data:
             try:
-                data_casted.append(self._cast_splitted_input_string(line))
+                data_casted = self._cast_splitted_input_string(line)
+                point = self._create_naneos_device_point(data_casted)
+                points.append(point)
             except Exception as excep:
                 logger.warning(f"Could not cast data: {excep}")
                 logger.warning(f"Data: {line}")
 
-        return data_casted
-
-    def get_data_pandas(
-        self, data: Optional[list[list[Union[int, float]]]] = None
-    ) -> pandas.DataFrame:
-        """Returns the cache as pandas DataFrame with timestamp as index."""
-        if not data:
-            data = self.get_data_list()
-
-        columns = list(self._data_structure.keys())
-        df = pandas.DataFrame(data, columns=columns).set_index("unix_timestamp")
-        df = df[~df.index.duplicated(keep="last")]
-        return df
+        return points
 
     #########################################
     ### Serial methods (private)
@@ -487,16 +477,24 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         return line_parsed
 
+    def _create_naneos_device_point(self, data: list[Union[int, float]]) -> NaneosDeviceDataPoint:
+        """
+        Creates a NaneosDeviceDataPoint from the given data.
 
-if __name__ == "__main__":
-    from naneos.partector import Partector2, Partector2ProCs  # noqa: F401
+        Args:
+            data (list): The data to create the NaneosDeviceDataPoint from.
 
-    def test_callback(state: bool) -> None:
-        logger.info(f"Catalyst state changed to {state}.")
+        Returns:
+            NaneosDeviceDataPoint: The created NaneosDeviceDataPoint.
+        """
+        point = NaneosDeviceDataPoint(
+            device_type=self.device_type,
+            serial_number=self._sn,
+            connection_type=NaneosDeviceDataPoint.CONN_TYPE_SERIAL,
+            firmware_version=self._fw,
+        )
 
-    partector = Partector2(serial_number=8617)
+        for i, name in enumerate(self._data_structure.keys()):
+            setattr(point, name, data[i])
 
-    time.sleep(30)
-
-    print(partector.get_data_pandas())
-    partector.close(blocking=True)
+        return point

@@ -1,6 +1,11 @@
 from typing import Optional
 
-from naneos.partector.blueprints._data_structure import PARTECTOR1_DATA_STRUCTURE_V_LEGACY
+import pandas as pd
+
+from naneos.partector.blueprints._data_structure import (
+    PARTECTOR1_DATA_STRUCTURE_V_LEGACY,
+    NaneosDeviceDataPoint,
+)
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
 
@@ -11,6 +16,7 @@ class Partector1(PartectorBluePrint):
         super().__init__(serial_number, port, verb_freq)
 
     def _init_serial_data_structure(self) -> None:
+        self.device_type = NaneosDeviceDataPoint.DEV_TYPE_P1
         self._data_structure = PARTECTOR1_DATA_STRUCTURE_V_LEGACY
         self._legacy_data_structure = True
 
@@ -36,14 +42,21 @@ if __name__ == "__main__":
     assert partectors["P1"], "No Partector found!"
     serial_number, port = next(iter(partectors["P1"].items()))
 
+    data: dict[int, pd.DataFrame] = {}
     p1 = Partector1(port=port)
 
     for _ in range(5):
         time.sleep(5)
-        df = p1.get_data_pandas()
+        data_points = p1.get_data()
+        for point in data_points:
+            data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
+
+        df = next(iter(data.values()), pd.DataFrame())
         if not df.empty:
             print(f"Sn: {p1._sn}, Port: {p1._port}")
             print(df)
             break
+
+        print("No data received yet...")
 
     p1.close(blocking=True)

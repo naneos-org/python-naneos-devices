@@ -98,7 +98,7 @@ class PartectorBleManager(threading.Thread):
             if not decoded.serial_number:
                 continue
 
-            self._data = NaneosDeviceDataPoint.add_advertisement_data_to_dict(self._data, decoded)
+            self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, decoded)
             to_check[decoded.serial_number] = device
 
         # check for new devices
@@ -113,7 +113,7 @@ class PartectorBleManager(threading.Thread):
     async def _connection_queue_routine(self) -> None:
         while not self._queue_connection.empty():
             data = await self._queue_connection.get()
-            self._data = NaneosDeviceDataPoint.add_connected_data_to_dict(self._data, data)
+            self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, data)
 
 
 def get_data_from_manager() -> dict[int, pd.DataFrame]:
@@ -159,10 +159,3 @@ if __name__ == "__main__":
 
     manager.stop()
     manager.join()
-
-    # data = get_data_from_manager()
-    # data = read_pickle_file("partector_data.pkl")
-    # save_data_to_pickle(data, "partector_data.pkl")
-
-    # data = sort_and_clean_naneos_data(data)
-    # print(data)

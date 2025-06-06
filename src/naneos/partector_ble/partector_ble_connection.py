@@ -103,9 +103,13 @@ class PartectorBleConnection:
                         self._next_ts = int(time.time()) + 1.0
 
                     if self._client.is_connected:
-                        self._data.device_type = self._device_type
                         self._queue.put_nowait(self._data)
-                        self._data = NaneosDeviceDataPoint()
+                        self._data = NaneosDeviceDataPoint(
+                            device_type=self._device_type,
+                            serial_number=self.SERIAL_NUMBER,
+                            connection_type=NaneosDeviceDataPoint.CONN_TYPE_CONNECTED,
+                            # TODO: add firware version from device here
+                        )
                         continue
 
                     await self._client.connect()

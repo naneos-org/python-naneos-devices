@@ -1,11 +1,14 @@
 from typing import Optional
 
+import pandas as pd
+
 from naneos.logger import get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_LEGACY,
     PARTECTOR2_DATA_STRUCTURE_V265_V275,
     PARTECTOR2_DATA_STRUCTURE_V295_V297_V298,
     PARTECTOR2_DATA_STRUCTURE_V320,
+    NaneosDeviceDataPoint,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
@@ -19,6 +22,8 @@ class Partector2(PartectorBluePrint):
         super().__init__(serial_number, port, verb_freq, "P2")
 
     def _init_serial_data_structure(self) -> None:
+        self.device_type = NaneosDeviceDataPoint.DEV_TYPE_P2
+
         if self._fw in [265, 275]:
             self._data_structure = PARTECTOR2_DATA_STRUCTURE_V265_V275
             logger.info(f"SN{self._sn} has FW{self._fw}. -> Using V265/275 data structure.")
@@ -59,11 +64,16 @@ if __name__ == "__main__":
     assert partectors["P2"], "No Partector found!"
     serial_number, port = next(iter(partectors["P2"].items()))
 
+    data: dict[int, pd.DataFrame] = {}
     p2 = Partector2(port=port)
 
     for _ in range(5):
         time.sleep(5)
-        df = p2.get_data_pandas()
+        data_points = p2.get_data()
+        for point in data_points:
+            data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
+
+        df = next(iter(data.values()), pd.DataFrame())
         if not df.empty:
             print(f"Sn: {p2._sn}, Port: {p2._port}")
             print(df)
