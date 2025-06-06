@@ -48,30 +48,22 @@ class Partector2Pro(PartectorBluePrint):
 if __name__ == "__main__":
     import time
 
-    from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
     from naneos.partector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()
-    p2_pro = partectors["P2pro"]
+    assert partectors["P2pro"], "No Partector found!"
+    serial_number, port = next(iter(partectors["P2pro"].items()))
 
-    assert p2_pro, "No Partector found!"
+    p2_pro = Partector2Pro(port=port)
 
-    serial_number = next(iter(p2_pro.keys()))
-    port = next(iter(p2_pro.values()))
-    # p2 = Partector2Pro(serial_number=serial_number)
-    p2 = Partector2Pro(port=port)
-
-    for _ in range(10):
+    for _ in range(5):
         time.sleep(5)
-        df = p2.get_data_pandas()
+        df = p2_pro.get_data_pandas()
         if not df.empty:
+            print(f"Sn: {p2_pro._sn}, Port: {p2_pro._port}")
             print(df)
-            data_8617 = {8617: df}
-            uploader = NaneosUploadThread(
-                data_8617, callback=lambda success: print(f"Upload success: {success}")
-            )
-            uploader.start()
-            uploader.join()
             break
 
-    p2.close(verbose_reset=False, blocking=True)
+        print("No data received yet...")
+
+    p2_pro.close(blocking=True)

@@ -4,8 +4,7 @@ import time
 import pandas as pd
 
 from naneos.logger import LEVEL_INFO, get_naneos_logger
-from naneos.partector import Partector1, Partector2, Partector2Pro
-from naneos.partector.scan_for_partector import scan_for_serial_partectors
+from naneos.partector import Partector1, Partector2, Partector2Pro, scan_for_serial_partectors
 
 logger = get_naneos_logger(__name__, LEVEL_INFO)
 

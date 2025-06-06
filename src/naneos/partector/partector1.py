@@ -33,18 +33,16 @@ if __name__ == "__main__":
     from naneos.partector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()
-    p1s = partectors["P1"]
+    assert partectors["P1"], "No Partector found!"
+    serial_number, port = next(iter(partectors["P1"].items()))
 
-    assert p1s, "No Partector found!"
-
-    serial_number = next(iter(p1s.keys()))
-    port = next(iter(p1s.values()))
     p1 = Partector1(port=port)
 
     for _ in range(5):
         time.sleep(5)
         df = p1.get_data_pandas()
         if not df.empty:
+            print(f"Sn: {p1._sn}, Port: {p1._port}")
             print(df)
             break
 

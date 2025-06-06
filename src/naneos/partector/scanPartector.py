@@ -2,8 +2,6 @@ from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Optional
 
-import serial
-
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 from naneos.serial_utils import list_serial_ports as ls_ports
@@ -19,6 +17,9 @@ class ScanPartector(PartectorBluePrint):
         verb_freq: int = 1,
     ) -> None:
         super().__init__(serial_number, port, verb_freq)
+
+    def _init_print_connection_info(self) -> None:
+        pass
 
     def _init_serial_data_structure(self) -> None:
         """This field is not used in the scan partector, but mandatory in the partector blueprint."""
@@ -54,11 +55,6 @@ class ScanPartector(PartectorBluePrint):
     def _set_verbose_freq(self, freq: int = 0) -> None:
         """This field is only used to set the verbose frequency to 0"""
         self._write_line("X0000!")
-
-    def _check_connection(self) -> None:
-        """Checks if there is a serial connection."""
-        if isinstance(self._ser, serial.Serial) and self._ser.is_open:
-            self._connected = True
 
 
 def scan_for_serial_partector(serial_number: int, partector_version: str) -> Optional[str]:

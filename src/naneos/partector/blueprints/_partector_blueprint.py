@@ -64,6 +64,11 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._init_serial_data_structure()
         self.set_verbose_freq(verb_freq)
 
+        self._init_print_connection_info()
+
+    def _init_print_connection_info(self) -> None:
+        logger.info(f"Connected to SN{self._sn} on {self._port}")
+
     def _init_serial(self, serial_number: Optional[int] = None, port: Optional[str] = None) -> None:
         self._sn = serial_number
         self._port = port
@@ -116,7 +121,6 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     def _check_connection(self) -> None:
         if self._ser.is_open:
             self._connected = True
-            logger.info(f"Connected to SN{self._sn} on {self._port}")
         else:
             self._connected = False
             logger.warning(f"Could not connect to SN{self._sn} on {self._port}")
