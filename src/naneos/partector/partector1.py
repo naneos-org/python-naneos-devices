@@ -12,6 +12,7 @@ class Partector1(PartectorBluePrint):
 
     def _init_serial_data_structure(self) -> None:
         self._data_structure = PARTECTOR1_DATA_STRUCTURE_V_LEGACY
+        self._legacy_data_structure = True
 
     def _set_verbose_freq(self, freq: int) -> None:
         """
@@ -24,3 +25,27 @@ class Partector1(PartectorBluePrint):
             raise ValueError("Frequency must be between 0 and 3!")
 
         self._write_line(f"X000{freq}!")
+
+
+if __name__ == "__main__":
+    import time
+
+    from naneos.partector import scan_for_serial_partectors
+
+    partectors = scan_for_serial_partectors()
+    p1s = partectors["P1"]
+
+    assert p1s, "No Partector found!"
+
+    serial_number = next(iter(p1s.keys()))
+    port = next(iter(p1s.values()))
+    p1 = Partector1(port=port)
+
+    for _ in range(5):
+        time.sleep(5)
+        df = p1.get_data_pandas()
+        if not df.empty:
+            print(df)
+            break
+
+    p1.close(blocking=True)

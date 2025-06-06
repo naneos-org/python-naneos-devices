@@ -37,7 +37,6 @@ class PartectorSerialManager(threading.Thread):
 
         for port in list(self._connected_p2_pro.keys()):
             df = self._connected_p2_pro[port].get_data_pandas()
-            print(df)
             sn = self._connected_p2_pro[port]._sn
             if not df.empty and sn is not None:
                 data[sn] = df
@@ -67,9 +66,6 @@ class PartectorSerialManager(threading.Thread):
                     ports_exclude=self.get_connected_addresses()
                 )
                 self._connect_to_new_ports(possible_ports)
-
-                # self._collect_data()
-                # self._process_data()
 
                 time.sleep(1.0)  # Sleep to avoid busy waiting
 
@@ -114,4 +110,10 @@ if __name__ == "__main__":
     manager.stop()
     manager.join()
 
-    print(data)
+    print("Collected data:")
+    print()
+    for sn, df in data.items():
+        print(f"SN: {sn}")
+        print(df)
+        print("-" * 40)
+        print()

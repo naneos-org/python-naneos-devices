@@ -331,13 +331,8 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
         data = [unix_timestamp] + line.split("\t")
 
-        print(
-            f"Received line length: {len(data)}, soll length: {len(self._data_structure)}, {data}"
-        )
-
         self._notify_message_received()
         if len(data) == len(self._data_structure):
-            print("Appending data to queue.")
             self._queue.append(data)
         # this is legacy mode, where the data structure is not known exactly
         elif len(data) > len(self._data_structure) and self._legacy_data_structure:
