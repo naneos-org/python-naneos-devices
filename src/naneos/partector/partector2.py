@@ -58,7 +58,7 @@ class Partector2(PartectorBluePrint):
 if __name__ == "__main__":
     import time
 
-    from naneos.partector import scan_for_serial_partectors
+    from naneos.partector.scanPartector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()
     assert partectors["P2"], "No Partector found!"

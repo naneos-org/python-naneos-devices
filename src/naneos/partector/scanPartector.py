@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
-from naneos.serial_utils import list_serial_ports as ls_ports
+from naneos.serial_utils import list_serial_ports
 
 logger = get_naneos_logger(__name__)
 
@@ -65,7 +65,7 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
     q_2_pro: Queue = Queue()
     q_2_pro_cs: Queue = Queue()
 
-    for port in ls_ports():
+    for port in list_serial_ports():
         threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
     for thread in threads:
         thread.start()
@@ -102,7 +102,7 @@ def scan_for_serial_partectors(ports_exclude: Optional[list] = None) -> dict:
     if ports_exclude is None:
         ports_exclude = []
 
-    for port in ls_ports(ports_exclude=ports_exclude):
+    for port in list_serial_ports(ports_exclude=ports_exclude):
         threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
     for thread in threads:
         thread.start()

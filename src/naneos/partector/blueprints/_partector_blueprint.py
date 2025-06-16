@@ -80,7 +80,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._check_connection()
 
     def _init_serial_sn_search(self) -> None:
-        from naneos.partector import scan_for_serial_partector
+        from naneos.partector.scanPartector import scan_for_serial_partector
 
         if self._sn is not None:
             for _ in range(self.SERIAL_INIT_SCAN_RETRIES):

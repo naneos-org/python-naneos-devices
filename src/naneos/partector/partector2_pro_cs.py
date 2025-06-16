@@ -2,11 +2,11 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from naneos.logger.custom_logger import get_naneos_logger
-from naneos.partector import Partector2Pro
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315,
     NaneosDeviceDataPoint,
 )
+from naneos.partector.partector2_pro import Partector2Pro
 
 logger = get_naneos_logger(__name__)
 
