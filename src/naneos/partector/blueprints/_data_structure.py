@@ -4,26 +4,50 @@ from typing import Optional, Union
 import pandas as pd
 
 
+def add_to_existing_naneos_data(
+    data: dict[int, pd.DataFrame], new_data: dict[int, pd.DataFrame]
+) -> dict[int, pd.DataFrame]:
+    """
+    Adds new data to existing data, merging DataFrames by index.
+    If a serial number already exists, it merges the new DataFrame with the existing one.
+    """
+    for serial, df in new_data.items():
+        if serial in data:
+            data[serial] = pd.concat([data[serial], df], ignore_index=False)
+        else:
+            data[serial] = df
+
+    return data
+
+
 def sort_and_clean_naneos_data(data: dict[int, pd.DataFrame]) -> dict[int, pd.DataFrame]:
     """
-    Sorts the DataFrame by unix_timestamp and connection_type, and removes columns with all NaN values.
+    Takes the best connection type for each serial number.
+    If there are multiple connection types, it keeps the one with the highest priority:
+    - "serial" > "connected" > "advertisement"
     """
     data_return = {}
 
     for serial, df in data.items():
-        df = df.dropna(axis=1, how="all")  # drop columns with all NaN values
+        if serial is None or df.empty:
+            continue
 
         if "connection_type" in df.columns:
-            df.reset_index(inplace=True)
-            df.set_index(["unix_timestamp", "connection_type"], inplace=True)
-            df = df.sort_index(level=[0, 1], ascending=[True, True])
-            # drop connection_type index and make it a column
-            df.reset_index(level=1, drop=False, inplace=True)
-            df = df[~df.index.duplicated(keep="last")]
-            # if there are rows with device type 2 and 0 remove all 0 rows
-            if "device_type" in df.columns:
-                if (df["device_type"] == 0).any() and (df["device_type"] == 2).any():
-                    df = df[df["device_type"] != 0]
+            if (df["connection_type"] == "serial").any():
+                df = df[df["connection_type"] == "serial"]
+            elif (df["connection_type"] == "connected").any():
+                df = df[df["connection_type"] == "connected"]
+            elif (df["connection_type"] == "advertisement").any():
+                df = df[df["connection_type"] == "advertisement"]
+
+        df = df.sort_index()  # sort by unix_timestamp
+
+        df = df[~df.index.duplicated(keep="last")]
+
+        # if there are rows with device type 2 and 0 remove all 0 rows
+        if "device_type" in df.columns:
+            if (df["device_type"] == 0).any() and (df["device_type"] == 2).any():
+                df = df[df["device_type"] != 0]
 
         data_return[serial] = df
 

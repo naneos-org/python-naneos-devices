@@ -37,7 +37,6 @@ def create_proto_device(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.De
         if "device_type" in df
         else NaneosDeviceDataPoint.DEV_TYPE_P2
     )
-    print(f"Device type: {device.type}, index: {device.type}")
     device.serial_number = sn
 
     device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
