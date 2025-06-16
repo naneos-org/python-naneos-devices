@@ -67,7 +67,7 @@ if __name__ == "__main__":
     data: dict[int, pd.DataFrame] = {}
     p2 = Partector2(port=port)
 
-    for _ in range(5):
+    for _ in range(15):
         time.sleep(5)
         data_points = p2.get_data()
         for point in data_points:
@@ -77,8 +77,7 @@ if __name__ == "__main__":
         if not df.empty:
             print(f"Sn: {p2._sn}, Port: {p2._port}")
             print(df)
-            break
-
-        print("No data received yet...")
+            data = {}
+            # break
 
     p2.close(blocking=True)

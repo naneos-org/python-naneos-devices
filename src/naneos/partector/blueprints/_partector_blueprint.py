@@ -38,7 +38,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self.device_type: int = 0  # gets initalized by child class
         self._connected = False
         self._sn: Optional[int] = None
-        self._port: Optional[str] = ""
+        self._port: Optional[str] = None
         self._ser: serial.Serial = serial.Serial()
         self._time_last_message_received = time.time()
         self._legacy_data_structure: bool = False
@@ -88,13 +88,19 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                 if self._port:
                     break
             if not self._port:
-                logger.warning(f"SN{self._sn} not found! Checker is running in the background.")
+                logger.warning(
+                    f"SN{self._sn} {self._port} not found! Checker is running in the background."
+                )
         elif self._port is None:
             raise Exception("No serial number or port given!")
 
     def _init_serial_connection(self) -> None:
         tries = 0
         tries_start = time.time()
+
+        if self._port is None:
+            logger.error("No port given! Cannot initialize serial connection.")
+            return
 
         while time.time() - tries_start < self.SERIAL_INIT_RETRIES_TIMEOUT_S:
             tries += 1
@@ -171,7 +177,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         while not self.thread_event.wait(0.5):
             if time.time() - self._time_last_message_received > 10:
                 try:
-                    logger.info(f"SN{self._sn}: Checking device connection...")
+                    logger.info(f"SN{self._sn} {self._port}: Checking device connection...")
                     self._run_check_connection()
                     self._time_last_message_received = time.time()
                 except Exception as e:
@@ -297,18 +303,23 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             if self._ser.is_open:
                 self._serial_reading_routine()
         except Exception as e:
-            logger.warning(f"SN{self._sn} Exception occured during threaded serial reading: {e}")
+            logger.warning(
+                f"SN{self._sn} {self._port} Exception occured during threaded serial reading: {e}"
+            )
 
     def _run_check_connection(self) -> bool:
         """Checks if the device is still connected."""
         if not self._connected:
+            logger.warning(f"SN{self._sn} {self._port} is not connected! (1)")
             self._init_serial(self._sn, self._port)
             self.set_verbose_freq(self._verb_freq)
+            if self._connected:
+                self._init_print_connection_info()
         elif self._check_device_connection() is False:
+            logger.warning(f"SN{self._sn} {self._port} is not connected! (2)")
             if isinstance(self._ser, serial.Serial) and self._ser.is_open:
                 self._ser.close()
             self._connected = False
-            logger.warning(f"Partector on port {self._port} disconnected!")
             self._port = None
 
         return self._connected

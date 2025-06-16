@@ -64,12 +64,21 @@ class PartectorSerialManager(threading.Thread):
 
         return p1_ports + p2_ports + p2_pro_ports
 
+    def get_connected_serial_numbers(self) -> list[int | None]:
+        p1_serials = [p._sn for p in self._connected_p1.values()]
+        p2_serials = [p._sn for p in self._connected_p2.values()]
+        p2_pro_serials = [p._sn for p in self._connected_p2_pro.values()]
+
+        return p1_serials + p2_serials + p2_pro_serials
+
     def _manager_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
                 possible_ports = scan_for_serial_partectors(
                     ports_exclude=self.get_connected_addresses()
                 )
+
+                self._disconnect_unplugged_ports()
                 self._connect_to_new_ports(possible_ports)
 
                 self._fetch_data()  # Fetch data from all connected devices
@@ -80,6 +89,26 @@ class PartectorSerialManager(threading.Thread):
                 logger.exception(f"Error in serial manager loop: {e}")
 
         self._close_all_ports()
+
+    def _disconnect_unplugged_ports(self) -> None:
+        """Disconnects all ports that are not in the possible_ports dictionary."""
+        # Disconnect P1 ports
+        for port in list(self._connected_p1.keys()):
+            if not self._connected_p1[port]._connected:
+                self._connected_p1[port].close()
+                self._connected_p1.pop(port, None)
+
+        # Disconnect P2 ports
+        for port in list(self._connected_p2.keys()):
+            if not self._connected_p2[port]._connected:
+                self._connected_p2[port].close()
+                self._connected_p2.pop(port, None)
+
+        # Disconnect P2 Pro ports
+        for port in list(self._connected_p2_pro.keys()):
+            if not self._connected_p2_pro[port]._connected:
+                self._connected_p2_pro[port].close()
+                self._connected_p2_pro.pop(port, None)
 
     def _connect_to_new_ports(self, possible_ports: dict[str, dict[int, str]]) -> None:
         p1_ports = possible_ports["P1"].values()
@@ -111,16 +140,20 @@ if __name__ == "__main__":
     manager = PartectorSerialManager()
     manager.start()
 
-    time.sleep(15)  # Let the manager run for a while
-    data = manager.get_data()
+    for _ in range(20):
+        time.sleep(10)  # Let the manager run for a while
+        data = manager.get_data()
+
+        print(f"Connected ports: {manager.get_connected_addresses()}")
+        print(f"Connected serial numbers: {manager.get_connected_serial_numbers()}")
+        print("Collected data:")
+        print()
+
+        for sn, df in data.items():
+            print(f"SN: {sn}")
+            print(df)
+            print("-" * 40)
+            print()
 
     manager.stop()
     manager.join()
-
-    print("Collected data:")
-    print()
-    for sn, df in data.items():
-        print(f"SN: {sn}")
-        print(df)
-        print("-" * 40)
-        print()
