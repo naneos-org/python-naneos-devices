@@ -1,5 +1,4 @@
 import asyncio
-import pickle
 import threading
 import time
 from typing import Dict
@@ -7,11 +6,9 @@ from typing import Dict
 import pandas as pd
 from bleak.backends.device import BLEDevice
 
-from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
 from naneos.logger import LEVEL_INFO, get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
     NaneosDeviceDataPoint,
-    sort_and_clean_naneos_data,
 )
 from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
@@ -46,6 +43,10 @@ class PartectorBleManager(threading.Thread):
             asyncio.run(self._async_run())
         except RuntimeError as e:
             logger.exception(f"BLEManager loop exited with: {e}")
+
+    def get_connected_serial_numbers(self) -> list[int | None]:
+        """Returns a list of connected serial numbers."""
+        return list(self._connections.keys())
 
     async def _async_run(self):
         self._loop = asyncio.get_event_loop()
@@ -118,46 +119,23 @@ class PartectorBleManager(threading.Thread):
             self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, data)
 
 
-def get_data_from_manager() -> dict[int, pd.DataFrame]:
-    manager = PartectorBleManager()
-    manager.start()
-
-    time.sleep(10)  # Allow some time for the scanner to start
-    manager.stop()
-    manager.join()
-
-    return manager.get_data()
-
-
-def save_data_to_pickle(data: dict[int, pd.DataFrame], file_path: str) -> None:
-    with open(file_path, "wb") as f:
-        pickle.dump(data, f)
-
-
-def read_pickle_file(file_path: str) -> dict[int, pd.DataFrame]:
-    with open(file_path, "rb") as f:
-        data = pickle.load(f)
-    return data
-
-
 if __name__ == "__main__":
     manager = PartectorBleManager()
     manager.start()
 
-    for _ in range(10):
+    for _ in range(2):
         time.sleep(10)  # Allow some time for the scanner to start
         data = manager.get_data()
-        # check if there is a key with value 8617
-        if 8617 in data:
-            data_8617 = {}
-            data_8617[8617] = data[8617]
-            data_8617 = sort_and_clean_naneos_data(data_8617)
-            print(data_8617)
-            uploader = NaneosUploadThread(
-                data_8617, callback=lambda success: print(f"Upload success: {success}")
-            )
-            uploader.start()
-            uploader.join()
+
+        print(f"Connected serial numbers: {manager.get_connected_serial_numbers()}")
+        print("Collected data:")
+        print()
+
+        for sn, df in data.items():
+            print(f"SN: {sn}")
+            print(df)
+            print("-" * 40)
+            print()
 
     manager.stop()
     manager.join()
