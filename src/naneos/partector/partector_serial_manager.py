@@ -57,6 +57,14 @@ class PartectorSerialManager(threading.Thread):
         except RuntimeError as e:
             logger.exception(f"SerialManager loop exited with: {e}")
 
+    def get_connected_device_strings(self) -> list[str]:
+        """Returns a list of connected device strings."""
+        p1_strings = [f"SN{p._sn} (P1)" for port, p in self._connected_p1.items()]
+        p2_strings = [f"SN{p._sn} (P2)" for port, p in self._connected_p2.items()]
+        p2_pro_strings = [f"SN{p._sn} (P2 Pro)" for port, p in self._connected_p2_pro.items()]
+
+        return p1_strings + p2_strings + p2_pro_strings
+
     def get_connected_addresses(self) -> list[str]:
         p1_ports = list(self._connected_p1.keys())
         p2_ports = list(self._connected_p2.keys())

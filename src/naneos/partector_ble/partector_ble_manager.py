@@ -44,6 +44,10 @@ class PartectorBleManager(threading.Thread):
         except RuntimeError as e:
             logger.exception(f"BLEManager loop exited with: {e}")
 
+    def get_connected_device_strings(self) -> list[str]:
+        """Returns a list of connected device strings."""
+        return [f"SN{sn}" for sn in self._connections.keys()]
+
     def get_connected_serial_numbers(self) -> list[int | None]:
         """Returns a list of connected serial numbers."""
         return list(self._connections.keys())
@@ -66,6 +70,7 @@ class PartectorBleManager(threading.Thread):
 
                 await self._scanner_queue_routine()
                 await self._connection_queue_routine()
+                await self._remove_done_tasks()
 
             except asyncio.TimeoutError:
                 continue
@@ -88,6 +93,8 @@ class PartectorBleManager(threading.Thread):
                 while not self._stop_event.is_set():
                     await asyncio.sleep(1)
 
+        except asyncio.CancelledError:
+            logger.info(f"{serial}: Connection task cancelled.")
         except Exception as e:
             logger.warning(f"{serial}: Connection task failed: {e}")
         finally:
@@ -117,6 +124,13 @@ class PartectorBleManager(threading.Thread):
         while not self._queue_connection.empty():
             data = await self._queue_connection.get()
             self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, data)
+
+    async def _remove_done_tasks(self) -> None:
+        """Remove completed tasks from the connections dictionary."""
+        for serial in list(self._connections.keys()):
+            if self._connections[serial].done():
+                self._connections.pop(serial, None)
+                logger.info(f"{serial}: Connection task finished and popped.")
 
 
 if __name__ == "__main__":

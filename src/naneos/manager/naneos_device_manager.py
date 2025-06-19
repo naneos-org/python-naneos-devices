@@ -42,8 +42,23 @@ class NaneosDeviceManager(threading.Thread):
         self._manager_serial.stop()
         self._manager_ble.stop()
 
+        self._manager_serial.join()
+        self._manager_ble.join()
+
     def stop(self) -> None:
         self._stop_event.set()
+
+    def get_connected_serial_devices(self) -> list[str]:
+        """
+        Returns a list of connected serial devices.
+        """
+        return self._manager_serial.get_connected_device_strings()
+
+    def get_connected_ble_devices(self) -> list[str]:
+        """
+        Returns a list of connected BLE devices.
+        """
+        return self._manager_ble.get_connected_device_strings()
 
     def get_seconds_until_next_upload(self) -> float:
         """
@@ -88,6 +103,10 @@ if __name__ == "__main__":
     try:
         while True:
             time.sleep(1)
+            print(f"Seconds until next upload: {manager.get_seconds_until_next_upload():.1f}")
+            print(manager.get_connected_serial_devices())
+            print(manager.get_connected_ble_devices())
+            print()
     except KeyboardInterrupt:
         manager.stop()
         manager.join()
