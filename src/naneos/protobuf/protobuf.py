@@ -3,6 +3,7 @@ from typing import Optional
 import pandas as pd
 
 import naneos.protobuf.protoV1_pb2 as pbScheme
+from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 
 
 def create_combined_entry(
@@ -29,12 +30,13 @@ def create_combined_entry(
     return combined
 
 
-def create_proto_device(sn: int, abs_time: int, df: pd.DataFrame, dev_type: str) -> pbScheme.Device:
-    LIST_DEVICES = ["P2", "P1", "P2pro", "P2proCS"]
-
+def create_proto_device(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
     device = pbScheme.Device()
-    device.type = LIST_DEVICES.index(dev_type)
-    print(f"Device type: {dev_type}, index: {device.type}")
+    device.type = (
+        int(df["device_type"].iloc[-1])
+        if "device_type" in df
+        else NaneosDeviceDataPoint.DEV_TYPE_P2
+    )
     device.serial_number = sn
 
     device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
@@ -57,139 +59,113 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
         else:
             raise ValueError("Timestamp is not an int!")
         device_point.timestamp = abs_time - timestamp
-        device_point.device_status = int(ser["device_status"])
+        if "device_status" in ser:
+            device_point.device_status = int(ser["device_status"])
+        if "firmware_version" in ser:
+            device_point.firmware_version = int(ser["firmware_version"])
 
-        # optional fields
-        if "idiff_global" in ser:
-            idiff_tmp = ser["idiff_global"] if ser["idiff_global"] > 0 else 0
-            device_point.diffusion_current = int(idiff_tmp * 100.0)
-        elif "diffusion_current" in ser:
-            idiff_tmp = ser["diffusion_current"] if ser["diffusion_current"] > 0 else 0
-            device_point.diffusion_current = int(idiff_tmp * 100.0)
-        if "diffusion_current_offset" in ser:
-            device_point.diffusion_current_offset = int(ser["diffusion_current_offset"] * 100.0)
-        if "ucor_global" in ser:
-            device_point.corona_voltage = int(ser["ucor_global"])
-        elif "corona_voltage" in ser:
-            device_point.corona_voltage = int(ser["corona_voltage"])
-        if "hiresADC1" in ser:  # hires_adc1
-            pass
-        if "hiresADC2" in ser:  # hires_adc2
-            pass
-        if "EM_amplitude1" in ser:  # em_amplitude1
-            pass
-        if "EM_amplitude2" in ser:  # em_amplitude2
-            pass
-        if "T" in ser:
-            device_point.temperature = int(ser["T"])
-        elif "temperature" in ser:
-            device_point.temperature = int(ser["temperature"])
-        if "RHcorr" in ser:
-            device_point.relative_humidity = int(ser["RHcorr"])
-        elif "relativ_humidity" in ser:
-            device_point.relative_humidity = int(ser["relativ_humidity"])
-        if "deposition_voltage" in ser:
-            device_point.deposition_voltage = int(ser["deposition_voltage"])
-        if "batt_voltage" in ser:
-            device_point.battery_voltage = int(ser["batt_voltage"] * 100.0)
-        elif "battery_voltage" in ser:
-            device_point.battery_voltage = int(ser["battery_voltage"] * 100.0)
-        if "flow_from_dp" in ser:
-            device_point.flow = int(ser["flow_from_dp"] * 1000.0)
-        if "LDSA" in ser:
-            device_point.ldsa = int(ser["LDSA"] * 100.0)
-        elif "ldsa" in ser:
+        if "ldsa" in ser:
             device_point.ldsa = int(ser["ldsa"] * 100.0)
-        if "diameter" in ser:
-            device_point.average_particle_diameter = int(ser["diameter"])
-        elif "particle_diameter" in ser:
-            device_point.average_particle_diameter = int(ser["particle_diameter"])
-        if "number" in ser:
-            device_point.particle_number_concentration = int(ser["number"])
-        elif "particle_number" in ser:
-            device_point.particle_number_concentration = int(ser["particle_number"])
-        if "dP" in ser:  # differential_pressure
-            pass
-        if "P_average" in ser:
-            device_point.ambient_pressure = int(ser["P_average"] * 10.0)
-        elif "ambient_pressure" in ser:
-            device_point.ambient_pressure = int(ser["ambient_pressure"] * 10.0)
-        if "em_gain1" in ser:  # multiplicator ???
-            device_point.electrometer_gain = int(ser["em_gain1"] * 100.0)
-        if "em_gain2" in ser:
-            device_point.electrometer_2_gain = int(ser["em_gain2"] * 100.0)
-
-        # P2 Pro
-        if "surface" in ser:
-            device_point.surface = int(ser["surface"] * 100.0)
-        elif "particle_surface" in ser:
-            device_point.surface = int(ser["particle_surface"] * 100.0)
+        if "particle_number_concentration" in ser:
+            device_point.particle_number_concentration = int(
+                round(ser["particle_number_concentration"])
+            )
+        if "average_particle_diameter" in ser:
+            device_point.average_particle_diameter = int(round(ser["average_particle_diameter"]))
         if "particle_mass" in ser:
-            device_point.particle_mass = int(ser["particle_mass"] * 100.0)
-        if "sigma" in ser:
-            device_point.sigma_size_dist = int(ser["sigma"] * 100.0)
+            device_point.particle_mass = int(round(ser["particle_mass"] * 100.0))
+        if "particle_surface" in ser:
+            device_point.particle_surface = int(round(ser["particle_surface"] * 100.0))
+        if "diffusion_current" in ser:
+            idiff_tmp = ser["diffusion_current"] if ser["diffusion_current"] > 0 else 0
+            device_point.diffusion_current = int(round(idiff_tmp * 100.0))
+        if "diffusion_current_offset" in ser:
+            device_point.diffusion_current_offset = int(
+                round(ser["diffusion_current_offset"] * 100.0)
+            )
+        if "diffusion_current_stddev" in ser:
+            device_point.diffusion_current_stddev = int(
+                round(ser["diffusion_current_stddev"] * 100.0)
+            )
+        if "diffusion_current_delay_on" in ser:
+            device_point.diffusion_current_delay_on = int(
+                round(ser["diffusion_current_delay_on"] * 100.0)
+            )
+        if "diffusion_current_delay_off" in ser:
+            device_point.diffusion_current_delay_off = int(
+                round(ser["diffusion_current_delay_off"] * 100.0)
+            )
+        if "corona_voltage" in ser:
+            device_point.corona_voltage = int(round(ser["corona_voltage"]))
+        if "electrometer_1_amplitude" in ser:
+            device_point.electrometer_1_offset = int(round(ser["electrometer_1_amplitude"] * 10.0))
+        if "electrometer_2_amplitude" in ser:
+            device_point.electrometer_2_offset = int(round(ser["electrometer_2_amplitude"] * 10.0))
+        if "electrometer_1_gain" in ser:
+            device_point.electrometer_1_gain = int(round(ser["electrometer_1_gain"] * 100.0))
+        if "electrometer_2_gain" in ser:
+            device_point.electrometer_2_gain = int(round(ser["electrometer_2_gain"] * 100.0))
+        if "temperature" in ser:
+            device_point.temperature = int(round(ser["temperature"]))
+        if "relative_humidity" in ser:
+            device_point.relative_humidity = int(round(ser["relative_humidity"]))
+        if "deposition_voltage" in ser:
+            device_point.deposition_voltage = int(round(ser["deposition_voltage"]))
+        if "battery_voltage" in ser:
+            device_point.battery_voltage = int(round(ser["battery_voltage"] * 100.0))
+        if " ambient_pressure" in ser:
+            device_point.ambient_pressure = int(round(ser[" ambient_pressure"] * 10.0))
+        if "channel_pressure" in ser:
+            device_point.channel_pressure = int(round(ser["channel_pressure"] * 10.0))
+        if "differential_pressure" in ser:
+            device_point.differential_pressure = int(round(ser["differential_pressure"] * 10.0))
+        if "pump_voltage" in ser:
+            device_point.pump_voltage = int(round(ser["pump_voltage"] * 100.0))
         if "pump_current" in ser:
-            device_point.pump_current = int(ser["pump_current"] * 1000.0)
+            device_point.pump_current = int(round(ser["pump_current"] * 1000.0))
         if "pump_pwm" in ser:
-            device_point.pump_pwm = int(ser["pump_pwm"])
-        if "steps" in ser:
-            device_point.steps_inversion = int(ser["steps"])
-        elif "dist_steps" in ser:
-            device_point.steps_inversion = int(ser["dist_steps"])
-        if "current_0" in ser:
-            device_point.current_dist_0 = int(ser["current_0"] * 100000.0)
-        elif "dist_current_0" in ser:
-            device_point.current_dist_0 = int(ser["dist_current_0"])
-        if "current_1" in ser:
-            device_point.current_dist_1 = int(ser["current_1"] * 100000.0)
-        elif "dist_current_1" in ser:
-            device_point.current_dist_1 = int(ser["dist_current_1"])
-        if "current_2" in ser:
-            device_point.current_dist_2 = int(ser["current_2"] * 100000.0)
-        elif "dist_current_2" in ser:
-            device_point.current_dist_2 = int(ser["dist_current_2"])
-        if "current_3" in ser:
-            device_point.current_dist_3 = int(ser["current_3"] * 100000.0)
-        elif "dist_current_3" in ser:
-            device_point.current_dist_3 = int(ser["dist_current_3"])
-        if "current_4" in ser:
-            device_point.current_dist_4 = int(ser["current_4"] * 100000.0)
-        elif "dist_current_4" in ser:
-            device_point.current_dist_4 = int(ser["dist_current_4"])
+            device_point.pump_pwm = int(round(ser["pump_pwm"]))
         if "particle_number_10nm" in ser:
-            device_point.particle_number_10nm = int(ser["particle_number_10nm"])
-        elif "dist_particle_number_10nm" in ser:
-            device_point.particle_number_10nm = int(ser["dist_particle_number_10nm"])
+            device_point.particle_number_10nm = int(round(ser["particle_number_10nm"]))
         if "particle_number_16nm" in ser:
-            device_point.particle_number_16nm = int(ser["particle_number_16nm"])
-        elif "dist_particle_number_16nm" in ser:
-            device_point.particle_number_16nm = int(ser["dist_particle_number_16nm"])
+            device_point.particle_number_16nm = int(round(ser["particle_number_16nm"]))
         if "particle_number_26nm" in ser:
-            device_point.particle_number_26nm = int(ser["particle_number_26nm"])
-        elif "dist_particle_number_26nm" in ser:
-            device_point.particle_number_26nm = int(ser["dist_particle_number_26nm"])
+            device_point.particle_number_26nm = int(round(ser["particle_number_26nm"]))
         if "particle_number_43nm" in ser:
-            device_point.particle_number_43nm = int(ser["particle_number_43nm"])
-        elif "dist_particle_number_43nm" in ser:
-            device_point.particle_number_43nm = int(ser["dist_particle_number_43nm"])
+            device_point.particle_number_43nm = int(round(ser["particle_number_43nm"]))
         if "particle_number_70nm" in ser:
-            device_point.particle_number_70nm = int(ser["particle_number_70nm"])
-        elif "dist_particle_number_70nm" in ser:
-            device_point.particle_number_70nm = int(ser["dist_particle_number_70nm"])
+            device_point.particle_number_70nm = int(round(ser["particle_number_70nm"]))
         if "particle_number_114nm" in ser:
-            device_point.particle_number_114nm = int(ser["particle_number_114nm"])
-        elif "dist_particle_number_114nm" in ser:
-            device_point.particle_number_114nm = int(ser["dist_particle_number_114nm"])
+            device_point.particle_number_114nm = int(round(ser["particle_number_114nm"]))
         if "particle_number_185nm" in ser:
-            device_point.particle_number_185nm = int(ser["particle_number_185nm"])
-        elif "dist_particle_number_185nm" in ser:
-            device_point.particle_number_185nm = int(ser["dist_particle_number_185nm"])
+            device_point.particle_number_185nm = int(round(ser["particle_number_185nm"]))
         if "particle_number_300nm" in ser:
-            device_point.particle_number_300nm = int(ser["particle_number_300nm"])
-        elif "dist_particle_number_300nm" in ser:
-            device_point.particle_number_300nm = int(ser["dist_particle_number_300nm"])
+            device_point.particle_number_300nm = int(round(ser["particle_number_300nm"]))
+        if "sigma_size_dist" in ser:
+            device_point.sigma_size_dist = int(round(ser["sigma_size_dist"] * 100.0))
+        if "steps_inversion" in ser:
+            device_point.steps_inversion = int(round(ser["steps_inversion"]))
+        if "current_dist_0" in ser:
+            device_point.current_dist_0 = int(round(ser["current_dist_0"] * 100000.0))
+        if "current_dist_1" in ser:
+            device_point.current_dist_1 = int(round(ser["current_dist_1"] * 100000.0))
+        if "current_dist_2" in ser:
+            device_point.current_dist_2 = int(round(ser["current_dist_2"] * 100000.0))
+        if "current_dist_3" in ser:
+            device_point.current_dist_3 = int(round(ser["current_dist_3"] * 100000.0))
+        if "current_dist_4" in ser:
+            device_point.current_dist_4 = int(round(ser["current_dist_4"] * 100000.0))
 
-        # P2 Pro Garage
+        if "supply_voltage_5V" in ser:
+            device_point.supply_voltage_5V = int(round(ser["supply_voltage_5V"] * 10.0))
+        if "positive_voltage_3V3" in ser:
+            device_point.positive_voltage_3V3 = int(round(ser["positive_voltage_3V3"] * 10.0))
+        if "negative_voltage_3V3" in ser:
+            device_point.negative_voltage_3V3 = int(round(ser["negative_voltage_3V3"] * 10.0))
+        if " usb_cc_voltage" in ser:
+            device_point.usb_cc_voltage = int(round(ser[" usb_cc_voltage"] * 10.0))
+
+        # Needed for the garagenbox
         if "cs_status" in ser:
             device_point.cs_status = int(ser["cs_status"])
 

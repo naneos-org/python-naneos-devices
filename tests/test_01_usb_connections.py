@@ -1,11 +1,11 @@
+import time
 import warnings
 
-from naneos.partector import (
-    Partector1,
-    Partector2,
-    Partector2Pro,
-    scan_for_serial_partectors,
-)
+from naneos.partector import PartectorSerialManager
+from naneos.partector.partector1 import Partector1
+from naneos.partector.partector2 import Partector2
+from naneos.partector.partector2_pro import Partector2Pro
+from naneos.partector.scanPartector import scan_for_serial_partectors
 from naneos.serial_utils import list_serial_ports
 
 
@@ -55,3 +55,25 @@ def test_connection_partectors() -> None:
             p2_pro.close(verbose_reset=False)
     else:
         warnings.warn("There is no P2pro connected (USB).", UserWarning)
+
+
+def test_serial_manager():
+    manager = PartectorSerialManager()
+    manager.start()
+
+    time.sleep(15)  # Let the manager run for a while
+    data = manager.get_data()
+
+    manager.stop()
+    manager.join()
+
+    assert isinstance(data, dict), "Data should be a dictionary."
+    assert len(data) > 0, "Data dictionary should not be empty."
+
+    print("Collected data:")
+    print()
+    for sn, df in data.items():
+        print(f"SN: {sn}")
+        print(df)
+        print("-" * 40)
+        print()

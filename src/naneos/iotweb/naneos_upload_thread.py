@@ -1,5 +1,6 @@
 import base64
 import datetime
+import pickle
 from threading import Thread
 from typing import Callable, ClassVar, Optional
 
@@ -21,16 +22,13 @@ class NaneosUploadThread(Thread):
 
     def __init__(
         self,
-        data: list[tuple[int, str, pd.DataFrame]],
+        data: dict[int, pd.DataFrame],
         callback: Optional[Callable[[bool], None]],
     ) -> None:
         """Adding the data that should be uploaded to the database.
 
         Args:
-            data (list[tuple[int, pd.DataFrame]]):
-                int: serial number
-                str: device type
-                pd.DataFrame: data to upload
+            data (dict[int, pd.DataFrame]): Data to upload, where the key is the device serial number and the value is a DataFrame.
             callback (Optional[Callable[[bool], None]]): Callback function that is called after upload.
         """
         super().__init__()
@@ -47,9 +45,9 @@ class NaneosUploadThread(Thread):
                 else:
                     self._callback(False)
         except Exception as e:
-            logger.error(f"Error in upload: {e}")
+            logger.exception(f"Error in upload: {e}")
             if self._callback:
-                self._callback(True)  # delete data because it was corrupted
+                self._callback(False)  # delete data because it was corrupted
 
     @staticmethod
     def get_body(upload_string: str) -> str:
@@ -62,15 +60,11 @@ class NaneosUploadThread(Thread):
             """
 
     @classmethod
-    def upload(cls, data: list[tuple[int, str, pd.DataFrame]]) -> requests.Response:
+    def upload(cls, data: dict[int, pd.DataFrame]) -> requests.Response:
         abs_time = int(datetime.datetime.now().timestamp())
         devices = []
 
-        for device in data:
-            sn = device[0]
-            device_type = device[1]
-            df = device[2]
-
+        for sn, df in data.items():
             # make all inf values in df_p2_pro 0
             df = df.replace([float("inf"), -float("inf")], 0)
 
@@ -79,7 +73,7 @@ class NaneosUploadThread(Thread):
                 df.index = df.index / 1e3
                 df.index = df.index.astype(int)
 
-            devices.append(create_proto_device(sn, abs_time, df, device_type))
+            devices.append(create_proto_device(sn, abs_time, df))
 
         combined_entry = create_combined_entry(devices=devices, abs_timestamp=abs_time)
 
@@ -89,3 +83,19 @@ class NaneosUploadThread(Thread):
         body = cls.get_body(proto_str_base64)
         r = requests.post(cls.URL, headers=cls.HEADERS, data=body, timeout=10)
         return r
+
+
+def read_pickle_file(file_path: str) -> dict[int, pd.DataFrame]:
+    with open(file_path, "rb") as f:
+        data = pickle.load(f)
+    return data
+
+
+if __name__ == "__main__":
+    data = read_pickle_file("partector_data.pkl")
+
+    uploader = NaneosUploadThread(
+        data, callback=lambda success: print(f"Upload success: {success}")
+    )
+    uploader.start()
+    uploader.join()

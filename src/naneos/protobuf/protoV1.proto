@@ -38,9 +38,9 @@ message DevicePoint {
   optional uint32 deposition_voltage = 12;            // V
   optional uint32 flow = 13;                          // l/min * 1'000
   optional uint32 ambient_pressure = 14;              // hPa * 10
-  optional int32 electrometer_offset = 15;            // mV * 10
+  optional int32 electrometer_1_offset = 15;          // mV * 10
   optional int32 electrometer_2_offset = 16;          // mV * 10
-  optional uint32 electrometer_gain = 17;             // mV * 100
+  optional uint32 electrometer_1_gain = 17;           // mV * 100
   optional uint32 electrometer_2_gain = 18;           // mV * 100
   optional int32 diffusion_current_offset = 19;       // nA * 100
   optional uint32 particle_number_10nm = 20;          // /cm^3/log(d)
@@ -51,7 +51,7 @@ message DevicePoint {
   optional uint32 particle_number_114nm = 25;         // /cm^3/log(d)
   optional uint32 particle_number_185nm = 26;         // /cm^3/log(d)
   optional uint32 particle_number_300nm = 27;         // /cm^3/log(d)
-  optional uint32 surface = 28;                       // um^2/cm^3 * 100
+  optional uint32 particle_surface = 28;              // um^2/cm^3 * 100
   optional uint32 sigma_size_dist = 29;               // gsd * 100 (geometric stddev)
   optional uint32 steps_inversion = 30;               // steps
   optional uint32 current_dist_0 = 31;                // mV * 100'000

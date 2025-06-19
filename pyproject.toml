@@ -1,6 +1,6 @@
 [project]
 name = "naneos-devices"
-version = "1.0.62"
+version = "1.1.0"
 description = "naneos particle solutions gmbh python backend"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
@@ -51,9 +51,14 @@ dev = [
     "mkdocs-literate-nav>=0.6.2",
     "mkdocs-material>=9.6.11",
     "mkdocstrings[python]>=0.29.1",
+    "mypy>=1.15.0",
     "nox>=2025.2.9",
+    "pandas-stubs>=2.2.3.250308",
     "pytest>=8.3.5",
     "ruff>=0.11.7",
+    "types-protobuf>=6.30.2.20250506",
+    "types-pyserial>=3.5.0.20250326",
+    "types-requests>=2.32.0.20250328",
 ]
 
 [tool.hatch.build.targets.wheel]

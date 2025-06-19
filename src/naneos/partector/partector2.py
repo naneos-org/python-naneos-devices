@@ -1,11 +1,14 @@
 from typing import Optional
 
+import pandas as pd
+
 from naneos.logger import get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_LEGACY,
     PARTECTOR2_DATA_STRUCTURE_V265_V275,
     PARTECTOR2_DATA_STRUCTURE_V295_V297_V298,
     PARTECTOR2_DATA_STRUCTURE_V320,
+    NaneosDeviceDataPoint,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
@@ -19,6 +22,8 @@ class Partector2(PartectorBluePrint):
         super().__init__(serial_number, port, verb_freq, "P2")
 
     def _init_serial_data_structure(self) -> None:
+        self.device_type = NaneosDeviceDataPoint.DEV_TYPE_P2
+
         if self._fw in [265, 275]:
             self._data_structure = PARTECTOR2_DATA_STRUCTURE_V265_V275
             logger.info(f"SN{self._sn} has FW{self._fw}. -> Using V265/275 data structure.")
@@ -53,23 +58,26 @@ class Partector2(PartectorBluePrint):
 if __name__ == "__main__":
     import time
 
-    from naneos.partector import scan_for_serial_partectors
+    from naneos.partector.scanPartector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()
-    p2 = partectors["P2"]
+    assert partectors["P2"], "No Partector found!"
+    serial_number, port = next(iter(partectors["P2"].items()))
 
-    assert p2, "No Partector found!"
-
-    serial_number = next(iter(p2.keys()))
-    port = next(iter(p2.values()))
-
-    # p2 = Partector2(serial_number=serial_number)
+    data: dict[int, pd.DataFrame] = {}
     p2 = Partector2(port=port)
-    time.sleep(3)
-    print(p2.get_data_pandas())
 
-    scan_for_serial_partectors(ports_exclude=[port])
-    time.sleep(3)
-    print(p2.get_data_pandas())
+    for _ in range(15):
+        time.sleep(5)
+        data_points = p2.get_data()
+        for point in data_points:
+            data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
 
-    p2.close(verbose_reset=False, blocking=True)
+        df = next(iter(data.values()), pd.DataFrame())
+        if not df.empty:
+            print(f"Sn: {p2._sn}, Port: {p2._port}")
+            print(df)
+            data = {}
+            # break
+
+    p2.close(blocking=True)

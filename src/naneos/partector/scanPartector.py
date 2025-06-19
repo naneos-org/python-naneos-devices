@@ -2,11 +2,9 @@ from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Optional
 
-import serial
-
 from naneos.logger.custom_logger import get_naneos_logger
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
-from naneos.serial_utils import list_serial_ports as ls_ports
+from naneos.serial_utils import list_serial_ports
 
 logger = get_naneos_logger(__name__)
 
@@ -19,6 +17,9 @@ class ScanPartector(PartectorBluePrint):
         verb_freq: int = 1,
     ) -> None:
         super().__init__(serial_number, port, verb_freq)
+
+    def _init_print_connection_info(self) -> None:
+        pass
 
     def _init_serial_data_structure(self) -> None:
         """This field is not used in the scan partector, but mandatory in the partector blueprint."""
@@ -55,28 +56,23 @@ class ScanPartector(PartectorBluePrint):
         """This field is only used to set the verbose frequency to 0"""
         self._write_line("X0000!")
 
-    def _check_connection(self) -> None:
-        """Checks if there is a serial connection."""
-        if isinstance(self._ser, serial.Serial) and self._ser.is_open:
-            self._connected = True
-
 
 def scan_for_serial_partector(serial_number: int, partector_version: str) -> Optional[str]:
     """Scans all possible ports using threads (fast)."""
     threads = []
-    q_1 = Queue()
-    q_2 = Queue()
-    q_2_pro = Queue()
-    q_2_pro_cs = Queue()
+    q_1: Queue = Queue()
+    q_2: Queue = Queue()
+    q_2_pro: Queue = Queue()
+    q_2_pro_cs: Queue = Queue()
 
-    [
+    for port in list_serial_ports():
         threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
-        for port in ls_ports()
-    ]
-    [thread.start() for thread in threads]
-    [thread.join() for thread in threads]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
 
-    q = Queue()
+    q: Queue = Queue()
     if partector_version == "P1":
         q = q_1
     elif partector_version == "P2":
@@ -98,18 +94,20 @@ def scan_for_serial_partector(serial_number: int, partector_version: str) -> Opt
 def scan_for_serial_partectors(ports_exclude: Optional[list] = None) -> dict:
     """Scans all possible ports using threads (fast)."""
     threads = []
-    q_1, q_2, q_2_pro, q_2_pro_cs = (Queue() for _ in range(4))
+    q_1: Queue = Queue()
+    q_2: Queue = Queue()
+    q_2_pro: Queue = Queue()
+    q_2_pro_cs: Queue = Queue()
 
     if ports_exclude is None:
         ports_exclude = []
 
-    [
+    for port in list_serial_ports(ports_exclude=ports_exclude):
         threads.append(Thread(target=__scan_port, args=(port, q_1, q_2, q_2_pro, q_2_pro_cs)))
-        for port in ls_ports(ports_exclude)
-        if port not in ports_exclude
-    ]
-    [thread.start() for thread in threads]
-    [thread.join() for thread in threads]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
 
     p1 = {k: v for x in tuple(q_1.queue) for (k, v) in x.items()}
     p2 = {k: v for x in tuple(q_2.queue) for (k, v) in x.items()}
@@ -147,3 +145,4 @@ def __scan_port(port: str, q_1: Queue, q_2: Queue, q_2_pro: Queue, q_2_pro_cs: Q
 
 if __name__ == "__main__":
     print(scan_for_serial_partectors())
+    # print(scan_for_serial_partector(8617, "P2pro"))
