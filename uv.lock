@@ -773,7 +773,7 @@ wheels = [
 
 [[package]]
 name = "naneos-devices"
-version = "1.0.62"
+version = "1.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "bleak", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },

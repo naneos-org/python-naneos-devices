@@ -112,7 +112,7 @@ class NaneosDeviceDataPoint:
         # add new row
         new_row = data.to_pandas_series(remove_nan=False).to_frame().T
         new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
-        new_row.index = new_row.index.astype("int")  # convert index to int
+        new_row.index = new_row.index.astype("int64")  # convert index to int
         devices[data.serial_number] = pd.concat(
             [devices[data.serial_number], new_row], ignore_index=False
         )
