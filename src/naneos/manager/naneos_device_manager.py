@@ -23,7 +23,7 @@ class NaneosDeviceManager(threading.Thread):
 
     UPLOAD_INTERVAL_SECONDS = 15
 
-    def __init__(self) -> None:
+    def __init__(self, use_serial=True, use_ble=True, upload_active=True) -> None:
         super().__init__(daemon=True)
         self._stop_event = threading.Event()
         self._next_upload_time = time.time() + self.UPLOAD_INTERVAL_SECONDS
@@ -33,8 +33,9 @@ class NaneosDeviceManager(threading.Thread):
 
         self._data: dict[int, pd.DataFrame] = {}
 
-        self._use_serial = True
-        self._use_ble = True
+        self._use_serial = use_serial
+        self._use_ble = use_ble
+        self._upload_active = upload_active
 
     def use_serial_connections(self, use: bool) -> None:
         self._use_serial = use
@@ -47,6 +48,12 @@ class NaneosDeviceManager(threading.Thread):
 
     def get_ble_connection_status(self) -> bool:
         return self._use_ble
+
+    def get_upload_status(self) -> bool:
+        return self._upload_active
+
+    def set_upload_status(self, active: bool) -> None:
+        self._upload_active = active
 
     def run(self) -> None:
         self._loop()
@@ -139,11 +146,13 @@ class NaneosDeviceManager(threading.Thread):
                     upload_data = sort_and_clean_naneos_data(self._data)
                     self._data = {}
 
-                    uploader = NaneosUploadThread(
-                        upload_data, callback=lambda success: print(f"Upload success: {success}")
-                    )
-                    uploader.start()
-                    uploader.join()
+                    if self._upload_active:
+                        uploader = NaneosUploadThread(
+                            upload_data,
+                            callback=lambda success: logger.info(f"Upload success: {success}"),
+                        )
+                        uploader.start()
+                        uploader.join()
 
             except Exception as e:
                 logger.exception(f"DeviceManager loop exception: {e}")
