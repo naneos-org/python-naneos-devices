@@ -21,21 +21,22 @@ class NaneosDeviceManager(threading.Thread):
     It connects and disconnects automatically.
     """
 
-    UPLOAD_INTERVAL_SECONDS = 15
-
-    def __init__(self, use_serial=True, use_ble=True, upload_active=True) -> None:
+    def __init__(
+        self, use_serial=True, use_ble=True, upload_active=True, upload_interval_seconds=30
+    ) -> None:
         super().__init__(daemon=True)
+        self._use_serial = use_serial
+        self._use_ble = use_ble
+        self._upload_active = upload_active
+        self.set_gathering_interval_seconds(upload_interval_seconds)
+
         self._stop_event = threading.Event()
-        self._next_upload_time = time.time() + self.UPLOAD_INTERVAL_SECONDS
+        self._next_upload_time = time.time() + self._gathering_interval_seconds
 
         self._manager_serial: PartectorSerialManager | None = None
         self._manager_ble: PartectorBleManager | None = None
 
         self._data: dict[int, pd.DataFrame] = {}
-
-        self._use_serial = use_serial
-        self._use_ble = use_ble
-        self._upload_active = upload_active
 
     def use_serial_connections(self, use: bool) -> None:
         self._use_serial = use
@@ -54,6 +55,14 @@ class NaneosDeviceManager(threading.Thread):
 
     def set_upload_status(self, active: bool) -> None:
         self._upload_active = active
+
+    def get_gathering_interval_seconds(self) -> int:
+        return self._gathering_interval_seconds
+
+    def set_gathering_interval_seconds(self, interval: int) -> None:
+        interval = max(10, min(600, interval))
+        logger.info(f"Setting upload interval to {interval} seconds.")
+        self._gathering_interval_seconds = interval
 
     def run(self) -> None:
         self._loop()
@@ -130,7 +139,7 @@ class NaneosDeviceManager(threading.Thread):
             self._manager_ble = None
 
     def _loop(self) -> None:
-        self._next_upload_time = time.time() + self.UPLOAD_INTERVAL_SECONDS
+        self._next_upload_time = time.time() + self._gathering_interval_seconds
 
         while not self._stop_event.is_set():
             try:
@@ -141,7 +150,7 @@ class NaneosDeviceManager(threading.Thread):
                 self._loop_ble_manager()
 
                 if time.time() >= self._next_upload_time:
-                    self._next_upload_time = time.time() + self.UPLOAD_INTERVAL_SECONDS
+                    self._next_upload_time = time.time() + self._gathering_interval_seconds
 
                     upload_data = sort_and_clean_naneos_data(self._data)
                     self._data = {}
