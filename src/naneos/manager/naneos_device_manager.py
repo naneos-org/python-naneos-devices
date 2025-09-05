@@ -61,8 +61,11 @@ class NaneosDeviceManager(threading.Thread):
 
     def set_gathering_interval_seconds(self, interval: int) -> None:
         interval = max(10, min(600, interval))
-        logger.info(f"Setting upload interval to {interval} seconds.")
+        logger.info(f"Setting gathering interval to {interval} seconds.")
         self._gathering_interval_seconds = interval
+
+        tmp_next_upload_time = time.time() + self._gathering_interval_seconds
+        self._next_upload_time = min(self._next_upload_time, tmp_next_upload_time)
 
     def run(self) -> None:
         self._loop()
