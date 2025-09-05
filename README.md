@@ -43,7 +43,7 @@ Clean start/stop APIs make integration trivial.
 ```python
 import time
 
-from naneos.device_manager import NaneosDeviceManager
+from naneos.manager import NaneosDeviceManager
 
 manager = NaneosDeviceManager(
     use_serial=True,
