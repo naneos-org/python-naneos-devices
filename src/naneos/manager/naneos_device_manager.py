@@ -1,3 +1,4 @@
+import queue
 import threading
 import time
 
@@ -22,16 +23,18 @@ class NaneosDeviceManager(threading.Thread):
     """
 
     def __init__(
-        self, use_serial=True, use_ble=True, upload_active=True, upload_interval_seconds=30
+        self, use_serial=True, use_ble=True, upload_active=True, gathering_interval_seconds=30
     ) -> None:
         super().__init__(daemon=True)
         self._use_serial = use_serial
         self._use_ble = use_ble
         self._upload_active = upload_active
-        self.set_gathering_interval_seconds(upload_interval_seconds)
+        self._next_upload_time = time.time() + gathering_interval_seconds
+        self.set_gathering_interval_seconds(gathering_interval_seconds)
+
+        self._out_queue: queue.Queue | None = None
 
         self._stop_event = threading.Event()
-        self._next_upload_time = time.time() + self._gathering_interval_seconds
 
         self._manager_serial: PartectorSerialManager | None = None
         self._manager_ble: PartectorBleManager | None = None
@@ -66,6 +69,12 @@ class NaneosDeviceManager(threading.Thread):
 
         tmp_next_upload_time = time.time() + self._gathering_interval_seconds
         self._next_upload_time = min(self._next_upload_time, tmp_next_upload_time)
+
+    def register_output_queue(self, out_queue: queue.Queue) -> None:
+        self._out_queue = out_queue
+
+    def unregister_output_queue(self) -> None:
+        self._out_queue = None
 
     def run(self) -> None:
         self._loop()
@@ -158,6 +167,9 @@ class NaneosDeviceManager(threading.Thread):
                     upload_data = sort_and_clean_naneos_data(self._data)
                     self._data = {}
 
+                    if isinstance(self._out_queue, queue.Queue):
+                        self._out_queue.put(upload_data)
+
                     if self._upload_active:
                         uploader = NaneosUploadThread(
                             upload_data,
@@ -170,37 +182,64 @@ class NaneosDeviceManager(threading.Thread):
                 logger.exception(f"DeviceManager loop exception: {e}")
 
 
-if __name__ == "__main__":
-    manager = NaneosDeviceManager()
+def minimal_example() -> None:
+    manager = NaneosDeviceManager(
+        use_serial=True,
+        use_ble=True,
+        upload_active=True,
+        gathering_interval_seconds=30,  # clamped to [10, 600]
+    )
     manager.start()
 
-    counter = 0
     try:
         while True:
-            counter += 1
-            time.sleep(1)
-            print(f"Seconds until next upload: {manager.get_seconds_until_next_upload():.0f}")
-            print(manager.get_connected_serial_devices())
-            print(manager.get_connected_ble_devices())
-            print()
+            # Sleep exactly until the next publish window
+            remaining = manager.get_seconds_until_next_upload()
+            print(f"Next upload in: {remaining:.0f}s")
+            time.sleep(remaining + 1)
 
-            if counter == 20:
-                manager.use_serial_connections(False)
-                manager.use_ble_connections(False)
-                print("Disabled serial and BLE connections.")
-            elif counter == 40:
-                manager.use_serial_connections(True)
-                manager.use_ble_connections(False)
-                print("Enabled serial and disabled BLE connections.")
-            elif counter == 60:
-                manager.use_serial_connections(False)
-                manager.use_ble_connections(True)
-                print("Disabled serial and enabled BLE connections.")
-            elif counter == 80:
-                manager.use_serial_connections(True)
-                manager.use_ble_connections(True)
-                print("Enabled serial and BLE connections.")
+            print("Serial:", manager.get_connected_serial_devices())
+            print("BLE   :", manager.get_connected_ble_devices())
+            print()
     except KeyboardInterrupt:
-        manager.stop()
-        manager.join()
-        print("NaneosDeviceManager stopped.")
+        pass
+
+    manager.stop()
+    manager.join()
+    print("Stopped.")
+
+
+def queue_example() -> None:
+    import queue
+
+    out_q: queue.Queue = queue.Queue()
+
+    manager = NaneosDeviceManager(
+        upload_active=False,
+        gathering_interval_seconds=15,
+    )
+    manager.register_output_queue(out_q)
+    manager.start()
+
+    try:
+        while True:
+            # Wait until a snapshot is ready, then pull all pending ones
+            time.sleep(manager.get_seconds_until_next_upload() + 1)
+
+            while not out_q.empty():
+                snapshot = out_q.get()
+                # snapshot: dict[int, pandas.DataFrame] keyed by device serial
+                print(f"Received snapshot for {len(snapshot)} device(s)")
+                for serial, df in snapshot.items():
+                    print(f"  - {serial}: {len(df)} rows")
+                    # >>> Your processing here (store, analyze, forward, etc.)
+    except KeyboardInterrupt:
+        pass
+
+    manager.stop()
+    manager.join()
+
+
+if __name__ == "__main__":
+    # minimal_example()
+    queue_example()

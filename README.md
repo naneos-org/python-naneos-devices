@@ -28,34 +28,98 @@ pip install naneos-devices
 # Usage
 
 ## Naneos Device Manager
-The Naneos Device Manager is the easiest way, if you want to use 
+NaneosDeviceManager is a tiny, fire-and-forget thread that auto-manages Naneos devices over Serial and BLE, periodically gathers data, and (optionally) uploads it.
+You can enable/disable transports at construction time and at runtime, adjust the gathering interval, and/or pipe data into your own code via a user-provided queue.Queue.
+Clean start/stop APIs make integration trivial.
 
-## Old
+**Highlights**
+- ✅ Easy on/off switches for Serial and BLE (before or during runtime)
+- ⏱️ Configurable gathering interval (clamped to 10–600 s)
+- 📤 Optional auto-upload (enable/disable anytime)
+- 📦 Queue hand-off: receive dict[int, pandas.DataFrame] snapshots and process them in your app
+- 🧵 Daemon thread with graceful shutdown
 
-To establish a serial connection with the Partector2 device and retrieve data, you can use the following code snippet as a starting point:
-
+### Quick Start (fire and forget upload from all devices in reach to naneos IoT service)
 ```python
 import time
 
-from naneos.partector import PartectorSerialManager
+from naneos.device_manager import NaneosDeviceManager
 
-
-manager = PartectorSerialManager()
+manager = NaneosDeviceManager(
+    use_serial=True,
+    use_ble=True,
+    upload_active=True,
+    gathering_interval_seconds=30 # clamped to [10, 600]
+)
 manager.start()
 
-time.sleep(15)  # Let the manager run for a while
-data = manager.get_data()
+try:
+    while True:
+        remaining = manager.get_seconds_until_next_upload()
+        print(f"Next upload in: {remaining:.0f}s")
+        time.sleep(remaining + 1)
+
+        print("Serial:", manager.get_connected_serial_devices())
+        print("BLE   :", manager.get_connected_ble_devices())
+        print()
+except KeyboardInterrupt:
+    pass
 
 manager.stop()
 manager.join()
+print("Stopped.")
+```
 
-print("Collected data:")
-print()
-for sn, df in data.items():
-    print(f"SN: {sn}")
-    print(df)
-    print("-" * 40)
-    print()
+### Runtime Controls (toggle anytime during execution)
+```python
+# Turn Serial on/off during runtime
+manager.use_serial_connections(True)   # or False
+print("Serial enabled:", manager.get_serial_connection_status())
+
+# Turn BLE on/off during runtime
+manager.use_ble_connections(False)     # or True
+print("BLE enabled:", manager.get_ble_connection_status())
+
+# Enable/disable uploads on the fly
+manager.set_upload_status(False)       # keep gathering, but don't upload
+print("Upload active:", manager.get_upload_status())
+
+# Update the gathering interval at runtime (10–600 s)
+manager.set_gathering_interval_seconds(45)
+print("Interval (s):", manager.get_gathering_interval_seconds())
+```
+
+### Queue-Based Data Handoff (use your own processing)
+Register a queue to receive each gathered snapshot (no uploads required):
+```python
+import queue
+
+out_q: queue.Queue = queue.Queue()
+
+manager = NaneosDeviceManager(
+    upload_active=False,              # we'll handle data ourselves
+    gathering_interval_seconds=15
+)
+manager.register_output_queue(out_q)
+manager.start()
+
+try:
+    while True:
+        # Wait until a snapshot is ready, then pull all pending ones
+        time.sleep(manager.get_seconds_until_next_upload() + 1)
+
+        while not out_q.empty():
+            snapshot = out_q.get()
+            # snapshot: dict[int, pandas.DataFrame] keyed by device serial
+            print(f"Received snapshot for {len(snapshot)} device(s)")
+            for serial, df in snapshot.items():
+                print(f"  - {serial}: {len(df)} rows")
+                # >>> Your processing here (store, analyze, forward, etc.)
+except KeyboardInterrupt:
+    pass
+
+manager.stop()
+manager.join()
 ```
 
 Make sure to modify the code according to your specific requirements. Refer to the documentation and comments within the code for detailed explanations and usage instructions.
