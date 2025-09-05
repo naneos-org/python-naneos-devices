@@ -9,13 +9,13 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDeviceNotFoundError
 
-from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
 from naneos.partector_ble.decoder.partector_ble_decoder_size import PartectorBleDecoderSize
 from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
 
-logger = get_naneos_logger(__name__, LEVEL_INFO)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorBleConnection:
@@ -89,17 +89,21 @@ class PartectorBleConnection:
         logger.info(f"SN{self.SERIAL_NUMBER}: PartectorBleConnection stopped")
 
     async def _run(self) -> None:
+        waiting_seconds = 0
+
         try:
             self._next_ts = int(time.time()) + 1.0
 
             while not self._stop_event.is_set():
                 try:
+                    waiting_seconds = max(0, waiting_seconds - 1)
                     wait = self._next_ts - time.time()
                     if wait > 0:
                         await asyncio.sleep(wait)
                         self._next_ts += 1.0
                     else:
-                        logger.warning(f"SN{self.SERIAL_NUMBER}: Waiting time negative: {wait}")
+                        if self._client.is_connected:
+                            logger.warning(f"SN{self.SERIAL_NUMBER}: Waiting time negative: {wait}")
                         self._next_ts = int(time.time()) + 1.0
 
                     if self._client.is_connected:
@@ -112,23 +116,24 @@ class PartectorBleConnection:
                         )
                         continue
 
-                    await self._client.connect()
-                    await self._client.start_notify(self.CHAR_UUIDS["std"], self._callback_std)
-                    await self._client.start_notify(self.CHAR_UUIDS["aux"], self._callback_aux)
-                    await self._client.start_notify(
-                        self.CHAR_UUIDS["size_dist"], self._callback_size_dist
-                    )
-                    logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
+                    if waiting_seconds == 0:
+                        await self._client.connect()
+                        await self._client.start_notify(self.CHAR_UUIDS["std"], self._callback_std)
+                        await self._client.start_notify(self.CHAR_UUIDS["aux"], self._callback_aux)
+                        await self._client.start_notify(
+                            self.CHAR_UUIDS["size_dist"], self._callback_size_dist
+                        )
+                        logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
+
                     self._next_ts = int(time.time()) + 1.0
                 except asyncio.TimeoutError:
-                    logger.warning(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
-                    await asyncio.sleep(30)
-                    # self._add_old_device_data(values)
-                    # TODO: mark as connected or old device
+                    logger.info(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
+                    waiting_seconds = 30
+                    await asyncio.sleep(0.5)
                 except BleakDeviceNotFoundError:
                     logger.warning(f"SN{self.SERIAL_NUMBER}: Device not found.")
-                    await asyncio.sleep(30)
-                    # TODO: mark as connected or old device
+                    waiting_seconds = 30
+                    await asyncio.sleep(0.5)
                 except Exception as e:
                     logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
                     await asyncio.sleep(0.5)

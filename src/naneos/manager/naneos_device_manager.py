@@ -103,7 +103,7 @@ if __name__ == "__main__":
     try:
         while True:
             time.sleep(1)
-            print(f"Seconds until next upload: {manager.get_seconds_until_next_upload():.1f}")
+            print(f"Seconds until next upload: {manager.get_seconds_until_next_upload():.0f}")
             print(manager.get_connected_serial_devices())
             print(manager.get_connected_ble_devices())
             print()
