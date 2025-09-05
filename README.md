@@ -27,6 +27,11 @@ pip install naneos-devices
 
 # Usage
 
+## Naneos Device Manager
+The Naneos Device Manager is the easiest way, if you want to use 
+
+## Old
+
 To establish a serial connection with the Partector2 device and retrieve data, you can use the following code snippet as a starting point:
 
 ```python
