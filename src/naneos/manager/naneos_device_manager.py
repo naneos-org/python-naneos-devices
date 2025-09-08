@@ -1,4 +1,6 @@
+import os
 import queue
+import signal
 import threading
 import time
 
@@ -231,7 +233,7 @@ def queue_example() -> None:
                 # snapshot: dict[int, pandas.DataFrame] keyed by device serial
                 print(f"Received snapshot for {len(snapshot)} device(s)")
                 for serial, df in snapshot.items():
-                    print(f"  - {serial}: {len(df)} rows")
+                    print(f"  - {serial}: {len(df)} rows, ldsa: {df['ldsa'].mean():.1f}")
                     # >>> Your processing here (store, analyze, forward, etc.)
     except KeyboardInterrupt:
         pass
@@ -240,6 +242,33 @@ def queue_example() -> None:
     manager.join()
 
 
+def raise_keyboard_interrupt():
+    os.kill(os.getpid(), signal.SIGINT)
+
+
+def test_naneos_device_manager():
+    timer = threading.Timer(300, raise_keyboard_interrupt)  # trigger keyboard interrupt after 20s
+    timer.start()
+
+    manager = NaneosDeviceManager()
+    manager.start()
+
+    try:
+        while True:
+            time.sleep(1)
+            print(f"Seconds until next upload: {manager.get_seconds_until_next_upload():.0f}")
+            print(manager.get_connected_serial_devices())
+            print(manager.get_connected_ble_devices())
+            print()
+    except KeyboardInterrupt:
+        manager.stop()
+        manager.join()
+        print("NaneosDeviceManager stopped.")
+
+    timer.cancel()
+
+
 if __name__ == "__main__":
-    # minimal_example()
-    queue_example()
+    minimal_example()
+    # queue_example()
+    # test_naneos_device_manager()

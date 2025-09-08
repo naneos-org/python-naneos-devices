@@ -11,7 +11,7 @@ def add_to_existing_naneos_data(
     Adds new data to existing data, merging DataFrames by index.
     If a serial number already exists, it merges the new DataFrame with the existing one.
     """
-    for serial, df in new_data.items():
+    for serial, df in list(new_data.items()):
         if serial in data:
             data[serial] = pd.concat([data[serial], df], ignore_index=False)
         else:
@@ -106,18 +106,19 @@ class NaneosDeviceDataPoint:
         if data.serial_number not in devices:
             devices[data.serial_number] = pd.DataFrame()
 
-        # remove oldes row if there are more than 300 rows
-        if len(devices[data.serial_number]) > 300:
+        if len(devices[data.serial_number]) > 300:  # remove oldest rows if more than 300 rows
             devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
-        # add new row
+
+        # get new_row as DataFrame
         new_row = data.to_pandas_series(remove_nan=False).to_frame().T
         new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
-        # check if index is not NaN
-        if new_row.index.isna():
+        # check new_row index is not NaN or inf
+        if new_row.index.isna() or new_row.index.isin([float("inf"), float("-inf")]):
             return devices
         new_row.index = new_row.index.astype("int64")  # convert index to int
+
         devices[data.serial_number] = pd.concat(
-            [devices[data.serial_number], new_row], ignore_index=False
+            [devices[data.serial_number], new_row], ignore_index=True
         )
 
         return devices
