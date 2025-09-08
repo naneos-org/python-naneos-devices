@@ -131,7 +131,7 @@ class PartectorBleConnection:
                     waiting_seconds = 30
                     await asyncio.sleep(0.5)
                 except BleakDeviceNotFoundError:
-                    logger.warning(f"SN{self.SERIAL_NUMBER}: Device not found.")
+                    logger.info(f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE.")
                     waiting_seconds = 30
                     await asyncio.sleep(0.5)
                 except Exception as e:

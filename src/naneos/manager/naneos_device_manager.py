@@ -189,7 +189,7 @@ def minimal_example() -> None:
         use_serial=True,
         use_ble=True,
         upload_active=True,
-        gathering_interval_seconds=30,  # clamped to [10, 600]
+        gathering_interval_seconds=15,  # clamped to [10, 600]
     )
     manager.start()
 
@@ -217,7 +217,7 @@ def queue_example() -> None:
     out_q: queue.Queue = queue.Queue()
 
     manager = NaneosDeviceManager(
-        upload_active=False,
+        upload_active=True,
         gathering_interval_seconds=15,
     )
     manager.register_output_queue(out_q)
@@ -235,6 +235,7 @@ def queue_example() -> None:
                 for serial, df in snapshot.items():
                     print(f"  - {serial}: {len(df)} rows, ldsa: {df['ldsa'].mean():.1f}")
                     # >>> Your processing here (store, analyze, forward, etc.)
+                    # print(df.dropna(axis=1, how="all"))
     except KeyboardInterrupt:
         pass
 
@@ -269,6 +270,9 @@ def test_naneos_device_manager():
 
 
 if __name__ == "__main__":
-    minimal_example()
-    # queue_example()
+    # minimal_example()
+    queue_example()
     # test_naneos_device_manager()
+
+    # df = pd.read_pickle("partector_data_sn24.pkl")
+    # print(df)

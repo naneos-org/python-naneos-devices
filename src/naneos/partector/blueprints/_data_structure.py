@@ -11,6 +11,9 @@ def add_to_existing_naneos_data(
     Adds new data to existing data, merging DataFrames by index.
     If a serial number already exists, it merges the new DataFrame with the existing one.
     """
+    if not new_data:  # empty dict
+        return data
+
     for serial, df in list(new_data.items()):
         if serial in data:
             data[serial] = pd.concat([data[serial], df], ignore_index=False)
@@ -99,6 +102,64 @@ class NaneosDeviceDataPoint:
         "particle_number_300nm",
     }
 
+    PANDAS_DTYPES_MAPPING = {
+        "unix_timestamp": "Int64",
+        "serial_number": "Int32",
+        "connection_type": "Int32",
+        "firmware_version": "Int32",
+        "device_type": "Int32",
+        "device_status": "Int32",
+        "runtime_min": "Int32",
+        "ldsa": "Float32",
+        "particle_number_concentration": "Float32",
+        "average_particle_diameter": "Float32",
+        "particle_mass": "Float32",
+        "particle_surface": "Float32",
+        "diffusion_current": "Float32",
+        "diffusion_current_offset": "Float32",
+        "diffusion_current_stddev": "Float32",
+        "diffusion_current_delay_on": "Float32",
+        "diffusion_current_delay_off": "Float32",
+        "corona_voltage": "Float32",
+        "hires_adc1": "Float32",
+        "hires_adc2": "Float32",
+        "electrometer_1_amplitude": "Float32",
+        "electrometer_2_amplitude": "Float32",
+        "electrometer_1_gain": "Float32",
+        "electrometer_2_gain": "Float32",
+        "temperature": "Float32",
+        "relative_humidity": "Float32",
+        "deposition_voltage": "Float32",
+        "battery_voltage": "Float32",
+        "flow_from_dp": "Float32",
+        "ambient_pressure": "Float32",
+        "channel_pressure": "Float32",
+        "differential_pressure": "Float32",
+        "pump_voltage": "Float32",
+        "pump_current": "Float32",
+        "pump_pwm": "Float32",
+        "particle_number_10nm": "Float32",
+        "particle_number_16nm": "Float32",
+        "particle_number_26nm": "Float32",
+        "particle_number_43nm": "Float32",
+        "particle_number_70nm": "Float32",
+        "particle_number_114nm": "Float32",
+        "particle_number_185nm": "Float32",
+        "particle_number_300nm": "Float32",
+        "sigma_size_dist": "Float32",
+        "steps_inversion": "Float32",
+        "current_dist_0": "Float32",
+        "current_dist_1": "Float32",
+        "current_dist_2": "Float32",
+        "current_dist_3": "Float32",
+        "current_dist_4": "Float32",
+        "supply_voltage_5V": "Float32",
+        "positive_voltage_3V3": "Float32",
+        "negative_voltage_3V3": "Float32",
+        "usb_cc_voltage": "Float32",
+        "cs_status": "Int32",
+    }
+
     @staticmethod
     def add_data_point_to_dict(
         devices: dict, data: "NaneosDeviceDataPoint"
@@ -109,16 +170,12 @@ class NaneosDeviceDataPoint:
         if len(devices[data.serial_number]) > 300:  # remove oldest rows if more than 300 rows
             devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
 
-        # get new_row as DataFrame
-        new_row = data.to_pandas_series(remove_nan=False).to_frame().T
-        new_row.set_index(["unix_timestamp"], inplace=True, drop=True)
-        # check new_row index is not NaN or inf
-        if new_row.index.isna() or new_row.index.isin([float("inf"), float("-inf")]):
+        new_row = data.to_pandas_df_row(remove_nan=False)
+        if new_row.index.isna():
             return devices
-        new_row.index = new_row.index.astype("int64")  # convert index to int
 
         devices[data.serial_number] = pd.concat(
-            [devices[data.serial_number], new_row], ignore_index=True
+            [devices[data.serial_number], new_row], ignore_index=False
         )
 
         return devices
@@ -133,12 +190,20 @@ class NaneosDeviceDataPoint:
         else:
             return {key: getattr(self, key) for key in self.__dataclass_fields__}
 
-    def to_pandas_series(self, remove_nan=True) -> pd.Series:
+    @staticmethod
+    def safe_astype(df: pd.DataFrame, mapping: dict[str, str], **kwargs) -> pd.DataFrame:
+        mapping = {c: mapping[c] for c in df.columns if c in mapping}
+        return df.astype(mapping, **kwargs)
+
+    def to_pandas_df_row(self, remove_nan=True) -> pd.DataFrame:
         """
-        Convert the dataclass instance to a pandas Series.
+        Convert the dataclass instance to a pandas DataFrame with a single row.
         """
         data_dict = self.to_dict(remove_nan=remove_nan)
-        return pd.Series(data_dict)
+        df = pd.DataFrame([data_dict])
+        df = self.safe_astype(df, self.PANDAS_DTYPES_MAPPING, errors="ignore")
+        df.set_index(["unix_timestamp"], inplace=True, drop=True)
+        return df
 
     # mandatory
     unix_timestamp: Optional[int] = None
