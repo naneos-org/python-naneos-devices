@@ -32,3 +32,8 @@ plugins:
 
 nav:
   - Home: index.md
+  - User Guide:
+      - Raspberry Pi Setup: user-guide/raspberry-pi-setup.md
+      # - Installation: user-guide/installation.md
+      # - Configuration: user-guide/configuration.md
+      # - Usage: user-guide/usage.md
