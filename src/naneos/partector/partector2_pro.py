@@ -5,6 +5,7 @@ import pandas as pd
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_V320,
     PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE,
+    PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE,
     PARTECTOR2_PRO_DATA_STRUCTURE_V311,
     PARTECTOR2_PRO_DATA_STRUCTURE_V336,
     NaneosDeviceDataPoint,
@@ -20,8 +21,10 @@ class Partector2Pro(PartectorBluePrint):
         verb_freq: int = 6,
         hw_version: str = "P2pro",
         gain_test_active: bool = True,
+        output_pulse_diagnostics: bool = True,
     ) -> None:
         self._GAIN_TEST_ACTIVE = gain_test_active
+        self._OUTPUT_PULSE_DIAGNOSTICS = output_pulse_diagnostics
         super().__init__(serial_number, port, verb_freq, hw_version)
 
     def _init_serial_data_structure(self) -> None:
@@ -37,6 +40,14 @@ class Partector2Pro(PartectorBluePrint):
 
                 self._write_line("M0000!")  # deactivates size dist mode
                 self._write_line("A0002!")  # activates antispikes
+
+                if self._OUTPUT_PULSE_DIAGNOSTICS:
+                    self._write_line("opd01!")
+                    self._data_structure.update(
+                        PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE
+                    )
+                else:
+                    self._write_line("opd00!")
 
                 if self._GAIN_TEST_ACTIVE:
                     self._write_line("h2001!")  # activates harmonics output
@@ -60,6 +71,14 @@ class Partector2Pro(PartectorBluePrint):
             self._write_line("M0004!")  # activates size dist mode
             self._write_line("A0002!")  # activates the antispikes
 
+            if self._OUTPUT_PULSE_DIAGNOSTICS:
+                self._write_line("opd01!")
+                self._data_structure.update(
+                    PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE
+                )
+            else:
+                self._write_line("opd00!")
+
             if self._GAIN_TEST_ACTIVE:
                 self._write_line("h2001!")  # activates harmonics output
                 self._write_line("e1100!")  # strength of gain test signal
@@ -82,7 +101,7 @@ if __name__ == "__main__":
     p2_pro = Partector2Pro(port=port, verb_freq=6, gain_test_active=True)
 
     for _ in range(5):
-        time.sleep(5)
+        time.sleep(3)
         data_points = p2_pro.get_data()
         for point in data_points:
             data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
@@ -90,8 +109,8 @@ if __name__ == "__main__":
         df = next(iter(data.values()), pd.DataFrame())
         if not df.empty:
             print(f"Sn: {p2_pro._sn}, Port: {p2_pro._port}")
-            print(df)
-            print(df["electrometer_1_gain"])
+            print(df.dropna(axis=1, how="all"))
+            # print(df["diffusion_current_delay_on"])
             break
 
         print("No data received yet...")
