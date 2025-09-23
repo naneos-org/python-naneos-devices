@@ -103,7 +103,7 @@ if __name__ == "__main__":
         if not df.empty:
             print(f"Sn: {p2._sn}, Port: {p2._port}")
             print(df)
-            print(df["diffusion_current_delay_on"])
+            print(df["diffusion_current_delay_off"])
             data = {}
             # break
 

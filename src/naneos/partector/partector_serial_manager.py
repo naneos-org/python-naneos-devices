@@ -115,6 +115,7 @@ class PartectorSerialManager(threading.Thread):
         # Disconnect P2 Pro ports
         for port in list(self._connected_p2_pro.keys()):
             if not self._connected_p2_pro[port]._connected:
+                print(f"Disconnecting P2 Pro port: {port}")
                 self._connected_p2_pro[port].close()
                 self._connected_p2_pro.pop(port, None)
 
