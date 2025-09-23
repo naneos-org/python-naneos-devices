@@ -284,6 +284,10 @@ PARTECTOR1_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
     "device_status": int,
 }
 
+PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE: dict[str, Union[type[int], type[float]]] = {
+    "electrometer_1_gain": float,
+    "electrometer_2_gain": float,
+}
 
 PARTECTOR2_DATA_STRUCTURE_V320: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp": int,
@@ -305,8 +309,6 @@ PARTECTOR2_DATA_STRUCTURE_V320: dict[str, Union[type[int], type[float]]] = {
     "particle_number_concentration": int,
     "differential_pressure": int,
     "ambient_pressure": float,
-    "electrometer_1_gain": float,
-    "electrometer_2_gain": float,
 }
 
 PARTECTOR2_DATA_STRUCTURE_V295_V297_V298: dict[str, Union[type[int], type[float]]] = {
@@ -411,8 +413,6 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, Union[type[int], type[float]]] = {
     "current_dist_2": float,  # not existing in protobuf
     "current_dist_3": float,  # not existing in protobuf
     "current_dist_4": float,  # not existing in protobuf
-    "electrometer_1_gain": float,
-    "electrometer_2_gain": float,
 }
 
 PARTECTOR2_PRO_DATA_STRUCTURE_V336: dict[str, Union[type[int], type[float]]] = {
@@ -449,8 +449,6 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V336: dict[str, Union[type[int], type[float]]] = {
     "current_dist_2": float,
     "current_dist_3": float,
     "current_dist_4": float,
-    "electrometer_1_gain": float,
-    "electrometer_2_gain": float,
 }
 
 PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, Union[type[int], type[float]]] = {

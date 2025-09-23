@@ -27,4 +27,4 @@ def send_commands_to_device(serial_number: int, commands_path: str) -> None:
 
 
 if __name__ == "__main__":
-    send_commands_to_device(8112, "/Users/huegi/Downloads/commandsSN8112.txt")
+    send_commands_to_device(8617, "/Users/huegi/Downloads/commandsSN8617.txt")
