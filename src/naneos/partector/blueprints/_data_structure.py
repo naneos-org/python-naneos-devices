@@ -91,6 +91,15 @@ class NaneosDeviceDataPoint:
         "electrometer_2_gain",
         "diffusion_current_offset",
     }
+    BLE_AUX_ERROR_FIELD_NAMES = {
+        "device_status",
+        "diffusion_current_delay_on",
+        "diffusion_current_delay_off",
+        "diffusion_current_average",
+        "diffusion_current_stddev",
+        "diffusion_current_max",
+        "corona_voltage_onset",
+    }
     BLE_SIZE_DIST_FIELD_NAMES = {
         "particle_number_10nm",
         "particle_number_16nm",

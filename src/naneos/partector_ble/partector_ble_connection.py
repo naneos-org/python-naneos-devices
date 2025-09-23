@@ -11,6 +11,7 @@ from bleak.exc import BleakDeviceNotFoundError
 
 from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
+from naneos.partector_ble.decoder.partectod_ble_decoder_aux_error import PartectorBleDecoderAuxError
 from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
 from naneos.partector_ble.decoder.partector_ble_decoder_size import PartectorBleDecoderSize
 from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
@@ -180,6 +181,9 @@ class PartectorBleConnection:
     def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (aux characteristic)."""
         self._data.unix_timestamp = int(time.time() * 1000)
+        if data[0] == 255 and data[1] == 255:  # triggers for aux error data
+            self._data = PartectorBleDecoderAuxError.decode(data, data_structure=self._data)
+            return
         self._data = PartectorBleDecoderAux.decode(data, data_structure=self._data)
 
         logger.debug(f"SN{self.SERIAL_NUMBER}: Received aux: {data.hex()}")

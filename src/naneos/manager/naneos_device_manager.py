@@ -189,7 +189,7 @@ def minimal_example() -> None:
         use_serial=True,
         use_ble=True,
         upload_active=True,
-        gathering_interval_seconds=15,  # clamped to [10, 600]
+        gathering_interval_seconds=10,  # clamped to [10, 600]
     )
     manager.start()
 
