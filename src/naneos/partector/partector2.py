@@ -8,6 +8,8 @@ from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_V265_V275,
     PARTECTOR2_DATA_STRUCTURE_V295_V297_V298,
     PARTECTOR2_DATA_STRUCTURE_V320,
+    PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE,
+    PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE,
     NaneosDeviceDataPoint,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
@@ -17,8 +19,15 @@ logger = get_naneos_logger(__name__)
 
 class Partector2(PartectorBluePrint):
     def __init__(
-        self, serial_number: Optional[int] = None, port: Optional[str] = None, verb_freq: int = 1
+        self,
+        serial_number: Optional[int] = None,
+        port: Optional[str] = None,
+        verb_freq: int = 1,
+        gain_test_active: bool = True,
+        output_pulse_diagnostics: bool = True,
     ) -> None:
+        self._GAIN_TEST_ACTIVE = gain_test_active
+        self._OUTPUT_PULSE_DIAGNOSTICS = output_pulse_diagnostics
         super().__init__(serial_number, port, verb_freq, "P2")
 
     def _init_serial_data_structure(self) -> None:
@@ -34,7 +43,24 @@ class Partector2(PartectorBluePrint):
             logger.info("Contact naneos for a firmware update to get the latest features.")
         elif self._fw >= 320:
             self._data_structure = PARTECTOR2_DATA_STRUCTURE_V320
-            self._write_line("h2001!")  # activates harmonics output
+            self._write_line("A0002!")  # activates antispikes
+
+            if self._OUTPUT_PULSE_DIAGNOSTICS:
+                self._write_line("opd01!")
+                self._data_structure.update(
+                    PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE
+                )
+            else:
+                self._write_line("opd00!")
+
+            if self._GAIN_TEST_ACTIVE:
+                self._write_line("h2001!")  # activates harmonics output
+                self._write_line("e1100!")  # strength of gain test signal
+                self._data_structure.update(PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE)
+            else:
+                self._write_line("h2000!")  # deactivates harmonics output
+                self._write_line("e0000!")  # deactivates gain test signal
+
             logger.info(f"SN{self._sn} has FW{self._fw}. -> Using V320 data structure.")
         else:
             self._data_structure = PARTECTOR2_DATA_STRUCTURE_LEGACY
@@ -65,10 +91,10 @@ if __name__ == "__main__":
     serial_number, port = next(iter(partectors["P2"].items()))
 
     data: dict[int, pd.DataFrame] = {}
-    p2 = Partector2(port=port)
+    p2 = Partector2(port=port, gain_test_active=True)
 
-    for _ in range(15):
-        time.sleep(5)
+    for _ in range(5):
+        time.sleep(3)
         data_points = p2.get_data()
         for point in data_points:
             data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
@@ -77,6 +103,7 @@ if __name__ == "__main__":
         if not df.empty:
             print(f"Sn: {p2._sn}, Port: {p2._port}")
             print(df)
+            print(df["diffusion_current_delay_off"])
             data = {}
             # break
 

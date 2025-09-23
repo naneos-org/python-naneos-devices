@@ -111,12 +111,6 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                     baudrate=self.SERIAL_BAUDRATE,
                     timeout=self.SERIAL_TIMEOUT,
                 )
-
-                # This hack solves the raspberry pi issue that sends commands in advance
-                for _ in range(10):
-                    self._ser.write(b"\b\b\b\b\b\b\b\b\b\b")
-                    time.sleep(5e-3)
-                self._ser.write(b"?")
             except serial.SerialException:
                 continue
             if self._ser.is_open:
@@ -294,6 +288,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         try:
             if verbose_reset:
                 self.set_verbose_freq(0)
+                self._write_line("opd00!")
+                self._write_line("h2000!")
+                self._write_line("e0000!")
         except Exception:
             logger.warning("Could not set verbose frequency to 0!")
         self._shutdown_partector = shutdown

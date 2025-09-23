@@ -117,10 +117,13 @@ class NaneosDeviceDataPoint:
         "particle_surface": "Float32",
         "diffusion_current": "Float32",
         "diffusion_current_offset": "Float32",
+        "diffusion_current_average": "Float32",
         "diffusion_current_stddev": "Float32",
+        "diffusion_current_max": "Float32",
         "diffusion_current_delay_on": "Float32",
         "diffusion_current_delay_off": "Float32",
         "corona_voltage": "Float32",
+        "corona_voltage_onset": "Float32",
         "hires_adc1": "Float32",
         "hires_adc2": "Float32",
         "electrometer_1_amplitude": "Float32",
@@ -222,10 +225,13 @@ class NaneosDeviceDataPoint:
     particle_surface: Optional[float] = None  # um**2/m**3
     diffusion_current: Optional[float] = None  # nA
     diffusion_current_offset: Optional[float] = None  # nA
+    diffusion_current_average: Optional[float] = None  # nA
     diffusion_current_stddev: Optional[float] = None  # nA
-    diffusion_current_delay_on: Optional[float] = None  # sec
-    diffusion_current_delay_off: Optional[float] = None  # sec
+    diffusion_current_max: Optional[float] = None  # nA
+    diffusion_current_delay_on: Optional[float] = None  # centiseconds
+    diffusion_current_delay_off: Optional[float] = None  # centiseconds
     corona_voltage: Optional[float] = None  # V
+    corona_voltage_onset: Optional[float] = None  # V
     hires_adc1: Optional[float] = None  # momentanwert em 1
     hires_adc2: Optional[float] = None  # momentanwert em 2
     electrometer_1_amplitude: Optional[float] = None  # mV
@@ -284,6 +290,21 @@ PARTECTOR1_DATA_STRUCTURE_V_LEGACY: dict[str, Union[type[int], type[float]]] = {
     "device_status": int,
 }
 
+PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE: dict[str, Union[type[int], type[float]]] = {
+    "electrometer_1_gain": float,
+    "electrometer_2_gain": float,
+}
+
+PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE: dict[
+    str, Union[type[int], type[float]]
+] = {
+    "diffusion_current_delay_on": int,  # cs
+    "diffusion_current_delay_off": int,  # cs
+    "diffusion_current_average": float,  # nA
+    "corona_voltage_onset": int,  # V
+    "diffusion_current_stddev": float,  # nA
+    "diffusion_current_max": float,  # nA
+}
 
 PARTECTOR2_DATA_STRUCTURE_V320: dict[str, Union[type[int], type[float]]] = {
     "unix_timestamp": int,
@@ -305,8 +326,6 @@ PARTECTOR2_DATA_STRUCTURE_V320: dict[str, Union[type[int], type[float]]] = {
     "particle_number_concentration": int,
     "differential_pressure": int,
     "ambient_pressure": float,
-    "electrometer_1_gain": float,
-    "electrometer_2_gain": float,
 }
 
 PARTECTOR2_DATA_STRUCTURE_V295_V297_V298: dict[str, Union[type[int], type[float]]] = {
@@ -411,8 +430,6 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V311: dict[str, Union[type[int], type[float]]] = {
     "current_dist_2": float,  # not existing in protobuf
     "current_dist_3": float,  # not existing in protobuf
     "current_dist_4": float,  # not existing in protobuf
-    "electrometer_1_gain": float,
-    "electrometer_2_gain": float,
 }
 
 PARTECTOR2_PRO_DATA_STRUCTURE_V336: dict[str, Union[type[int], type[float]]] = {
@@ -449,8 +466,6 @@ PARTECTOR2_PRO_DATA_STRUCTURE_V336: dict[str, Union[type[int], type[float]]] = {
     "current_dist_2": float,
     "current_dist_3": float,
     "current_dist_4": float,
-    "electrometer_1_gain": float,
-    "electrometer_2_gain": float,
 }
 
 PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315: dict[str, Union[type[int], type[float]]] = {

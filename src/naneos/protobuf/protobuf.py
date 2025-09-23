@@ -87,16 +87,24 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
             device_point.diffusion_current_stddev = int(
                 round(ser["diffusion_current_stddev"] * 100.0)
             )
+        # TODO: implement in protobuf
+        # if "diffusion_current_average" in ser:
+        #     device_point.diffusion_current_average = int(
+        #         round(ser["diffusion_current_average"] * 100.0)
+        #     )
+        # if "diffusion_current_max" in ser:
+        #     device_point.diffusion_current_max = int(round(ser["diffusion_current_max"] * 100.0))
         if "diffusion_current_delay_on" in ser:
-            device_point.diffusion_current_delay_on = int(
-                round(ser["diffusion_current_delay_on"] * 100.0)
-            )
+            delay_on_tmp = max(ser["diffusion_current_delay_on"], 0)
+            device_point.diffusion_current_delay_on = int(round(delay_on_tmp))
         if "diffusion_current_delay_off" in ser:
-            device_point.diffusion_current_delay_off = int(
-                round(ser["diffusion_current_delay_off"] * 100.0)
-            )
+            delay_off_tmp = max(ser["diffusion_current_delay_off"], 0)
+            device_point.diffusion_current_delay_off = int(round(delay_off_tmp))
         if "corona_voltage" in ser:
             device_point.corona_voltage = int(round(ser["corona_voltage"]))
+        # TODO: implement in protobuf
+        # if "corona_voltage_onset" in ser:
+        #     device_point.corona_voltage_onset = int(round(ser["corona_voltage_onset"]))
         if "electrometer_1_amplitude" in ser:
             device_point.electrometer_1_offset = int(round(ser["electrometer_1_amplitude"] * 10.0))
         if "electrometer_2_amplitude" in ser:
