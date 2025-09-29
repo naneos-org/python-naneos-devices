@@ -7,11 +7,11 @@ from typing import Any, Callable, Optional, Union
 
 import serial
 
-from naneos.logger.custom_logger import get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector.blueprints._partector_defaults import PartectorDefaults
 
-logger = get_naneos_logger(__name__)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorBluePrint(Thread, PartectorDefaults, ABC):

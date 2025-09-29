@@ -104,7 +104,7 @@ class PartectorBleConnection:
                         self._next_ts += 1.0
                     else:
                         if self._client.is_connected:
-                            logger.warning(f"SN{self.SERIAL_NUMBER}: Waiting time negative: {wait}")
+                            logger.info(f"SN{self.SERIAL_NUMBER}: Waiting time negative: {wait}")
                         self._next_ts = int(time.time()) + 1.0
 
                     if self._client.is_connected:

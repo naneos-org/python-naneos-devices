@@ -3,14 +3,14 @@ import time
 
 import pandas as pd
 
-from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector.partector1 import Partector1
 from naneos.partector.partector2 import Partector2
 from naneos.partector.partector2_pro import Partector2Pro
 from naneos.partector.scanPartector import scan_for_serial_partectors
 
-logger = get_naneos_logger(__name__, LEVEL_INFO)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorSerialManager(threading.Thread):

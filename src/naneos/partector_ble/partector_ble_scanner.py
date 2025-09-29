@@ -7,13 +7,13 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
 from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
 from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
 from naneos.partector_ble.partector_ble_decoder import PartectorBleDecoder
 
-logger = get_naneos_logger(__name__, LEVEL_INFO)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorBleScanner:

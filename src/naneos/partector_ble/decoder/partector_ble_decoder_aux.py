@@ -83,7 +83,7 @@ class PartectorBleDecoderAux(PartectorBleDecoderBlueprint):
         """
         Get the flow from DP from the advertisement data.
         """
-        val = float(int.from_bytes(data[cls.OFFSET_FLOW_FROM_DP], byteorder="little"))
+        val = float(int.from_bytes(data[cls.OFFSET_FLOW_FROM_DP], byteorder="little")) / 1000.0
         return val
 
     @classmethod

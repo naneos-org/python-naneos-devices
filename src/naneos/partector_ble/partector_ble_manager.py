@@ -6,7 +6,7 @@ from typing import Dict
 import pandas as pd
 from bleak.backends.device import BLEDevice
 
-from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
     NaneosDeviceDataPoint,
 )
@@ -15,7 +15,7 @@ from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
 pd.set_option("future.no_silent_downcasting", True)
 
-logger = get_naneos_logger(__name__, LEVEL_INFO)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorBleManager(threading.Thread):

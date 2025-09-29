@@ -7,10 +7,10 @@ from typing import Callable, ClassVar, Optional
 import pandas as pd
 import requests
 
-from naneos.logger import get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.protobuf.protobuf import create_combined_entry, create_proto_device
 
-logger = get_naneos_logger(__name__)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class NaneosUploadThread(Thread):

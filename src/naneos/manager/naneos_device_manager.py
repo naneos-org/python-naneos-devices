@@ -7,7 +7,7 @@ import time
 import pandas as pd
 
 from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
-from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
     add_to_existing_naneos_data,
     sort_and_clean_naneos_data,
@@ -15,7 +15,7 @@ from naneos.partector.blueprints._data_structure import (
 from naneos.partector.partector_serial_manager import PartectorSerialManager
 from naneos.partector_ble.partector_ble_manager import PartectorBleManager
 
-logger = get_naneos_logger(__name__, LEVEL_INFO)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class NaneosDeviceManager(threading.Thread):
@@ -219,6 +219,8 @@ def queue_example() -> None:
     manager = NaneosDeviceManager(
         upload_active=True,
         gathering_interval_seconds=15,
+        use_ble=True,
+        use_serial=True,
     )
     manager.register_output_queue(out_q)
     manager.start()
@@ -270,8 +272,8 @@ def test_naneos_device_manager():
 
 
 if __name__ == "__main__":
-    minimal_example()
-    # queue_example()
+    # minimal_example()
+    queue_example()
     # test_naneos_device_manager()
 
     # df = pd.read_pickle("partector_data_sn24.pkl")

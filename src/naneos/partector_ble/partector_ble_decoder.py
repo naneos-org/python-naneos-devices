@@ -2,9 +2,9 @@ from typing import Optional
 
 from bleak.backends.scanner import AdvertisementData
 
-from naneos.logger import LEVEL_INFO, get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 
-logger = get_naneos_logger(__name__, LEVEL_INFO)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorBleDecoder:

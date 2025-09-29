@@ -117,12 +117,14 @@ def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.Dev
             device_point.temperature = int(round(ser["temperature"]))
         if "relative_humidity" in ser:
             device_point.relative_humidity = int(round(ser["relative_humidity"]))
+        if "flow_from_dp" in ser:
+            device_point.flow = int(round(ser["flow_from_dp"] * 1000.0))
         if "deposition_voltage" in ser:
             device_point.deposition_voltage = int(round(ser["deposition_voltage"]))
         if "battery_voltage" in ser:
             device_point.battery_voltage = int(round(ser["battery_voltage"] * 100.0))
-        if " ambient_pressure" in ser:
-            device_point.ambient_pressure = int(round(ser[" ambient_pressure"] * 10.0))
+        if "ambient_pressure" in ser:
+            device_point.ambient_pressure = int(round(ser["ambient_pressure"] * 10.0))
         if "channel_pressure" in ser:
             device_point.channel_pressure = int(round(ser["channel_pressure"] * 10.0))
         if "differential_pressure" in ser:
