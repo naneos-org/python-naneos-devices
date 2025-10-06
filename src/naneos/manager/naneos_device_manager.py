@@ -272,8 +272,8 @@ def test_naneos_device_manager():
 
 
 if __name__ == "__main__":
-    # minimal_example()
-    queue_example()
+    minimal_example()
+    # queue_example()
     # test_naneos_device_manager()
 
     # df = pd.read_pickle("partector_data_sn24.pkl")
