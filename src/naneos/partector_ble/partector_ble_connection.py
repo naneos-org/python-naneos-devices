@@ -118,12 +118,17 @@ class PartectorBleConnection:
                         continue
 
                     if waiting_seconds == 0:
-                        await self._client.connect()
-                        await self._client.start_notify(self.CHAR_UUIDS["std"], self._callback_std)
-                        await self._client.start_notify(self.CHAR_UUIDS["aux"], self._callback_aux)
-                        await self._client.start_notify(
-                            self.CHAR_UUIDS["size_dist"], self._callback_size_dist
-                        )
+                        await self._client.connect(timeout=2)
+                        if self._client.is_connected:
+                            await self._client.start_notify(
+                                self.CHAR_UUIDS["std"], self._callback_std
+                            )
+                            await self._client.start_notify(
+                                self.CHAR_UUIDS["aux"], self._callback_aux
+                            )
+                            await self._client.start_notify(
+                                self.CHAR_UUIDS["size_dist"], self._callback_size_dist
+                            )
                         logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
 
                     self._next_ts = int(time.time()) + 1.0
@@ -150,20 +155,20 @@ class PartectorBleConnection:
             return
 
         try:
-            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["std"]), timeout=10)
-            await asyncio.sleep(0.5)  # wait for windows to free resources
-            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["aux"]), timeout=10)
-            await asyncio.sleep(0.5)  # wait for windows to free resources
+            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["std"]), timeout=1)
+            await asyncio.sleep(0.1)  # wait for windows to free resources
+            await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["aux"]), timeout=1)
+            await asyncio.sleep(0.1)  # wait for windows to free resources
             await asyncio.wait_for(
-                self._client.stop_notify(self.CHAR_UUIDS["size_dist"]), timeout=10
+                self._client.stop_notify(self.CHAR_UUIDS["size_dist"]), timeout=1
             )
-            await asyncio.sleep(0.5)  # wait for windows to free resources
+            await asyncio.sleep(0.1)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to stop notify: {e}")
 
         try:
-            await asyncio.wait_for(self._client.disconnect(), timeout=10)
-            await asyncio.sleep(1)  # wait for windows to free resources
+            await asyncio.wait_for(self._client.disconnect(), timeout=1)
+            await asyncio.sleep(0.1)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to disconnect: {e}")
 

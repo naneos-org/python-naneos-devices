@@ -271,10 +271,48 @@ def test_naneos_device_manager():
     timer.cancel()
 
 
+def ble_connect_example() -> None:
+    manager = NaneosDeviceManager(
+        use_serial=False,
+        use_ble=True,
+        upload_active=False,
+        gathering_interval_seconds=10,  # clamped to [10, 600]
+    )
+    manager.start()
+
+    try:
+        while True:
+            # check if 8617 is connected
+            devices = manager.get_connected_ble_devices()
+            if "SN8617" in devices:
+                print("8617 is connected")
+                manager.stop()
+                manager.join()
+                print("Stopped.")
+
+                # restart
+                manager = NaneosDeviceManager(
+                    use_serial=False,
+                    use_ble=True,
+                    upload_active=False,
+                    gathering_interval_seconds=10,  # clamped to [10, 600]
+                )
+                manager.start()
+                print("Restarted.")
+
+    except KeyboardInterrupt:
+        pass
+
+    manager.stop()
+    manager.join()
+    print("Stopped.")
+
+
 if __name__ == "__main__":
-    minimal_example()
+    # minimal_example()
     # queue_example()
     # test_naneos_device_manager()
+    ble_connect_example()
 
     # df = pd.read_pickle("partector_data_sn24.pkl")
     # print(df)
