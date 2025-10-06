@@ -95,6 +95,7 @@ class PartectorBleManager(threading.Thread):
                 async with PartectorBleScanner(loop=self._loop, queue=self._queue_scanner):
                     logger.info("Scanner started.")
                     await self._manager_loop()
+                await self._kill_all_connections()  # just to be safe
             except asyncio.CancelledError:
                 logger.info("BLEManager cancelled.")
             finally:
@@ -104,6 +105,7 @@ class PartectorBleManager(threading.Thread):
         while not self._stop_event.is_set():
             try:
                 if not await self._is_bluetooth_adapter_available():
+                    logger.warning("Bluetooth adapter lost. Stopping all connections...")
                     await self._kill_all_connections()
                     return
 
@@ -145,7 +147,7 @@ class PartectorBleManager(threading.Thread):
 
         # wait max 5s for _finish_all_connections_blocking to finish
         try:
-            await asyncio.wait_for(self._finish_all_connections_blocking(), timeout=5)
+            await asyncio.wait_for(self._finish_all_connections_blocking(), timeout=7)
         except asyncio.TimeoutError:
             logger.warning("Timeout waiting for connections to finish. Forcing cancellation.")
 

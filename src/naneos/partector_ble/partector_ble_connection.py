@@ -156,19 +156,19 @@ class PartectorBleConnection:
 
         try:
             await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["std"]), timeout=1)
-            await asyncio.sleep(0.1)  # wait for windows to free resources
+            await asyncio.sleep(0.5)  # wait for windows to free resources
             await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS["aux"]), timeout=1)
-            await asyncio.sleep(0.1)  # wait for windows to free resources
+            await asyncio.sleep(0.5)  # wait for windows to free resources
             await asyncio.wait_for(
                 self._client.stop_notify(self.CHAR_UUIDS["size_dist"]), timeout=1
             )
-            await asyncio.sleep(0.1)  # wait for windows to free resources
+            await asyncio.sleep(0.5)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to stop notify: {e}")
 
         try:
             await asyncio.wait_for(self._client.disconnect(), timeout=1)
-            await asyncio.sleep(0.1)  # wait for windows to free resources
+            await asyncio.sleep(0.5)  # wait for windows to free resources
         except Exception as e:
             logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to disconnect: {e}")
 

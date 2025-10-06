@@ -309,10 +309,10 @@ def ble_connect_example() -> None:
 
 
 if __name__ == "__main__":
-    # minimal_example()
+    minimal_example()
     # queue_example()
     # test_naneos_device_manager()
-    ble_connect_example()
+    # ble_connect_example()
 
     # df = pd.read_pickle("partector_data_sn24.pkl")
     # print(df)
