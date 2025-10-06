@@ -4,6 +4,7 @@ import time
 from typing import Dict
 
 import pandas as pd
+from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 
 from naneos.logger import LEVEL_WARNING, get_naneos_logger
@@ -22,6 +23,7 @@ class PartectorBleManager(threading.Thread):
     def __init__(self) -> None:
         super().__init__(daemon=True)
         self._stop_event = threading.Event()
+        self._task_stop_event = asyncio.Event()
 
         self._queue_scanner = PartectorBleScanner.create_scanner_queue()
         self._queue_connection = PartectorBleConnection.create_connection_queue()
@@ -36,6 +38,7 @@ class PartectorBleManager(threading.Thread):
         return data
 
     def stop(self) -> None:
+        self._task_stop_event.set()
         self._stop_event.set()
 
     def run(self) -> None:
@@ -46,26 +49,66 @@ class PartectorBleManager(threading.Thread):
 
     def get_connected_device_strings(self) -> list[str]:
         """Returns a list of connected device strings."""
-        return [f"SN{sn}" for sn in self._connections.keys()]
+        # first make a copy to avoid runtime dict change issues
+        connections_copy = self._connections.copy()
+        return [f"SN{sn}" for sn in connections_copy.keys()]
 
     def get_connected_serial_numbers(self) -> list[int | None]:
         """Returns a list of connected serial numbers."""
         return list(self._connections.keys())
 
+    async def _is_bluetooth_adapter_available(self) -> bool:
+        """Check if the Bluetooth adapter is available and powered on."""
+        try:
+            # Try to get adapter info - this will fail if adapter is not available
+            scanner = BleakScanner()
+            # Test if we can discover devices briefly
+            await scanner.start()
+            await scanner.stop()
+            return True
+        except Exception as e:
+            logger.debug(f"Bluetooth adapter not available: {e}")
+            return False
+
+    async def _wait_for_bluetooth_adapter(self) -> None:
+        """Wait for the Bluetooth adapter to become available."""
+        adapter_check_interval = 3.0  # seconds
+
+        while not self._stop_event.is_set():
+            if await self._is_bluetooth_adapter_available():
+                logger.info("Bluetooth adapter is available and ready.")
+                return
+
+            logger.info(
+                f"Bluetooth adapter not available. Retrying in {adapter_check_interval} seconds..."
+            )
+            await asyncio.sleep(adapter_check_interval)
+
     async def _async_run(self):
         self._loop = asyncio.get_event_loop()
-        try:
-            async with PartectorBleScanner(loop=self._loop, queue=self._queue_scanner):
-                logger.info("Scanner started.")
-                await self._manager_loop()
-        except asyncio.CancelledError:
-            logger.info("BLEManager cancelled.")
-        finally:
-            logger.info("BLEManager cleanup complete.")
+        while not self._stop_event.is_set():
+            try:
+                # Wait for Bluetooth adapter to become available
+                await self._wait_for_bluetooth_adapter()
+                self._task_stop_event.clear()
+
+                async with PartectorBleScanner(loop=self._loop, queue=self._queue_scanner):
+                    logger.info("Scanner started.")
+                    await self._manager_loop()
+                await self._kill_all_connections()  # just to be safe
+            except asyncio.CancelledError:
+                logger.info("BLEManager cancelled.")
+            finally:
+                logger.info("BLEManager cleanup complete.")
 
     async def _manager_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
+                if not await self._is_bluetooth_adapter_available():
+                    logger.warning("Bluetooth adapter lost. Stopping all connections...")
+                    await self._kill_all_connections()
+                    return
+
                 await asyncio.sleep(1.0)
 
                 await self._scanner_queue_routine()
@@ -75,13 +118,47 @@ class PartectorBleManager(threading.Thread):
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
-                logger.exception(f"Error in scanner loop: {e}")
+                logger.exception(f"Error in manager loop: {e}")
 
-        # wait for all connections to finish
+        await self._finish_all_connections()
+
+    async def _kill_all_connections(self) -> None:
+        self._task_stop_event.set()
+
         for serial in list(self._connections.keys()):
             if not self._connections[serial].done():
-                logger.info(f"Waiting for connection task {serial} to finish.")
-                await self._connections[serial]
+                logger.info(f"Cancelling connection task {serial}.")
+                self._connections[serial].cancel()
+            self._connections.pop(serial, None)
+            logger.info(f"{serial}: Connection task cancelled and popped.")
+
+    async def _finish_all_connections_blocking(self) -> None:
+        while list(self._connections.keys()):
+            serial = list(self._connections.keys())[0]
+
+            if not self._connections[serial].done():
+                await asyncio.sleep(1)
+            else:
+                self._connections.pop(serial, None)
+
+    async def _finish_all_connections(self) -> None:
+        self._task_stop_event.set()
+        await asyncio.sleep(1)  # give tasks some time to finish gracefully
+
+        # wait max 5s for _finish_all_connections_blocking to finish
+        try:
+            await asyncio.wait_for(self._finish_all_connections_blocking(), timeout=7)
+        except asyncio.TimeoutError:
+            logger.warning("Timeout waiting for connections to finish. Forcing cancellation.")
+
+        for serial in list(self._connections.keys()):
+            if not self._connections[serial].done():
+                logger.warning(f"Forcing connection task {serial} to cancel.")
+                self._connections[serial].cancel()
+                await asyncio.sleep(0.1)  # small delay to allow cancellation to propagate
+                # logger.info(f"Waiting for connection task {serial} to finish.")
+                # await self._connections[serial]
+
             self._connections.pop(serial, None)
             logger.info(f"{serial}: Connection task finished and popped.")
 
@@ -90,8 +167,8 @@ class PartectorBleManager(threading.Thread):
             async with PartectorBleConnection(
                 device=device, loop=self._loop, serial_number=serial, queue=self._queue_connection
             ):
-                while not self._stop_event.is_set():
-                    await asyncio.sleep(1)
+                while not self._task_stop_event.is_set():
+                    await asyncio.sleep(0.5)
 
         except asyncio.CancelledError:
             logger.info(f"{serial}: Connection task cancelled.")
