@@ -42,6 +42,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._ser: serial.Serial = serial.Serial()
         self._time_last_message_received = time.time()
         self._legacy_data_structure: bool = False
+        self._wait_with_data_output_until = time.time()
 
     #########################################
     ### Init methods
@@ -58,7 +59,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._init_thread()
         self._init_data_structures()
         self._init_clear_buffers()
-        self.start()
+        self.start()  # starts the checker thread
 
         self._init_get_device_info()
 
@@ -163,6 +164,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             if self._sn is None:
                 self._sn = self._get_serial_number_secure()
             self._fw = self.get_firmware_version()
+            self._integration_time = self.get_integration_time_seconds()
             logger.debug(f"Connected to SN{self._sn} on {self._port}")
         except Exception:
             logger.warning("Could not get device info!")
@@ -235,6 +237,13 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         fw = self._serial_wrapper(self._get_firmware_version)
         if isinstance(fw, int):
             return fw
+        return 0
+
+    def get_integration_time_seconds(self) -> int:
+        """Gets the integration time via command from the device."""
+        it = self._serial_wrapper(self._get_integration_time)
+        if isinstance(it, int):
+            return it
         return 0
 
     def write_line(self, line: str, number_of_elem: int = 1) -> list[Any]:
@@ -340,6 +349,10 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         data = [unix_timestamp] + line.split("\t")
 
         self._notify_message_received()
+
+        if time.time() < self._wait_with_data_output_until:
+            return  # skip data output until time is over
+
         if len(data) == len(self._data_structure):
             self._queue.append(data)
         # this is legacy mode, where the data structure is not known exactly
@@ -472,6 +485,18 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         try:
             fw = int(fw)
             return fw
+        except Exception as e:
+            logger.error(f"Could not cast firmware version to int: {e}")
+            return None
+
+    def _get_integration_time(self) -> Optional[int]:
+        self._queue_info.clear()
+        self._write_line("H?")
+        it = self._get_and_check_info()[1]
+        try:
+            it = int(it)
+            it = int(2 ** (it + 1))  # convert to seconds
+            return it
         except Exception as e:
             logger.error(f"Could not cast firmware version to int: {e}")
             return None
