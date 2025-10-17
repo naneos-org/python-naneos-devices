@@ -1,6 +1,6 @@
 [project]
 name = "naneos-devices"
-version = "1.1.9"
+version = "1.1.10"
 description = "naneos particle solutions gmbh python backend"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
@@ -22,7 +22,7 @@ dependencies = [
     "bleak>=0.22.3",
     "influxdb-client[ciso]>=1.48.0",
     "pandas>=2.2.3",
-    "protobuf<6.0.0",
+    "protobuf>=6.33.0",
     "pyserial>=3.5",
     "requests>=2.32.3",
     "rich>=14.0.0",
