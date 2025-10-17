@@ -22,7 +22,7 @@ class PartectorBleDecoderStd(PartectorBleDecoderBlueprint):
     OFFSET_TEMPERATURE = slice(8, 9)
     OFFSET_RELATIVE_HUMIDITY = slice(9, 10)
     OFFSET_BATTERY_VOLTAGE = slice(12, 14)
-    OFFSET_PARTICLE_MASS = slice(14, 18)
+    OFFSET_PARTICLE_MASS = slice(16, 19)
 
     FACTOR_LDSA = 0.01
     FACTOR_BATTERY_VOLTAGE = 0.01
