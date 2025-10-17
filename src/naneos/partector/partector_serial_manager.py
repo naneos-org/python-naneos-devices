@@ -65,6 +65,22 @@ class PartectorSerialManager(threading.Thread):
 
         return p1_strings + p2_strings + p2_pro_strings
 
+    def get_gain_test_activating_devices(self) -> list[int | None]:
+        """Returns a list of serial numbers of devices with gain test active."""
+        # _wait_with_data_output_until is larger than time.time()
+        p2_gain_test = [
+            p._sn
+            for p in self._connected_p2.values()
+            if p._wait_with_data_output_until > time.time()
+        ]
+        p2_pro_gain_test = [
+            p._sn
+            for p in self._connected_p2_pro.values()
+            if p._wait_with_data_output_until > time.time()
+        ]
+
+        return p2_gain_test + p2_pro_gain_test
+
     def get_connected_addresses(self) -> list[str]:
         p1_ports = list(self._connected_p1.keys())
         p2_ports = list(self._connected_p2.keys())
