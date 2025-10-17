@@ -350,6 +350,9 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         self._notify_message_received()
 
+        if not self._data_structure or len(data) < len(self._data_structure):
+            self._queue_info.append(data)
+
         if time.time() < self._wait_with_data_output_until:
             return  # skip data output until time is over
 
@@ -358,8 +361,6 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         # this is legacy mode, where the data structure is not known exactly
         elif len(data) > len(self._data_structure) and self._legacy_data_structure:
             self._queue.append(data[0 : len(self._data_structure)])
-        else:
-            self._queue_info.append(data)
 
     def _check_device_connection(self) -> bool:
         if self.thread_event.is_set() or not self._ser or not self._ser.is_open:

@@ -222,6 +222,8 @@ class PartectorBleManager(threading.Thread):
             data_points = self._data[serial]
 
             # get last value of device_type column
+            if data_points.empty:
+                continue
             last_device_type = data_points["device_type"].iloc[-1]
             if last_device_type != current_type:
                 self._connections[serial] = (
