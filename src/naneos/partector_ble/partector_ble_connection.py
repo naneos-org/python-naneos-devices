@@ -108,6 +108,20 @@ class PartectorBleConnection:
                         self._next_ts = int(time.time()) + 1.0
 
                     if self._client.is_connected:
+                        if (
+                            self._device_type == NaneosDeviceDataPoint.DEV_TYPE_P2PRO
+                            and self._data.particle_number_10nm is None
+                            and self._data.particle_number_16nm is None
+                            and self._data.particle_number_26nm is None
+                            and self._data.particle_number_43nm is None
+                            and self._data.particle_number_70nm is None
+                            and self._data.particle_number_114nm is None
+                            and self._data.particle_number_185nm is None
+                            and self._data.particle_number_300nm is None
+                        ):
+                            self._data.particle_number_concentration = None
+                            self._data.average_particle_diameter = None
+
                         self._queue.put_nowait(self._data)
                         self._data = NaneosDeviceDataPoint(
                             device_type=self._device_type,
@@ -196,6 +210,7 @@ class PartectorBleConnection:
     def _callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (size_dist characteristic)."""
         self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2PRO
+
         self._data.unix_timestamp = int(time.time() * 1000)
         self._data = PartectorBleDecoderSize.decode(data, data_structure=self._data)
 

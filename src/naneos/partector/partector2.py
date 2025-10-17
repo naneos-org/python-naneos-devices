@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 import pandas as pd
@@ -54,6 +55,8 @@ class Partector2(PartectorBluePrint):
                 self._write_line("opd00!")
 
             if self._GAIN_TEST_ACTIVE:
+                waiting_time = max(10, (self._integration_time + 5))
+                self._wait_with_data_output_until = time.time() + waiting_time
                 self._write_line("h2001!")  # activates harmonics output
                 self._write_line("e1100!")  # strength of gain test signal
                 self._data_structure.update(PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE)
@@ -82,8 +85,6 @@ class Partector2(PartectorBluePrint):
 
 
 if __name__ == "__main__":
-    import time
-
     from naneos.partector.scanPartector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()

@@ -43,6 +43,8 @@ class NaneosDeviceManager(threading.Thread):
 
         self._data: dict[int, pd.DataFrame] = {}
 
+        self.upload_blocked_devices: list[int | None] = []
+
     def use_serial_connections(self, use: bool) -> None:
         self._use_serial = use
 
@@ -121,6 +123,7 @@ class NaneosDeviceManager(threading.Thread):
             isinstance(self._manager_serial, PartectorSerialManager)
             and self._manager_serial.is_alive()
         ):
+            self.upload_blocked_devices = self._manager_serial.get_gain_test_activating_devices()
             data_serial = self._manager_serial.get_data()
             self._data = add_to_existing_naneos_data(self._data, data_serial)
         # starting
@@ -160,13 +163,21 @@ class NaneosDeviceManager(threading.Thread):
                 time.sleep(1)
 
                 self._loop_serial_manager()
-
                 self._loop_ble_manager()
+
+                # remove entries from _data that is in upload_blocked_devices
+                for blocked_sn in self.upload_blocked_devices:
+                    if blocked_sn in self._data:
+                        del self._data[blocked_sn]
 
                 if time.time() >= self._next_upload_time:
                     self._next_upload_time = time.time() + self._gathering_interval_seconds
 
-                    upload_data = sort_and_clean_naneos_data(self._data)
+                    serial_connected_sns: list[int | None] = []
+                    if self._use_serial and self._manager_serial is not None:
+                        serial_connected_sns = self._manager_serial.get_connected_serial_numbers()
+
+                    upload_data = sort_and_clean_naneos_data(self._data, serial_connected_sns)
                     self._data = {}
 
                     if isinstance(self._out_queue, queue.Queue):

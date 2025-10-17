@@ -1,7 +1,6 @@
 import asyncio
 import threading
 import time
-from typing import Dict
 
 import pandas as pd
 from bleak import BleakScanner
@@ -27,7 +26,7 @@ class PartectorBleManager(threading.Thread):
 
         self._queue_scanner = PartectorBleScanner.create_scanner_queue()
         self._queue_connection = PartectorBleConnection.create_connection_queue()
-        self._connections: Dict[int, asyncio.Task] = {}  # key: serial_number
+        self._connections: dict[int, tuple[asyncio.Task, int]] = {}  # key: serial_number
 
         self._data: dict[int, pd.DataFrame] = {}
 
@@ -51,7 +50,18 @@ class PartectorBleManager(threading.Thread):
         """Returns a list of connected device strings."""
         # first make a copy to avoid runtime dict change issues
         connections_copy = self._connections.copy()
-        return [f"SN{sn}" for sn in connections_copy.keys()]
+        sns = connections_copy.keys()
+        device_types = [connections_copy[s][1] for s in sns]
+
+        sns_list = []
+        for sn, dev_type in zip(sns, device_types):
+            if dev_type == NaneosDeviceDataPoint.DEV_TYPE_P2PRO:
+                sns_list.append(f"SN{sn} (P2 Pro)")
+        for sn, dev_type in zip(sns, device_types):
+            if dev_type == NaneosDeviceDataPoint.DEV_TYPE_P2:
+                sns_list.append(f"SN{sn} (P2)")
+
+        return sns_list
 
     def get_connected_serial_numbers(self) -> list[int | None]:
         """Returns a list of connected serial numbers."""
@@ -113,6 +123,7 @@ class PartectorBleManager(threading.Thread):
 
                 await self._scanner_queue_routine()
                 await self._connection_queue_routine()
+                await self._check_device_types()
                 await self._remove_done_tasks()
 
             except asyncio.TimeoutError:
@@ -126,9 +137,9 @@ class PartectorBleManager(threading.Thread):
         self._task_stop_event.set()
 
         for serial in list(self._connections.keys()):
-            if not self._connections[serial].done():
+            if not self._connections[serial][0].done():
                 logger.info(f"Cancelling connection task {serial}.")
-                self._connections[serial].cancel()
+                self._connections[serial][0].cancel()
             self._connections.pop(serial, None)
             logger.info(f"{serial}: Connection task cancelled and popped.")
 
@@ -136,7 +147,7 @@ class PartectorBleManager(threading.Thread):
         while list(self._connections.keys()):
             serial = list(self._connections.keys())[0]
 
-            if not self._connections[serial].done():
+            if not self._connections[serial][0].done():
                 await asyncio.sleep(1)
             else:
                 self._connections.pop(serial, None)
@@ -152,9 +163,9 @@ class PartectorBleManager(threading.Thread):
             logger.warning("Timeout waiting for connections to finish. Forcing cancellation.")
 
         for serial in list(self._connections.keys()):
-            if not self._connections[serial].done():
+            if not self._connections[serial][0].done():
                 logger.warning(f"Forcing connection task {serial} to cancel.")
-                self._connections[serial].cancel()
+                self._connections[serial][0].cancel()
                 await asyncio.sleep(0.1)  # small delay to allow cancellation to propagate
                 # logger.info(f"Waiting for connection task {serial} to finish.")
                 # await self._connections[serial]
@@ -195,17 +206,35 @@ class PartectorBleManager(threading.Thread):
 
             logger.info(f"New device detected: serial={serial}, address={device.address}")
             task = self._loop.create_task(self._task_connection(device, serial))
-            self._connections[serial] = task
+            self._connections[serial] = (task, NaneosDeviceDataPoint.DEV_TYPE_P2)
 
     async def _connection_queue_routine(self) -> None:
         while not self._queue_connection.empty():
             data = await self._queue_connection.get()
             self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, data)
 
+    async def _check_device_types(self) -> None:
+        for serial in self._data.keys():
+            if serial not in self._connections:
+                continue
+
+            current_type = self._connections[serial][1]
+            data_points = self._data[serial]
+
+            # get last value of device_type column
+            if data_points.empty:
+                continue
+            last_device_type = data_points["device_type"].iloc[-1]
+            if last_device_type != current_type:
+                self._connections[serial] = (
+                    self._connections[serial][0],
+                    last_device_type,
+                )
+
     async def _remove_done_tasks(self) -> None:
         """Remove completed tasks from the connections dictionary."""
         for serial in list(self._connections.keys()):
-            if self._connections[serial].done():
+            if self._connections[serial][0].done():
                 self._connections.pop(serial, None)
                 logger.info(f"{serial}: Connection task finished and popped.")
 
