@@ -3,7 +3,7 @@ from typing import Optional
 
 import pandas as pd
 
-from naneos.logger import get_naneos_logger
+from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE_LEGACY,
     PARTECTOR2_DATA_STRUCTURE_V265_V275,
@@ -15,7 +15,7 @@ from naneos.partector.blueprints._data_structure import (
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
 
-logger = get_naneos_logger(__name__)
+logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class Partector2(PartectorBluePrint):

@@ -132,7 +132,7 @@ class PartectorBleConnection:
                         continue
 
                     if waiting_seconds == 0:
-                        await self._client.connect(timeout=2)
+                        await self._client.connect(timeout=5)  # 5 seconds for windows...
                         if self._client.is_connected:
                             await self._client.start_notify(
                                 self.CHAR_UUIDS["std"], self._callback_std
