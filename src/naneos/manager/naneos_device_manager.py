@@ -173,7 +173,11 @@ class NaneosDeviceManager(threading.Thread):
                 if time.time() >= self._next_upload_time:
                     self._next_upload_time = time.time() + self._gathering_interval_seconds
 
-                    upload_data = sort_and_clean_naneos_data(self._data)
+                    serial_connected_sns: list[int | None] = []
+                    if self._use_serial and self._manager_serial is not None:
+                        serial_connected_sns = self._manager_serial.get_connected_serial_numbers()
+
+                    upload_data = sort_and_clean_naneos_data(self._data, serial_connected_sns)
                     self._data = {}
 
                     if isinstance(self._out_queue, queue.Queue):

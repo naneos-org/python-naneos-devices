@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 import pandas as pd
@@ -84,8 +85,6 @@ class Partector2(PartectorBluePrint):
 
 
 if __name__ == "__main__":
-    import time
-
     from naneos.partector.scanPartector import scan_for_serial_partectors
 
     partectors = scan_for_serial_partectors()

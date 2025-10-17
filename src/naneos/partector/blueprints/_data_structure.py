@@ -23,7 +23,9 @@ def add_to_existing_naneos_data(
     return data
 
 
-def sort_and_clean_naneos_data(data: dict[int, pd.DataFrame]) -> dict[int, pd.DataFrame]:
+def sort_and_clean_naneos_data(
+    data: dict[int, pd.DataFrame], serial_only: list[int | None] = []
+) -> dict[int, pd.DataFrame]:
     """
     Takes the best connection type for each serial number.
     If there are multiple connection types, it keeps the one with the highest priority:
@@ -36,7 +38,7 @@ def sort_and_clean_naneos_data(data: dict[int, pd.DataFrame]) -> dict[int, pd.Da
             continue
 
         if "connection_type" in df.columns:
-            if (df["connection_type"] == "serial").any():
+            if (df["connection_type"] == "serial").any() or (serial in serial_only):
                 df = df[df["connection_type"] == "serial"]
             elif (df["connection_type"] == "connected").any():
                 df = df[df["connection_type"] == "connected"]
@@ -49,10 +51,13 @@ def sort_and_clean_naneos_data(data: dict[int, pd.DataFrame]) -> dict[int, pd.Da
 
         # if there are rows with device type 2 and 0 remove all 0 rows
         if "device_type" in df.columns:
-            if (df["device_type"] == 0).any() and (df["device_type"] == 2).any():
-                df = df[df["device_type"] != 0]
+            if (df["device_type"] == NaneosDeviceDataPoint.DEV_TYPE_P2).any() and (
+                df["device_type"] == NaneosDeviceDataPoint.DEV_TYPE_P2PRO
+            ).any():
+                df = df[df["device_type"] == NaneosDeviceDataPoint.DEV_TYPE_P2PRO]
 
-        data_return[serial] = df
+        if not df.empty:
+            data_return[serial] = df
 
     return data_return
 
