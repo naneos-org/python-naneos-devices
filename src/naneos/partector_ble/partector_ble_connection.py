@@ -57,6 +57,7 @@ class PartectorBleConnection:
         self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2  # Thats the deafault value
         self._data = NaneosDeviceDataPoint()
         self._next_ts = 0.0
+        self._last_aux_data_ts = time.time()
         self._queue = queue
 
         self._device = device
@@ -97,6 +98,15 @@ class PartectorBleConnection:
 
             while not self._stop_event.is_set():
                 try:
+                    if self._last_aux_data_ts + 60 < time.time():
+                        # if no aux data received for 60 seconds, disconnect to reset possible issues
+                        logger.warning(
+                            f"SN{self.SERIAL_NUMBER}: No aux data received for 60 seconds, disconnecting to reset."
+                        )
+                        await self._disconnect_gracefully()
+                        self._last_aux_data_ts = time.time()
+                        waiting_seconds = 5  # wait 5 seconds before reconnecting
+
                     waiting_seconds = max(0, waiting_seconds - 1)
                     wait = self._next_ts - time.time()
                     if wait > 0:
@@ -199,6 +209,7 @@ class PartectorBleConnection:
 
     def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (aux characteristic)."""
+        self._last_aux_data_ts = time.time()
         self._data.unix_timestamp = int(time.time() * 1000)
         if data[0] == 255 and data[1] == 255:  # triggers for aux error data
             self._data = PartectorBleDecoderAuxError.decode(data, data_structure=self._data)
