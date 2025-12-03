@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import threading
 import time
 
@@ -67,7 +68,7 @@ class PartectorBleManager(threading.Thread):
         """Returns a list of connected serial numbers."""
         return list(self._connections.keys())
 
-    async def _is_bluetooth_adapter_available(self) -> bool:
+    async def _bleak_is_bluetooth_adapter_available(self) -> bool:
         """Check if the Bluetooth adapter is available and powered on."""
         try:
             # Try to get adapter info - this will fail if adapter is not available
@@ -79,6 +80,62 @@ class PartectorBleManager(threading.Thread):
         except Exception as e:
             logger.debug(f"Bluetooth adapter not available: {e}")
             return False
+
+    async def _linux_is_bluetooth_adapter_available(self) -> bool:
+        """
+        Nutzt BlueZ (bluetoothctl show), um zu prüfen, ob
+        - ein Bluetooth-Controller existiert und
+        - er eingeschaltet ("Powered: yes") ist.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bluetoothctl",
+                "show",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                logger.debug(
+                    "bluetoothctl show failed with code %s: %s",
+                    proc.returncode,
+                    stderr.decode(errors="ignore").strip(),
+                )
+                return False
+
+            output = stdout.decode(errors="ignore")
+
+            if "No default controller available" in output:
+                logger.debug("No default Bluetooth controller available (BlueZ).")
+                return False
+
+            powered = None
+            for line in output.splitlines():
+                line = line.strip()
+                if line.lower().startswith("powered:"):
+                    powered = "yes" in line.lower()
+                    break
+
+            if powered is not None:
+                return powered
+
+            logger.debug("Bluetooth controller found but no 'Powered' field in output.")
+            return False
+
+        except FileNotFoundError:
+            logger.debug("bluetoothctl not found on system.")
+            return False
+
+        except Exception as e:
+            logger.debug(f"Error while checking Bluetooth adapter via bluetoothctl: {e}")
+            return False
+
+    async def _is_bluetooth_adapter_available(self) -> bool:
+        if sys.platform.startswith("linux"):
+            return await self._linux_is_bluetooth_adapter_available()
+        else:
+            return await self._bleak_is_bluetooth_adapter_available()
 
     async def _wait_for_bluetooth_adapter(self) -> None:
         """Wait for the Bluetooth adapter to become available."""

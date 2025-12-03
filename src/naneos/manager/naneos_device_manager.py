@@ -199,7 +199,7 @@ def minimal_example() -> None:
     manager = NaneosDeviceManager(
         use_serial=True,
         use_ble=True,
-        upload_active=True,
+        upload_active=False,
         gathering_interval_seconds=10,  # clamped to [10, 600]
     )
     manager.start()
@@ -229,7 +229,7 @@ def queue_example() -> None:
 
     manager = NaneosDeviceManager(
         upload_active=True,
-        gathering_interval_seconds=15,
+        gathering_interval_seconds=10,
         use_ble=True,
         use_serial=True,
     )
@@ -320,8 +320,8 @@ def ble_connect_example() -> None:
 
 
 if __name__ == "__main__":
-    minimal_example()
-    # queue_example()
+    # minimal_example()
+    queue_example()
     # test_naneos_device_manager()
     # ble_connect_example()
 

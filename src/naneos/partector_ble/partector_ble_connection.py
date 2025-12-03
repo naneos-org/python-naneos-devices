@@ -188,13 +188,13 @@ class PartectorBleConnection:
             )
             await asyncio.sleep(0.5)  # wait for windows to free resources
         except Exception as e:
-            logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to stop notify: {e}")
+            logger.debug(f"SN{self.SERIAL_NUMBER}: Failed to stop notify: {e}")
 
         try:
             await asyncio.wait_for(self._client.disconnect(), timeout=1)
             await asyncio.sleep(0.5)  # wait for windows to free resources
         except Exception as e:
-            logger.exception(f"SN{self.SERIAL_NUMBER}: Failed to disconnect: {e}")
+            logger.debug(f"SN{self.SERIAL_NUMBER}: Failed to disconnect: {e}")
 
     def _disconnect_callback(self, client: BleakClient) -> None:
         """Callback on disconnect."""
