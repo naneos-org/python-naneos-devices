@@ -65,7 +65,14 @@ sed \
 
 chmod 644 "$SERVICE_FILE"
 
-# 7) Enable & start service
+# 7) Fix Bluetooth state on Raspberry Pi
+echo ">> Ensuring Bluetooth is enabled..."
+rfkill unblock bluetooth || true
+
+# Try to power on BT controller non-interactively
+echo -e 'power on\nquit' | bluetoothctl >/dev/null 2>&1 || true
+
+# 8) Enable & start service
 echo ">> Reloading systemd, enabling & starting service..."
 systemctl daemon-reload
 systemctl enable naneos_uploader.service

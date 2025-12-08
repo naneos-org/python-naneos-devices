@@ -166,13 +166,17 @@ This script automatically downloads all required files for the uploader, makes t
 It sets up a Python virtual environment, installs the python-naneos-devices package, and creates a systemd service that starts automatically on boot.
 
 ```bash
-curl -L https://api.github.com/repos/naneos-org/python-naneos-devices/contents/installers/rp-naneos-uploader/?ref=main \
+mkdir tmp_naneos \
+&& cd tmp_naneos \
+&& curl -L https://api.github.com/repos/naneos-org/python-naneos-devices/contents/installers/rp-naneos-uploader/?ref=main \
      -H "Accept: application/vnd.github.v3+json" \
      | grep download_url \
      | cut -d '"' -f 4 \
      | wget -i - \
-     && sudo chmod +x install.sh \
-     && sudo ./install.sh
+&& sudo chmod +x install.sh \
+&& sudo ./install.sh \
+&& cd .. \
+&& sudo rm -rf tmp_naneos
 ```
 
 After installation, the uploader runs automatically in the background and will restart after every reboot.
