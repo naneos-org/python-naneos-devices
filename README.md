@@ -155,6 +155,33 @@ For example if you want to build an executable for windows you need to build it 
 pyinstaller demo/p1UploadTool.py  --console --noconfirm --clean --onefile
 ```
 
+# Easy installation on Raspberry Pi
+Before running the installation script, make sure your Raspberry Pi is set up with Raspberry Pi OS.
+You can copy the operating system to an SD card using the official Raspberry Pi Imager.
+It does not matter whether you install it headless or with a display.
+
+Download the Imager here: https://www.raspberrypi.com/software/
+
+This script automatically downloads all required files for the uploader, makes the installer executable, and runs it.
+It sets up a Python virtual environment, installs the python-naneos-devices package, and creates a systemd service that starts automatically on boot.
+
+```bash
+curl -L https://api.github.com/repos/naneos-org/python-naneos-devices/contents/installers/rp-naneos-uploader/?ref=main \
+     -H "Accept: application/vnd.github.v3+json" \
+     | grep download_url \
+     | cut -d '"' -f 4 \
+     | wget -i - \
+     && sudo chmod +x install.sh \
+     && sudo ./install.sh
+```
+
+After installation, the uploader runs automatically in the background and will restart after every reboot.
+
+To check the service status:
+```bash
+sudo systemctl status naneos_uploader.service
+```
+
 # Ideas for future development
 * P2 BLE implementation that integrates into the implementation of the serial P2
 * P2 Bidirectional Implementation that allows to send commands to the P2
