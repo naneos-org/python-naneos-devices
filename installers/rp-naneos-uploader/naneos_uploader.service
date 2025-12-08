@@ -1,0 +1,15 @@
+[Unit]
+Description=Naneos Uploader Service
+After=network.target
+
+[Service]
+ExecStart={{APP_DIR}}/.venv/bin/python {{APP_DIR}}/uploader-script.py
+WorkingDirectory={{APP_DIR}}
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+RestartSec=5
+User={{USER_NAME}}
+
+[Install]
+WantedBy=multi-user.target
