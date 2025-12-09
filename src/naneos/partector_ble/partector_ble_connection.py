@@ -99,8 +99,7 @@ class PartectorBleConnection:
             while not self._stop_event.is_set():
                 try:
                     if self._last_aux_data_ts + 60 < time.time():
-                        # if no aux data received for 60 seconds, disconnect to reset possible issues
-                        logger.warning(
+                        logger.info(
                             f"SN{self.SERIAL_NUMBER}: No aux data received for 60 seconds, disconnecting to reset."
                         )
                         await self._disconnect_gracefully()
@@ -165,7 +164,15 @@ class PartectorBleConnection:
                     waiting_seconds = 30
                     await asyncio.sleep(0.5)
                 except Exception as e:
-                    logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
+                    # if exception contains "not found" increase waiting time to 30 seconds and do not spam
+                    if "not found" in str(e).lower():
+                        logger.info(
+                            f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE: {e}"
+                        )
+                        waiting_seconds = 30
+                    else:
+                        logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
+
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             logger.warning(f"SN{self.SERIAL_NUMBER}: _run task cancelled.")
