@@ -72,6 +72,7 @@ class PartectorBleConnection:
         # Reconnection backoff parameters
         self._reconnect_attempt = 0
         self._max_backoff_seconds = 120  # max 2 minutes
+        self._gatt_error_count = 0  # Track consecutive GATT errors
 
         # Decode queue to decouple decoding from BLE callbacks
         # This prevents blocking the event loop when decoding heavy data
@@ -191,15 +192,28 @@ class PartectorBleConnection:
                         await self._client.connect(timeout=5)  # 5 seconds for windows...
                         if self._client.is_connected:
                             # Windows needs time for GATT service discovery after connect
-                            # Without this delay, start_notify can fail with "unreachable"
-                            await asyncio.sleep(1.0)
+                            # Increase delay based on previous GATT errors
+                            discovery_delay = 1.0 + (self._gatt_error_count * 0.5)
+                            await asyncio.sleep(min(discovery_delay, 3.0))
 
                             # Verify GATT services are available before starting notifications
                             if not await self._verify_gatt_services():
                                 logger.warning(
-                                    f"SN{self.SERIAL_NUMBER}: GATT services not available, disconnecting."
+                                    f"SN{self.SERIAL_NUMBER}: GATT services not available after discovery delay."
                                 )
+                                self._gatt_error_count += 1
                                 await self._disconnect_gracefully()
+
+                                # Recreate client to clear Windows BLE cache
+                                if self._gatt_error_count >= 2:
+                                    logger.info(
+                                        f"SN{self.SERIAL_NUMBER}: Recreating BleakClient to clear Windows BLE cache "
+                                        f"(GATT errors: {self._gatt_error_count})"
+                                    )
+                                    self._client = BleakClient(
+                                        self._device, self._disconnect_callback, timeout=10
+                                    )
+
                                 waiting_seconds = self._calculate_backoff()
                                 continue
 
@@ -216,6 +230,7 @@ class PartectorBleConnection:
                             self._reset_data_timestamps()
                             self._reconnect_attempt = 0
                             self._disconnected_flag = False
+                            self._gatt_error_count = 0  # Reset on success
                         logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
 
                     self._next_ts = int(time.time()) + 1.0
@@ -236,11 +251,24 @@ class PartectorBleConnection:
                         )
                         waiting_seconds = self._calculate_backoff()
                     elif "unreachable" in error_str or "gatt" in error_str:
+                        self._gatt_error_count += 1
                         logger.warning(
-                            f"SN{self.SERIAL_NUMBER}: GATT/unreachable error (Windows BLE cache?): {e}"
+                            f"SN{self.SERIAL_NUMBER}: GATT/unreachable error #{self._gatt_error_count} "
+                            f"(Windows BLE cache issue): {e}"
                         )
                         # Force disconnect to clear state
                         await self._disconnect_gracefully()
+
+                        # Recreate client after repeated GATT errors
+                        if self._gatt_error_count >= 2:
+                            logger.info(
+                                f"SN{self.SERIAL_NUMBER}: Recreating BleakClient after {self._gatt_error_count} "
+                                "GATT errors to force Windows cache clear"
+                            )
+                            self._client = BleakClient(
+                                self._device, self._disconnect_callback, timeout=10
+                            )
+
                         waiting_seconds = self._calculate_backoff()
                     else:
                         logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
