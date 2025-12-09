@@ -190,6 +190,19 @@ class PartectorBleConnection:
                     if waiting_seconds == 0:
                         await self._client.connect(timeout=5)  # 5 seconds for windows...
                         if self._client.is_connected:
+                            # Windows needs time for GATT service discovery after connect
+                            # Without this delay, start_notify can fail with "unreachable"
+                            await asyncio.sleep(1.0)
+
+                            # Verify GATT services are available before starting notifications
+                            if not await self._verify_gatt_services():
+                                logger.warning(
+                                    f"SN{self.SERIAL_NUMBER}: GATT services not available, disconnecting."
+                                )
+                                await self._disconnect_gracefully()
+                                waiting_seconds = self._calculate_backoff()
+                                continue
+
                             await self._client.start_notify(
                                 self.CHAR_UUIDS["std"], self._callback_std
                             )
@@ -215,11 +228,19 @@ class PartectorBleConnection:
                     waiting_seconds = self._calculate_backoff()
                     await asyncio.sleep(0.5)
                 except Exception as e:
-                    # if exception contains "not found" increase waiting time with backoff
-                    if "not found" in str(e).lower():
+                    error_str = str(e).lower()
+                    # Check for common BLE errors that need backoff
+                    if "not found" in error_str:
                         logger.info(
                             f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE: {e}"
                         )
+                        waiting_seconds = self._calculate_backoff()
+                    elif "unreachable" in error_str or "gatt" in error_str:
+                        logger.warning(
+                            f"SN{self.SERIAL_NUMBER}: GATT/unreachable error (Windows BLE cache?): {e}"
+                        )
+                        # Force disconnect to clear state
+                        await self._disconnect_gracefully()
                         waiting_seconds = self._calculate_backoff()
                     else:
                         logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
@@ -317,6 +338,65 @@ class PartectorBleConnection:
         self._last_std_data_ts = current_time
         self._last_aux_data_ts = current_time
         self._last_size_dist_data_ts = current_time
+
+    async def _verify_gatt_services(self) -> bool:
+        """Verify that GATT services are available.
+
+        Windows BLE stack sometimes reports connected but services aren't ready.
+        This method retries service discovery to work around Windows BLE cache issues.
+
+        Returns:
+            True if services are available, False otherwise
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                services = self._client.services
+                if services is None:
+                    logger.debug(
+                        f"SN{self.SERIAL_NUMBER}: Services is None, attempt {attempt + 1}/{max_retries}"
+                    )
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # Check if our service UUID is available
+                service = services.get_service(self.SERVICE_UUID)
+                if service is None:
+                    logger.debug(
+                        f"SN{self.SERIAL_NUMBER}: Service UUID not found, attempt {attempt + 1}/{max_retries}"
+                    )
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # Verify all required characteristics are present
+                required_chars = ["std", "aux", "size_dist"]
+                for char_name in required_chars:
+                    char_uuid = self.CHAR_UUIDS[char_name]
+                    try:
+                        services.get_characteristic(char_uuid)
+                    except Exception as e:
+                        logger.debug(
+                            f"SN{self.SERIAL_NUMBER}: Characteristic {char_name} not found: {e}, "
+                            f"attempt {attempt + 1}/{max_retries}"
+                        )
+                        await asyncio.sleep(0.5)
+                        break
+                else:
+                    # All characteristics found
+                    logger.debug(f"SN{self.SERIAL_NUMBER}: All GATT services verified successfully")
+                    return True
+
+            except Exception as e:
+                logger.debug(
+                    f"SN{self.SERIAL_NUMBER}: Error verifying services: {e}, "
+                    f"attempt {attempt + 1}/{max_retries}"
+                )
+                await asyncio.sleep(0.5)
+
+        logger.warning(
+            f"SN{self.SERIAL_NUMBER}: GATT service verification failed after {max_retries} attempts"
+        )
+        return False
 
     def _disconnect_callback(self, client: BleakClient) -> None:
         """Callback on disconnect.
