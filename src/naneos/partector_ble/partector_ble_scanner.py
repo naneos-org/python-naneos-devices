@@ -33,8 +33,10 @@ class PartectorBleScanner:
     @staticmethod
     def create_scanner_queue() -> asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]]:
         """Create a queue for the scanner."""
+        # Increased maxsize to 500 to handle bursts from multiple devices
+        # Prevents message loss on systems with many concurrent BLE connections
         queue_scanner: asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]] = asyncio.Queue(
-            maxsize=100
+            maxsize=500
         )
 
         return queue_scanner
@@ -110,9 +112,17 @@ class PartectorBleScanner:
         decoded.unix_timestamp = int(time.time()) * 1000
         decoded.connection_type = NaneosDeviceDataPoint.CONN_TYPE_ADVERTISEMENT
 
-        if self._queue.full():  # if the queue is full, make space by removing the oldest item
-            await self._queue.get()
-        await self._queue.put((device, decoded))
+        # Non-blocking put with overflow handling: drop oldest item if queue is full
+        # This prevents callbacks from being delayed by queue operations
+        try:
+            if self._queue.full():
+                try:
+                    self._queue.get_nowait()  # Remove oldest item
+                except asyncio.QueueEmpty:
+                    pass
+            self._queue.put_nowait((device, decoded))
+        except asyncio.QueueFull:
+            logger.debug(f"Scanner queue full, dropping advertisement from {device.address}")
 
     async def scan(self) -> None:
         """Scans for BLE devices and calls the _detection_callback method for each device found."""

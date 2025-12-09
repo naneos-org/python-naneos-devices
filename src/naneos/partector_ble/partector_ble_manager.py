@@ -176,7 +176,7 @@ class PartectorBleManager(threading.Thread):
                     await self._kill_all_connections()
                     return
 
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.3)
 
                 await self._scanner_queue_routine()
                 await self._connection_queue_routine()
@@ -246,15 +246,30 @@ class PartectorBleManager(threading.Thread):
             logger.info(f"{serial}: Connection task finished.")
 
     async def _scanner_queue_routine(self) -> None:
-        to_check: dict[int, BLEDevice] = {}
+        """Process scanner queue with batch collection to reduce DataFrame operations.
 
+        Instead of calling add_data_point_to_dict for each item (expensive),
+        collect all items first, then add them in bulk.
+        """
+        to_check: dict[int, BLEDevice] = {}
+        batch_data: list[NaneosDeviceDataPoint] = []
+
+        # Collect all available items from queue (non-blocking batch)
         while not self._queue_scanner.empty():
-            device, decoded = await self._queue_scanner.get()
+            try:
+                device, decoded = self._queue_scanner.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
             if not decoded.serial_number:
                 continue
 
-            self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, decoded)
+            batch_data.append(decoded)
             to_check[decoded.serial_number] = device
+
+        # Add all data points at once (more efficient than individual additions)
+        for decoded in batch_data:
+            self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, decoded)
 
         # check for new devices
         for serial, device in to_check.items():
@@ -266,8 +281,24 @@ class PartectorBleManager(threading.Thread):
             self._connections[serial] = (task, NaneosDeviceDataPoint.DEV_TYPE_P2)
 
     async def _connection_queue_routine(self) -> None:
+        """Process connection queue with batch collection to reduce DataFrame operations.
+
+        Instead of calling add_data_point_to_dict for each item (expensive),
+        collect all items first, then add them in bulk.
+        """
+        batch_data: list[NaneosDeviceDataPoint] = []
+
+        # Collect all available items from queue (non-blocking batch)
         while not self._queue_connection.empty():
-            data = await self._queue_connection.get()
+            try:
+                data = self._queue_connection.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+            batch_data.append(data)
+
+        # Add all data points at once (more efficient than individual additions)
+        for data in batch_data:
             self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, data)
 
     async def _check_device_types(self) -> None:

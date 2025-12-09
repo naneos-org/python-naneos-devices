@@ -32,8 +32,10 @@ class PartectorBleConnection:
     # static methods ###############################################################################
     @staticmethod
     def create_connection_queue() -> asyncio.Queue[NaneosDeviceDataPoint]:
-        """Create a queue for the scanner."""
-        queue_connection: asyncio.Queue[NaneosDeviceDataPoint] = asyncio.Queue(maxsize=100)
+        """Create a queue for the connection data."""
+        # Increased maxsize to 500 to handle bursts from multiple devices
+        # Prevents message loss on Raspberry Pi with many concurrent connections
+        queue_connection: asyncio.Queue[NaneosDeviceDataPoint] = asyncio.Queue(maxsize=500)
 
         return queue_connection
 
@@ -59,6 +61,10 @@ class PartectorBleConnection:
         self._next_ts = 0.0
         self._last_aux_data_ts = time.time()
         self._queue = queue
+
+        # Decode queue to decouple decoding from BLE callbacks
+        # This prevents blocking the event loop when decoding heavy data
+        self._decode_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
         self._device = device
         self._loop = loop
@@ -95,6 +101,10 @@ class PartectorBleConnection:
 
         try:
             self._next_ts = int(time.time()) + 1.0
+
+            # Create decode task to run in parallel
+            # This prevents decoding from blocking the event loop
+            self._loop.create_task(self._decode_routine())
 
             while not self._stop_event.is_set():
                 try:
@@ -181,6 +191,46 @@ class PartectorBleConnection:
         finally:
             await self._disconnect_gracefully()
 
+    async def _decode_routine(self) -> None:
+        """Asynchronously decodes BLE data from the decode queue.
+
+        This runs in parallel with the main connection loop, preventing
+        decoding from blocking the event loop when handling multiple connections.
+        """
+        while not self._stop_event.is_set():
+            try:
+                # Non-blocking check with timeout to allow graceful shutdown
+                try:
+                    char_type, data = await asyncio.wait_for(self._decode_queue.get(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
+
+                # Update timestamp for all decodings
+                self._data.unix_timestamp = int(time.time() * 1000)
+
+                # Decode based on characteristic type
+                if char_type == "std":
+                    self._data = PartectorBleDecoderStd.decode(data, data_structure=self._data)
+                    logger.debug(f"SN{self.SERIAL_NUMBER}: Decoded std: {data.hex()}")
+
+                elif char_type == "aux":
+                    # Check for aux error data
+                    if len(data) >= 2 and data[0] == 255 and data[1] == 255:
+                        self._data = PartectorBleDecoderAuxError.decode(
+                            data, data_structure=self._data
+                        )
+                    else:
+                        self._data = PartectorBleDecoderAux.decode(data, data_structure=self._data)
+                    logger.debug(f"SN{self.SERIAL_NUMBER}: Decoded aux: {data.hex()}")
+
+                elif char_type == "size_dist":
+                    self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2PRO
+                    self._data = PartectorBleDecoderSize.decode(data, data_structure=self._data)
+                    logger.debug(f"SN{self.SERIAL_NUMBER}: Decoded size_dist: {data.hex()}")
+
+            except Exception as e:
+                logger.warning(f"SN{self.SERIAL_NUMBER}: Error in decode routine: {e}")
+
     async def _disconnect_gracefully(self) -> None:
         if not self._client.is_connected:
             return
@@ -208,31 +258,38 @@ class PartectorBleConnection:
         logger.debug(f"SN{self.SERIAL_NUMBER}: Disconnect callback called")
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
-        """Callback on data received (std characteristic)."""
-        self._data.unix_timestamp = int(time.time()) * 1000
-        self._data = PartectorBleDecoderStd.decode(data, data_structure=self._data)
+        """Callback on data received (std characteristic).
 
-        logger.debug(f"SN{self.SERIAL_NUMBER}: Received std: {data.hex()}")
+        Non-blocking: puts data in decode queue instead of decoding directly.
+        Actual decoding happens asynchronously in _decode_routine().
+        """
+        try:
+            self._decode_queue.put_nowait(("std", bytes(data)))
+        except asyncio.QueueFull:
+            logger.warning(f"SN{self.SERIAL_NUMBER}: Decode queue full, dropping std data")
 
     def _callback_aux(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
-        """Callback on data received (aux characteristic)."""
-        self._last_aux_data_ts = time.time()
-        self._data.unix_timestamp = int(time.time() * 1000)
-        if data[0] == 255 and data[1] == 255:  # triggers for aux error data
-            self._data = PartectorBleDecoderAuxError.decode(data, data_structure=self._data)
-            return
-        self._data = PartectorBleDecoderAux.decode(data, data_structure=self._data)
+        """Callback on data received (aux characteristic).
 
-        logger.debug(f"SN{self.SERIAL_NUMBER}: Received aux: {data.hex()}")
+        Non-blocking: puts data in decode queue instead of decoding directly.
+        Actual decoding happens asynchronously in _decode_routine().
+        """
+        self._last_aux_data_ts = time.time()
+        try:
+            self._decode_queue.put_nowait(("aux", bytes(data)))
+        except asyncio.QueueFull:
+            logger.warning(f"SN{self.SERIAL_NUMBER}: Decode queue full, dropping aux data")
 
     def _callback_size_dist(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
-        """Callback on data received (size_dist characteristic)."""
-        self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2PRO
+        """Callback on data received (size_dist characteristic).
 
-        self._data.unix_timestamp = int(time.time() * 1000)
-        self._data = PartectorBleDecoderSize.decode(data, data_structure=self._data)
-
-        logger.debug(f"SN{self.SERIAL_NUMBER}: Received size: {data.hex()}")
+        Non-blocking: puts data in decode queue instead of decoding directly.
+        Actual decoding happens asynchronously in _decode_routine().
+        """
+        try:
+            self._decode_queue.put_nowait(("size_dist", bytes(data)))
+        except asyncio.QueueFull:
+            logger.warning(f"SN{self.SERIAL_NUMBER}: Decode queue full, dropping size_dist data")
 
 
 async def main():
