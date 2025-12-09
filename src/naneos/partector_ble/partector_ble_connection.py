@@ -59,8 +59,19 @@ class PartectorBleConnection:
         self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2  # Thats the deafault value
         self._data = NaneosDeviceDataPoint()
         self._next_ts = 0.0
-        self._last_aux_data_ts = time.time()
         self._queue = queue
+
+        # Multi-characteristic monitoring for disconnection detection
+        self._last_std_data_ts = time.time()
+        self._last_aux_data_ts = time.time()
+        self._last_size_dist_data_ts = time.time()
+
+        # Disconnect detection flag (set by disconnect callback)
+        self._disconnected_flag = False
+
+        # Reconnection backoff parameters
+        self._reconnect_attempt = 0
+        self._max_backoff_seconds = 120  # max 2 minutes
 
         # Decode queue to decouple decoding from BLE callbacks
         # This prevents blocking the event loop when decoding heavy data
@@ -108,13 +119,39 @@ class PartectorBleConnection:
 
             while not self._stop_event.is_set():
                 try:
-                    if self._last_aux_data_ts + 60 < time.time():
+                    # Check if disconnected via callback
+                    if self._disconnected_flag:
                         logger.info(
-                            f"SN{self.SERIAL_NUMBER}: No aux data received for 60 seconds, disconnecting to reset."
+                            f"SN{self.SERIAL_NUMBER}: Disconnect detected via callback, reconnecting."
                         )
                         await self._disconnect_gracefully()
-                        self._last_aux_data_ts = time.time()
-                        waiting_seconds = 5  # wait 5 seconds before reconnecting
+                        self._disconnected_flag = False
+                        waiting_seconds = self._calculate_backoff()
+                        continue
+
+                    # Multi-characteristic timeout detection
+                    current_time = time.time()
+                    data_timeout = 60  # seconds
+
+                    # Check std characteristic timeout
+                    if self._last_std_data_ts + data_timeout < current_time:
+                        logger.info(
+                            f"SN{self.SERIAL_NUMBER}: No std data for {data_timeout}s, disconnecting."
+                        )
+                        await self._disconnect_gracefully()
+                        self._reset_data_timestamps()
+                        waiting_seconds = self._calculate_backoff()
+                        continue
+
+                    # Check aux characteristic timeout
+                    if self._last_aux_data_ts + data_timeout < current_time:
+                        logger.info(
+                            f"SN{self.SERIAL_NUMBER}: No aux data for {data_timeout}s, disconnecting."
+                        )
+                        await self._disconnect_gracefully()
+                        self._reset_data_timestamps()
+                        waiting_seconds = self._calculate_backoff()
+                        continue
 
                     waiting_seconds = max(0, waiting_seconds - 1)
                     wait = self._next_ts - time.time()
@@ -162,26 +199,31 @@ class PartectorBleConnection:
                             await self._client.start_notify(
                                 self.CHAR_UUIDS["size_dist"], self._callback_size_dist
                             )
+                            # Reset timestamps and backoff on successful connection
+                            self._reset_data_timestamps()
+                            self._reconnect_attempt = 0
+                            self._disconnected_flag = False
                         logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
 
                     self._next_ts = int(time.time()) + 1.0
                 except asyncio.TimeoutError:
                     logger.info(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
-                    waiting_seconds = 30
+                    waiting_seconds = self._calculate_backoff()
                     await asyncio.sleep(0.5)
                 except BleakDeviceNotFoundError:
                     logger.info(f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE.")
-                    waiting_seconds = 30
+                    waiting_seconds = self._calculate_backoff()
                     await asyncio.sleep(0.5)
                 except Exception as e:
-                    # if exception contains "not found" increase waiting time to 30 seconds and do not spam
+                    # if exception contains "not found" increase waiting time with backoff
                     if "not found" in str(e).lower():
                         logger.info(
                             f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE: {e}"
                         )
-                        waiting_seconds = 30
+                        waiting_seconds = self._calculate_backoff()
                     else:
                         logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
+                        waiting_seconds = self._calculate_backoff()
 
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
@@ -253,9 +295,37 @@ class PartectorBleConnection:
         except Exception as e:
             logger.debug(f"SN{self.SERIAL_NUMBER}: Failed to disconnect: {e}")
 
+    def _calculate_backoff(self) -> int:
+        """Calculate exponential backoff time in seconds.
+
+        Returns:
+            Backoff time in seconds (5, 10, 20, 40, 80, max 120 seconds)
+        """
+        self._reconnect_attempt += 1
+        backoff = min(5 * (2 ** (self._reconnect_attempt - 1)), self._max_backoff_seconds)
+        logger.info(
+            f"SN{self.SERIAL_NUMBER}: Backoff attempt {self._reconnect_attempt}: {backoff}s"
+        )
+        return int(backoff)
+
+    def _reset_data_timestamps(self) -> None:
+        """Reset all characteristic data timestamps to current time.
+
+        This prevents false disconnection detection after reconnecting.
+        """
+        current_time = time.time()
+        self._last_std_data_ts = current_time
+        self._last_aux_data_ts = current_time
+        self._last_size_dist_data_ts = current_time
+
     def _disconnect_callback(self, client: BleakClient) -> None:
-        """Callback on disconnect."""
-        logger.debug(f"SN{self.SERIAL_NUMBER}: Disconnect callback called")
+        """Callback on disconnect.
+
+        Sets the disconnect flag to trigger reconnection in the main loop.
+        This ensures we detect disconnections even when is_connected still returns True.
+        """
+        logger.info(f"SN{self.SERIAL_NUMBER}: Disconnect callback called")
+        self._disconnected_flag = True
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic).
@@ -263,6 +333,7 @@ class PartectorBleConnection:
         Non-blocking: puts data in decode queue instead of decoding directly.
         Actual decoding happens asynchronously in _decode_routine().
         """
+        self._last_std_data_ts = time.time()
         try:
             self._decode_queue.put_nowait(("std", bytes(data)))
         except asyncio.QueueFull:
@@ -286,6 +357,7 @@ class PartectorBleConnection:
         Non-blocking: puts data in decode queue instead of decoding directly.
         Actual decoding happens asynchronously in _decode_routine().
         """
+        self._last_size_dist_data_ts = time.time()
         try:
             self._decode_queue.put_nowait(("size_dist", bytes(data)))
         except asyncio.QueueFull:
