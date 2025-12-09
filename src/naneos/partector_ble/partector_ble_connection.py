@@ -18,6 +18,10 @@ from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleD
 
 logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
+# Global lock to prevent concurrent BLE connects on Windows
+# Windows BLE stack has race conditions when many devices connect simultaneously
+_ble_connect_lock = asyncio.Lock()
+
 
 class PartectorBleConnection:
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
@@ -189,48 +193,59 @@ class PartectorBleConnection:
                         continue
 
                     if waiting_seconds == 0:
-                        await self._client.connect(timeout=5)  # 5 seconds for windows...
-                        if self._client.is_connected:
-                            # Windows needs time for GATT service discovery after connect
-                            # Increase delay based on previous GATT errors
-                            discovery_delay = 1.0 + (self._gatt_error_count * 0.5)
-                            await asyncio.sleep(min(discovery_delay, 3.0))
-
-                            # Verify GATT services are available before starting notifications
-                            if not await self._verify_gatt_services():
-                                logger.warning(
-                                    f"SN{self.SERIAL_NUMBER}: GATT services not available after discovery delay."
+                        # Use global lock to prevent concurrent connections on Windows
+                        # This prevents GATT cache race conditions when connecting multiple devices
+                        async with _ble_connect_lock:
+                            logger.debug(
+                                f"SN{self.SERIAL_NUMBER}: Attempting connection with lock..."
+                            )
+                            await self._client.connect(timeout=5)  # 5 seconds for windows...
+                            if self._client.is_connected:
+                                # Windows needs aggressive delay for GATT service discovery
+                                # Base delay is 2.5s + additional per error
+                                discovery_delay = 2.5 + (self._gatt_error_count * 1.0)
+                                discovery_delay = min(discovery_delay, 5.0)
+                                logger.debug(
+                                    f"SN{self.SERIAL_NUMBER}: Waiting {discovery_delay:.1f}s for GATT discovery "
+                                    f"(error count: {self._gatt_error_count})"
                                 )
-                                self._gatt_error_count += 1
-                                await self._disconnect_gracefully()
+                                await asyncio.sleep(discovery_delay)
 
-                                # Recreate client to clear Windows BLE cache
-                                if self._gatt_error_count >= 2:
-                                    logger.info(
-                                        f"SN{self.SERIAL_NUMBER}: Recreating BleakClient to clear Windows BLE cache "
-                                        f"(GATT errors: {self._gatt_error_count})"
+                                # Verify GATT services are available before starting notifications
+                                if not await self._verify_gatt_services():
+                                    logger.warning(
+                                        f"SN{self.SERIAL_NUMBER}: GATT services not available after discovery delay."
                                     )
-                                    self._client = BleakClient(
-                                        self._device, self._disconnect_callback, timeout=10
-                                    )
+                                    self._gatt_error_count += 1
+                                    await self._disconnect_gracefully()
 
-                                waiting_seconds = self._calculate_backoff()
-                                continue
+                                    # Recreate client more aggressively (after 1 error for this device)
+                                    if self._gatt_error_count >= 1:
+                                        logger.info(
+                                            f"SN{self.SERIAL_NUMBER}: Recreating BleakClient to clear Windows BLE cache "
+                                            f"(GATT errors: {self._gatt_error_count})"
+                                        )
+                                        self._client = BleakClient(
+                                            self._device, self._disconnect_callback, timeout=10
+                                        )
 
-                            await self._client.start_notify(
-                                self.CHAR_UUIDS["std"], self._callback_std
-                            )
-                            await self._client.start_notify(
-                                self.CHAR_UUIDS["aux"], self._callback_aux
-                            )
-                            await self._client.start_notify(
-                                self.CHAR_UUIDS["size_dist"], self._callback_size_dist
-                            )
-                            # Reset timestamps and backoff on successful connection
-                            self._reset_data_timestamps()
-                            self._reconnect_attempt = 0
-                            self._disconnected_flag = False
-                            self._gatt_error_count = 0  # Reset on success
+                                    waiting_seconds = self._calculate_backoff()
+                                    continue
+
+                                await self._client.start_notify(
+                                    self.CHAR_UUIDS["std"], self._callback_std
+                                )
+                                await self._client.start_notify(
+                                    self.CHAR_UUIDS["aux"], self._callback_aux
+                                )
+                                await self._client.start_notify(
+                                    self.CHAR_UUIDS["size_dist"], self._callback_size_dist
+                                )
+                                # Reset timestamps and backoff on successful connection
+                                self._reset_data_timestamps()
+                                self._reconnect_attempt = 0
+                                self._disconnected_flag = False
+                                self._gatt_error_count = 0  # Reset on success
                         logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
 
                     self._next_ts = int(time.time()) + 1.0
