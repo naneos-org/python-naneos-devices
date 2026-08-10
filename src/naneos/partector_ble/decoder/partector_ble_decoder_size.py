@@ -21,7 +21,7 @@ class PartectorBleDecoderSize(PartectorBleDecoderBlueprint):
         """
         decoded_data = NaneosDeviceDataPoint(
             particle_number_10nm=cls._get_10nm(data),
-            particle_number_16nm=cls._get_10nm(data),
+            particle_number_16nm=cls._get_16nm(data),
             particle_number_26nm=cls._get_26nm(data),
             particle_number_43nm=cls._get_43nm(data),
             particle_number_70nm=cls._get_70nm(data),
