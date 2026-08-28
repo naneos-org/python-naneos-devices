@@ -20,6 +20,12 @@ logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorBleManager(threading.Thread):
+    # The adapter check shells out to `bluetoothctl`, which costs a subprocess and a
+    # D-Bus round trip to the same bluetoothd that carries the BLE connections.
+    # Running it on every loop iteration (~3x per second) starves active links, so
+    # it is throttled to this interval.
+    ADAPTER_CHECK_INTERVAL_SECONDS = 10.0
+
     def __init__(self) -> None:
         super().__init__(daemon=True)
         self._stop_event = threading.Event()
@@ -28,6 +34,9 @@ class PartectorBleManager(threading.Thread):
         self._queue_scanner = PartectorBleScanner.create_scanner_queue()
         self._queue_connection = PartectorBleConnection.create_connection_queue()
         self._connections: dict[int, tuple[asyncio.Task, int]] = {}  # key: serial_number
+        # live connection objects, so we can report the real link state
+        self._connection_objects: dict[int, PartectorBleConnection] = {}
+        self._scanner: PartectorBleScanner | None = None
 
         self._data: dict[int, pd.DataFrame] = {}
 
@@ -48,10 +57,18 @@ class PartectorBleManager(threading.Thread):
             logger.exception(f"BLEManager loop exited with: {e}")
 
     def get_connected_device_strings(self) -> list[str]:
-        """Returns a list of connected device strings."""
+        """Returns a list of device strings for devices with a live BLE link.
+
+        Devices that are only being retried (task exists, but no GATT connection)
+        are deliberately not reported here.
+        """
         # first make a copy to avoid runtime dict change issues
         connections_copy = self._connections.copy()
-        sns = connections_copy.keys()
+        objects_copy = self._connection_objects.copy()
+
+        sns = [
+            sn for sn in connections_copy if sn in objects_copy and objects_copy[sn].is_connected
+        ]
         device_types = [connections_copy[s][1] for s in sns]
 
         sns_list = []
@@ -159,7 +176,8 @@ class PartectorBleManager(threading.Thread):
                 await self._wait_for_bluetooth_adapter()
                 self._task_stop_event.clear()
 
-                async with PartectorBleScanner(loop=self._loop, queue=self._queue_scanner):
+                self._scanner = PartectorBleScanner(loop=self._loop, queue=self._queue_scanner)
+                async with self._scanner:
                     logger.info("Scanner started.")
                     await self._manager_loop()
                 await self._kill_all_connections()  # just to be safe
@@ -169,12 +187,16 @@ class PartectorBleManager(threading.Thread):
                 logger.info("BLEManager cleanup complete.")
 
     async def _manager_loop(self) -> None:
+        next_adapter_check = 0.0
+
         while not self._stop_event.is_set():
             try:
-                if not await self._is_bluetooth_adapter_available():
-                    logger.warning("Bluetooth adapter lost. Stopping all connections...")
-                    await self._kill_all_connections()
-                    return
+                if time.monotonic() >= next_adapter_check:
+                    next_adapter_check = time.monotonic() + self.ADAPTER_CHECK_INTERVAL_SECONDS
+                    if not await self._is_bluetooth_adapter_available():
+                        logger.warning("Bluetooth adapter lost. Stopping all connections...")
+                        await self._kill_all_connections()
+                        return
 
                 await asyncio.sleep(0.3)
 
@@ -198,6 +220,7 @@ class PartectorBleManager(threading.Thread):
                 logger.info(f"Cancelling connection task {serial}.")
                 self._connections[serial][0].cancel()
             self._connections.pop(serial, None)
+            self._connection_objects.pop(serial, None)
             logger.info(f"{serial}: Connection task cancelled and popped.")
 
     async def _finish_all_connections_blocking(self) -> None:
@@ -231,10 +254,18 @@ class PartectorBleManager(threading.Thread):
             logger.info(f"{serial}: Connection task finished and popped.")
 
     async def _task_connection(self, device: BLEDevice, serial: int) -> None:
+        connection = PartectorBleConnection(
+            device=device,
+            loop=self._loop,
+            serial_number=serial,
+            queue=self._queue_connection,
+            rssi_provider=lambda: self._get_rssi(device.address),
+            device_provider=lambda: self._get_device(device.address),
+        )
+        self._connection_objects[serial] = connection
+
         try:
-            async with PartectorBleConnection(
-                device=device, loop=self._loop, serial_number=serial, queue=self._queue_connection
-            ):
+            async with connection:
                 while not self._task_stop_event.is_set():
                     await asyncio.sleep(0.5)
 
@@ -243,7 +274,20 @@ class PartectorBleManager(threading.Thread):
         except Exception as e:
             logger.warning(f"{serial}: Connection task failed: {e}")
         finally:
+            self._connection_objects.pop(serial, None)
             logger.info(f"{serial}: Connection task finished.")
+
+    def _get_device(self, address: str) -> BLEDevice | None:
+        """Most recently advertised BLEDevice for an address, or None."""
+        if self._scanner is None:
+            return None
+        return self._scanner.get_device(address)
+
+    def _get_rssi(self, address: str) -> int | None:
+        """Most recent RSSI for an address, or None if it is stale / unknown."""
+        if self._scanner is None:
+            return None
+        return self._scanner.get_rssi(address)
 
     async def _scanner_queue_routine(self) -> None:
         """Process scanner queue with batch collection to reduce DataFrame operations.
@@ -276,7 +320,17 @@ class PartectorBleManager(threading.Thread):
             if serial in self._connections:
                 continue  # already connected
 
-            logger.info(f"New device detected: serial={serial}, address={device.address}")
+            rssi = self._get_rssi(device.address)
+            if rssi is not None and rssi < PartectorBleConnection.MIN_RSSI_CONNECT_DBM:
+                logger.info(
+                    f"Ignoring serial={serial} ({device.address}): RSSI {rssi} dBm is below "
+                    f"{PartectorBleConnection.MIN_RSSI_CONNECT_DBM} dBm."
+                )
+                continue
+
+            logger.info(
+                f"New device detected: serial={serial}, address={device.address}, rssi={rssi}"
+            )
             task = self._loop.create_task(self._task_connection(device, serial))
             self._connections[serial] = (task, NaneosDeviceDataPoint.DEV_TYPE_P2)
 
@@ -302,12 +356,15 @@ class PartectorBleManager(threading.Thread):
             self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, data)
 
     async def _check_device_types(self) -> None:
-        for serial in self._data.keys():
+        # get_data() swaps self._data from another thread, so take one reference
+        # and work on that instead of indexing self._data again later.
+        data = self._data
+
+        for serial, data_points in list(data.items()):
             if serial not in self._connections:
                 continue
 
             current_type = self._connections[serial][1]
-            data_points = self._data[serial]
 
             # get last value of device_type column
             if data_points.empty:

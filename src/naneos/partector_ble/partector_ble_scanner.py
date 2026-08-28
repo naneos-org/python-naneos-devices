@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
+from statistics import median
 
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
@@ -28,6 +30,10 @@ class PartectorBleScanner:
 
     SCAN_INTERVAL = 0.8  # seconds
     BLE_NAMES_NANEOS = {"P2", "PartectorBT"}  # P2 on windows, PartectorBT on linux / mac
+    # A device that has not advertised within this window is treated as out of
+    # range. Connecting to it would only block the adapter until it times out.
+    RSSI_MAX_AGE_SECONDS = 10.0
+    RSSI_HISTORY_LEN = 5  # readings kept per device, median is used to damp outliers
 
     # static methods ###############################################################################
     @staticmethod
@@ -57,6 +63,15 @@ class PartectorBleScanner:
         self._loop = loop
         self._queue = queue
 
+        # address -> recent (monotonic timestamp, rssi) readings, used to gate
+        # connection attempts. A single lucky advertisement is not enough.
+        self._rssi: dict[str, deque[tuple[float, int]]] = {}
+
+        # address -> most recently advertised BLEDevice. BlueZ drops devices from
+        # its cache, which invalidates older BLEDevice objects, so connections must
+        # be able to pick up a fresh one instead of reusing the discovery-time one.
+        self._devices: dict[str, BLEDevice] = {}
+
         self._task: asyncio.Task | None = None
 
         self._stop_event = asyncio.Event()
@@ -80,6 +95,51 @@ class PartectorBleScanner:
         self._stop_event.clear()
         self._task = self._loop.create_task(self.scan())
 
+    def get_rssi(self, address: str, max_age_seconds: float | None = None) -> int | None:
+        """Returns the recent median RSSI for the given address.
+
+        The median over the last few advertisements is used instead of the latest
+        value, because RSSI of a distant device fluctuates heavily and a single
+        strong reading is not enough to justify a connection attempt.
+
+        Args:
+            address (str): BLE address of the device.
+            max_age_seconds (float | None): Only readings younger than this are
+                considered. Defaults to RSSI_MAX_AGE_SECONDS.
+
+        Returns:
+            The median RSSI in dBm, or None if the device has not advertised
+            within max_age_seconds (i.e. it is out of range).
+        """
+        if max_age_seconds is None:
+            max_age_seconds = self.RSSI_MAX_AGE_SECONDS
+
+        history = self._rssi.get(address)
+        if not history:
+            return None
+
+        now = time.monotonic()
+        recent = [rssi for timestamp, rssi in history if now - timestamp <= max_age_seconds]
+        if not recent:
+            return None
+
+        return int(median(recent))
+
+    def get_device(self, address: str) -> BLEDevice | None:
+        """Returns the most recently advertised BLEDevice for the given address.
+
+        Reconnecting with the BLEDevice from the initial discovery fails once BlueZ
+        has evicted the device from its cache ("device ... not found"), so callers
+        should refresh the device before every connection attempt.
+
+        Args:
+            address (str): BLE address of the device.
+
+        Returns:
+            The latest BLEDevice, or None if it has not been seen yet.
+        """
+        return self._devices.get(address)
+
     async def stop(self) -> None:
         """Stops the scanner."""
         logger.debug("Stopping PartectorBleScanner...")
@@ -99,6 +159,10 @@ class PartectorBleScanner:
 
         if not device.name or device.name not in self.BLE_NAMES_NANEOS:
             return
+
+        history = self._rssi.setdefault(device.address, deque(maxlen=self.RSSI_HISTORY_LEN))
+        history.append((time.monotonic(), adv.rssi))
+        self._devices[device.address] = device
 
         adv_data = PartectorBleDecoder.decode_partector_advertisement(adv)
         if not adv_data:

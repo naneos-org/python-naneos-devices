@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
-from typing import Optional
+from contextlib import nullcontext
+from typing import Callable, Optional
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -19,11 +21,33 @@ from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleD
 logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 # Global lock to prevent concurrent BLE connects on Windows
-# Windows BLE stack has race conditions when many devices connect simultaneously
+# Windows BLE stack has race conditions when many devices connect simultaneously.
+# On other platforms the lock is skipped: BlueZ serializes connects itself, and
+# holding a global lock for the whole connect timeout lets a single unreachable
+# device block every healthy device behind it (head-of-line blocking).
 _ble_connect_lock = asyncio.Lock()
+_SERIALIZE_CONNECTS = sys.platform == "win32"
+
+
+def _connect_lock():
+    """Returns the connect lock on Windows and a no-op context elsewhere."""
+    return _ble_connect_lock if _SERIALIZE_CONNECTS else nullcontext()
 
 
 class PartectorBleConnection:
+    # Connect timeout used on every platform. A connect includes GATT service
+    # discovery, which regularly needs well over 5s on low power hosts (e.g. a
+    # Raspberry Pi Zero 2 W, where WiFi and BLE share a single antenna).
+    CONNECT_TIMEOUT_SECONDS = 30
+
+    # Retries are capped at this value so a device can never drop out for minutes.
+    MAX_BACKOFF_SECONDS = 30
+
+    # Do not spend a connect attempt on a device whose last advertisement was
+    # weaker than this. Attempts on barely reachable devices mostly time out and
+    # only push the backoff up for everyone sharing the adapter.
+    MIN_RSSI_CONNECT_DBM = -85
+
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
     CHAR_UUIDS = {
         "std": "e7add780-b042-4876-aae1-112855353cc1",
@@ -50,6 +74,8 @@ class PartectorBleConnection:
         loop: asyncio.AbstractEventLoop,
         serial_number: int,
         queue: asyncio.Queue[NaneosDeviceDataPoint],
+        rssi_provider: Optional[Callable[[], Optional[int]]] = None,
+        device_provider: Optional[Callable[[], Optional[BLEDevice]]] = None,
     ) -> None:
         """
         Initializes the BLE connection with the given device, event loop, and queue.
@@ -58,6 +84,14 @@ class PartectorBleConnection:
             device (BLEDevice): The BLE device to connect to.
             loop (asyncio.AbstractEventLoop): The event loop to run the connection in.
             serial_number (int): The serial number of the device.
+            rssi_provider (Callable | None): Optional callable returning the most
+                recent RSSI of this device in dBm, or None when it has not been
+                advertising recently. Used to skip pointless connect attempts.
+                When omitted, every attempt is made regardless of signal strength.
+            device_provider (Callable | None): Optional callable returning the most
+                recently advertised BLEDevice for this device. Used to refresh a
+                stale BLEDevice before reconnecting. When omitted, the device given
+                at construction time is reused for every attempt.
         """
         self.SERIAL_NUMBER = serial_number
         self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2  # Thats the deafault value
@@ -75,8 +109,10 @@ class PartectorBleConnection:
 
         # Reconnection backoff parameters
         self._reconnect_attempt = 0
-        self._max_backoff_seconds = 120  # max 2 minutes
+        self._max_backoff_seconds = self.MAX_BACKOFF_SECONDS
         self._gatt_error_count = 0  # Track consecutive GATT errors
+        self._rssi_provider = rssi_provider
+        self._device_provider = device_provider
 
         # Decode queue to decouple decoding from BLE callbacks
         # This prevents blocking the event loop when decoding heavy data
@@ -87,7 +123,9 @@ class PartectorBleConnection:
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self._stop_event.set()  # stopped by default
-        self._client = BleakClient(device, self._disconnect_callback, timeout=10)
+        self._client = BleakClient(
+            device, self._disconnect_callback, timeout=self.CONNECT_TIMEOUT_SECONDS
+        )
 
     async def __aenter__(self) -> PartectorBleConnection:
         self.start()
@@ -104,6 +142,14 @@ class PartectorBleConnection:
             return
         self._stop_event.clear()
         self._task = self._loop.create_task(self._run())
+
+    @property
+    def is_connected(self) -> bool:
+        """True while a BLE link to the device is actually established."""
+        try:
+            return bool(self._client.is_connected)
+        except Exception:
+            return False
 
     async def stop(self) -> None:
         """Stops the scanner."""
@@ -134,29 +180,34 @@ class PartectorBleConnection:
                         waiting_seconds = self._calculate_backoff()
                         continue
 
-                    # Multi-characteristic timeout detection
-                    current_time = time.time()
-                    data_timeout = 60  # seconds
+                    # Multi-characteristic timeout detection.
+                    # Only meaningful while connected: running these checks during a
+                    # backoff wait used to re-trigger the backoff every 60s, so
+                    # waiting_seconds could never decay to 0 and the device stayed
+                    # unreachable for the rest of the process lifetime.
+                    if self._client.is_connected:
+                        current_time = time.time()
+                        data_timeout = 60  # seconds
 
-                    # Check std characteristic timeout
-                    if self._last_std_data_ts + data_timeout < current_time:
-                        logger.info(
-                            f"SN{self.SERIAL_NUMBER}: No std data for {data_timeout}s, disconnecting."
-                        )
-                        await self._disconnect_gracefully()
-                        self._reset_data_timestamps()
-                        waiting_seconds = self._calculate_backoff()
-                        continue
+                        # Check std characteristic timeout
+                        if self._last_std_data_ts + data_timeout < current_time:
+                            logger.info(
+                                f"SN{self.SERIAL_NUMBER}: No std data for {data_timeout}s, disconnecting."
+                            )
+                            await self._disconnect_gracefully()
+                            self._reset_data_timestamps()
+                            waiting_seconds = self._calculate_backoff()
+                            continue
 
-                    # Check aux characteristic timeout
-                    if self._last_aux_data_ts + data_timeout < current_time:
-                        logger.info(
-                            f"SN{self.SERIAL_NUMBER}: No aux data for {data_timeout}s, disconnecting."
-                        )
-                        await self._disconnect_gracefully()
-                        self._reset_data_timestamps()
-                        waiting_seconds = self._calculate_backoff()
-                        continue
+                        # Check aux characteristic timeout
+                        if self._last_aux_data_ts + data_timeout < current_time:
+                            logger.info(
+                                f"SN{self.SERIAL_NUMBER}: No aux data for {data_timeout}s, disconnecting."
+                            )
+                            await self._disconnect_gracefully()
+                            self._reset_data_timestamps()
+                            waiting_seconds = self._calculate_backoff()
+                            continue
 
                     waiting_seconds = max(0, waiting_seconds - 1)
                     wait = self._next_ts - time.time()
@@ -193,23 +244,33 @@ class PartectorBleConnection:
                         continue
 
                     if waiting_seconds == 0:
+                        if not self._is_signal_strong_enough():
+                            self._next_ts = int(time.time()) + 1.0
+                            continue
+
+                        await self._refresh_device()
+
                         # Use global lock to prevent concurrent connections on Windows
                         # This prevents GATT cache race conditions when connecting multiple devices
-                        async with _ble_connect_lock:
+                        async with _connect_lock():
                             logger.debug(
                                 f"SN{self.SERIAL_NUMBER}: Attempting connection with lock..."
                             )
-                            await self._client.connect(timeout=5)  # 5 seconds for windows...
+                            await self._client.connect(timeout=self.CONNECT_TIMEOUT_SECONDS)
                             if self._client.is_connected:
                                 # Windows needs aggressive delay for GATT service discovery
-                                # Base delay is 2.5s + additional per error
-                                discovery_delay = 2.5 + (self._gatt_error_count * 1.0)
-                                discovery_delay = min(discovery_delay, 5.0)
-                                logger.debug(
-                                    f"SN{self.SERIAL_NUMBER}: Waiting {discovery_delay:.1f}s for GATT discovery "
-                                    f"(error count: {self._gatt_error_count})"
-                                )
-                                await asyncio.sleep(discovery_delay)
+                                # Base delay is 2.5s + additional per error.
+                                # BlueZ already waits for ServicesResolved inside
+                                # connect(), so on Linux/macOS this would only be an
+                                # idle window in which the fresh link can drop again.
+                                if _SERIALIZE_CONNECTS:
+                                    discovery_delay = 2.5 + (self._gatt_error_count * 1.0)
+                                    discovery_delay = min(discovery_delay, 5.0)
+                                    logger.debug(
+                                        f"SN{self.SERIAL_NUMBER}: Waiting {discovery_delay:.1f}s for GATT discovery "
+                                        f"(error count: {self._gatt_error_count})"
+                                    )
+                                    await asyncio.sleep(discovery_delay)
 
                                 # Verify GATT services are available before starting notifications
                                 if not await self._verify_gatt_services():
@@ -218,6 +279,7 @@ class PartectorBleConnection:
                                     )
                                     self._gatt_error_count += 1
                                     await self._disconnect_gracefully()
+                                    self._disconnected_flag = False
 
                                     # Recreate client more aggressively (after 1 error for this device)
                                     if self._gatt_error_count >= 1:
@@ -226,7 +288,9 @@ class PartectorBleConnection:
                                             f"(GATT errors: {self._gatt_error_count})"
                                         )
                                         self._client = BleakClient(
-                                            self._device, self._disconnect_callback, timeout=10
+                                            self._device,
+                                            self._disconnect_callback,
+                                            timeout=self.CONNECT_TIMEOUT_SECONDS,
                                         )
 
                                     waiting_seconds = self._calculate_backoff()
@@ -246,16 +310,21 @@ class PartectorBleConnection:
                                 self._reconnect_attempt = 0
                                 self._disconnected_flag = False
                                 self._gatt_error_count = 0  # Reset on success
-                        logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
+                        if self._client.is_connected:
+                            logger.info(
+                                f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}"
+                            )
 
                     self._next_ts = int(time.time()) + 1.0
                 except asyncio.TimeoutError:
                     logger.info(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
                     waiting_seconds = self._calculate_backoff()
+                    self._disconnected_flag = False  # already accounted for by the backoff
                     await asyncio.sleep(0.5)
                 except BleakDeviceNotFoundError:
                     logger.info(f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE.")
                     waiting_seconds = self._calculate_backoff()
+                    self._disconnected_flag = False  # already accounted for by the backoff
                     await asyncio.sleep(0.5)
                 except Exception as e:
                     error_str = str(e).lower()
@@ -281,7 +350,9 @@ class PartectorBleConnection:
                                 "GATT errors to force Windows cache clear"
                             )
                             self._client = BleakClient(
-                                self._device, self._disconnect_callback, timeout=10
+                                self._device,
+                                self._disconnect_callback,
+                                timeout=self.CONNECT_TIMEOUT_SECONDS,
                             )
 
                         waiting_seconds = self._calculate_backoff()
@@ -289,6 +360,10 @@ class PartectorBleConnection:
                         logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
                         waiting_seconds = self._calculate_backoff()
 
+                    # The disconnect callback fires while the connect attempt fails.
+                    # Without this the same failure would be counted twice and push
+                    # the backoff up at double speed.
+                    self._disconnected_flag = False
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             logger.warning(f"SN{self.SERIAL_NUMBER}: _run task cancelled.")
@@ -363,7 +438,7 @@ class PartectorBleConnection:
         """Calculate exponential backoff time in seconds.
 
         Returns:
-            Backoff time in seconds (5, 10, 20, 40, 80, max 120 seconds)
+            Backoff time in seconds (5, 10, 20, then capped at MAX_BACKOFF_SECONDS)
         """
         self._reconnect_attempt += 1
         backoff = min(5 * (2 ** (self._reconnect_attempt - 1)), self._max_backoff_seconds)
@@ -371,6 +446,59 @@ class PartectorBleConnection:
             f"SN{self.SERIAL_NUMBER}: Backoff attempt {self._reconnect_attempt}: {backoff}s"
         )
         return int(backoff)
+
+    async def _refresh_device(self) -> None:
+        """Replaces the cached BLEDevice with the most recently advertised one.
+
+        BlueZ removes devices from its cache when they stop advertising for a while.
+        Any BLEDevice obtained before that points at a D-Bus path that no longer
+        exists, so every following connect fails with "device ... not found" until
+        the process is restarted.
+        """
+        if self._device_provider is None:
+            return
+
+        device = self._device_provider()
+        if device is None or device is self._device:
+            return
+
+        # Never abandon a client that still holds a link: the device only accepts a
+        # single connection, so a leaked client would keep the new one from working.
+        await self._disconnect_gracefully()
+
+        logger.debug(f"SN{self.SERIAL_NUMBER}: Refreshed BLEDevice before connecting.")
+        self._device = device
+        self._client = BleakClient(
+            device, self._disconnect_callback, timeout=self.CONNECT_TIMEOUT_SECONDS
+        )
+
+    def _is_signal_strong_enough(self) -> bool:
+        """Check the last advertised RSSI before spending a connect attempt.
+
+        Returns:
+            True if no rssi_provider was supplied (behaviour unchanged), or if the
+            device advertised recently with at least MIN_RSSI_CONNECT_DBM.
+            False if the device is out of range or too weak to connect reliably.
+        """
+        if self._rssi_provider is None:
+            return True
+
+        rssi = self._rssi_provider()
+
+        if rssi is None:
+            logger.debug(
+                f"SN{self.SERIAL_NUMBER}: No recent advertisement, skipping connect attempt."
+            )
+            return False
+
+        if rssi < self.MIN_RSSI_CONNECT_DBM:
+            logger.debug(
+                f"SN{self.SERIAL_NUMBER}: RSSI {rssi} dBm is below "
+                f"{self.MIN_RSSI_CONNECT_DBM} dBm, skipping connect attempt."
+            )
+            return False
+
+        return True
 
     def _reset_data_timestamps(self) -> None:
         """Reset all characteristic data timestamps to current time.
