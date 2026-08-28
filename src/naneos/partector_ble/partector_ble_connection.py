@@ -18,6 +18,10 @@ from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleD
 
 logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
+# Global lock to prevent concurrent BLE connects on Windows
+# Windows BLE stack has race conditions when many devices connect simultaneously
+_ble_connect_lock = asyncio.Lock()
+
 
 class PartectorBleConnection:
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
@@ -59,8 +63,20 @@ class PartectorBleConnection:
         self._device_type = NaneosDeviceDataPoint.DEV_TYPE_P2  # Thats the deafault value
         self._data = NaneosDeviceDataPoint()
         self._next_ts = 0.0
-        self._last_aux_data_ts = time.time()
         self._queue = queue
+
+        # Multi-characteristic monitoring for disconnection detection
+        self._last_std_data_ts = time.time()
+        self._last_aux_data_ts = time.time()
+        self._last_size_dist_data_ts = time.time()
+
+        # Disconnect detection flag (set by disconnect callback)
+        self._disconnected_flag = False
+
+        # Reconnection backoff parameters
+        self._reconnect_attempt = 0
+        self._max_backoff_seconds = 120  # max 2 minutes
+        self._gatt_error_count = 0  # Track consecutive GATT errors
 
         # Decode queue to decouple decoding from BLE callbacks
         # This prevents blocking the event loop when decoding heavy data
@@ -108,13 +124,39 @@ class PartectorBleConnection:
 
             while not self._stop_event.is_set():
                 try:
-                    if self._last_aux_data_ts + 60 < time.time():
+                    # Check if disconnected via callback
+                    if self._disconnected_flag:
                         logger.info(
-                            f"SN{self.SERIAL_NUMBER}: No aux data received for 60 seconds, disconnecting to reset."
+                            f"SN{self.SERIAL_NUMBER}: Disconnect detected via callback, reconnecting."
                         )
                         await self._disconnect_gracefully()
-                        self._last_aux_data_ts = time.time()
-                        waiting_seconds = 5  # wait 5 seconds before reconnecting
+                        self._disconnected_flag = False
+                        waiting_seconds = self._calculate_backoff()
+                        continue
+
+                    # Multi-characteristic timeout detection
+                    current_time = time.time()
+                    data_timeout = 60  # seconds
+
+                    # Check std characteristic timeout
+                    if self._last_std_data_ts + data_timeout < current_time:
+                        logger.info(
+                            f"SN{self.SERIAL_NUMBER}: No std data for {data_timeout}s, disconnecting."
+                        )
+                        await self._disconnect_gracefully()
+                        self._reset_data_timestamps()
+                        waiting_seconds = self._calculate_backoff()
+                        continue
+
+                    # Check aux characteristic timeout
+                    if self._last_aux_data_ts + data_timeout < current_time:
+                        logger.info(
+                            f"SN{self.SERIAL_NUMBER}: No aux data for {data_timeout}s, disconnecting."
+                        )
+                        await self._disconnect_gracefully()
+                        self._reset_data_timestamps()
+                        waiting_seconds = self._calculate_backoff()
+                        continue
 
                     waiting_seconds = max(0, waiting_seconds - 1)
                     wait = self._next_ts - time.time()
@@ -151,37 +193,101 @@ class PartectorBleConnection:
                         continue
 
                     if waiting_seconds == 0:
-                        await self._client.connect(timeout=5)  # 5 seconds for windows...
-                        if self._client.is_connected:
-                            await self._client.start_notify(
-                                self.CHAR_UUIDS["std"], self._callback_std
+                        # Use global lock to prevent concurrent connections on Windows
+                        # This prevents GATT cache race conditions when connecting multiple devices
+                        async with _ble_connect_lock:
+                            logger.debug(
+                                f"SN{self.SERIAL_NUMBER}: Attempting connection with lock..."
                             )
-                            await self._client.start_notify(
-                                self.CHAR_UUIDS["aux"], self._callback_aux
-                            )
-                            await self._client.start_notify(
-                                self.CHAR_UUIDS["size_dist"], self._callback_size_dist
-                            )
+                            await self._client.connect(timeout=5)  # 5 seconds for windows...
+                            if self._client.is_connected:
+                                # Windows needs aggressive delay for GATT service discovery
+                                # Base delay is 2.5s + additional per error
+                                discovery_delay = 2.5 + (self._gatt_error_count * 1.0)
+                                discovery_delay = min(discovery_delay, 5.0)
+                                logger.debug(
+                                    f"SN{self.SERIAL_NUMBER}: Waiting {discovery_delay:.1f}s for GATT discovery "
+                                    f"(error count: {self._gatt_error_count})"
+                                )
+                                await asyncio.sleep(discovery_delay)
+
+                                # Verify GATT services are available before starting notifications
+                                if not await self._verify_gatt_services():
+                                    logger.warning(
+                                        f"SN{self.SERIAL_NUMBER}: GATT services not available after discovery delay."
+                                    )
+                                    self._gatt_error_count += 1
+                                    await self._disconnect_gracefully()
+
+                                    # Recreate client more aggressively (after 1 error for this device)
+                                    if self._gatt_error_count >= 1:
+                                        logger.info(
+                                            f"SN{self.SERIAL_NUMBER}: Recreating BleakClient to clear Windows BLE cache "
+                                            f"(GATT errors: {self._gatt_error_count})"
+                                        )
+                                        self._client = BleakClient(
+                                            self._device, self._disconnect_callback, timeout=10
+                                        )
+
+                                    waiting_seconds = self._calculate_backoff()
+                                    continue
+
+                                await self._client.start_notify(
+                                    self.CHAR_UUIDS["std"], self._callback_std
+                                )
+                                await self._client.start_notify(
+                                    self.CHAR_UUIDS["aux"], self._callback_aux
+                                )
+                                await self._client.start_notify(
+                                    self.CHAR_UUIDS["size_dist"], self._callback_size_dist
+                                )
+                                # Reset timestamps and backoff on successful connection
+                                self._reset_data_timestamps()
+                                self._reconnect_attempt = 0
+                                self._disconnected_flag = False
+                                self._gatt_error_count = 0  # Reset on success
                         logger.info(f"SN{self.SERIAL_NUMBER}: Connected to {self._device.address}")
 
                     self._next_ts = int(time.time()) + 1.0
                 except asyncio.TimeoutError:
                     logger.info(f"SN{self.SERIAL_NUMBER}: Connection timeout.")
-                    waiting_seconds = 30
+                    waiting_seconds = self._calculate_backoff()
                     await asyncio.sleep(0.5)
                 except BleakDeviceNotFoundError:
                     logger.info(f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE.")
-                    waiting_seconds = 30
+                    waiting_seconds = self._calculate_backoff()
                     await asyncio.sleep(0.5)
                 except Exception as e:
-                    # if exception contains "not found" increase waiting time to 30 seconds and do not spam
-                    if "not found" in str(e).lower():
+                    error_str = str(e).lower()
+                    # Check for common BLE errors that need backoff
+                    if "not found" in error_str:
                         logger.info(
                             f"SN{self.SERIAL_NUMBER}: Device not found or probably old BLE: {e}"
                         )
-                        waiting_seconds = 30
+                        waiting_seconds = self._calculate_backoff()
+                    elif "unreachable" in error_str or "gatt" in error_str:
+                        self._gatt_error_count += 1
+                        logger.warning(
+                            f"SN{self.SERIAL_NUMBER}: GATT/unreachable error #{self._gatt_error_count} "
+                            f"(Windows BLE cache issue): {e}"
+                        )
+                        # Force disconnect to clear state
+                        await self._disconnect_gracefully()
+
+                        # Recreate client after repeated GATT errors
+                        if self._gatt_error_count >= 2:
+                            logger.info(
+                                f"SN{self.SERIAL_NUMBER}: Recreating BleakClient after {self._gatt_error_count} "
+                                "GATT errors to force Windows cache clear"
+                            )
+                            self._client = BleakClient(
+                                self._device, self._disconnect_callback, timeout=10
+                            )
+
+                        waiting_seconds = self._calculate_backoff()
                     else:
                         logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
+                        waiting_seconds = self._calculate_backoff()
 
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
@@ -253,9 +359,96 @@ class PartectorBleConnection:
         except Exception as e:
             logger.debug(f"SN{self.SERIAL_NUMBER}: Failed to disconnect: {e}")
 
+    def _calculate_backoff(self) -> int:
+        """Calculate exponential backoff time in seconds.
+
+        Returns:
+            Backoff time in seconds (5, 10, 20, 40, 80, max 120 seconds)
+        """
+        self._reconnect_attempt += 1
+        backoff = min(5 * (2 ** (self._reconnect_attempt - 1)), self._max_backoff_seconds)
+        logger.info(
+            f"SN{self.SERIAL_NUMBER}: Backoff attempt {self._reconnect_attempt}: {backoff}s"
+        )
+        return int(backoff)
+
+    def _reset_data_timestamps(self) -> None:
+        """Reset all characteristic data timestamps to current time.
+
+        This prevents false disconnection detection after reconnecting.
+        """
+        current_time = time.time()
+        self._last_std_data_ts = current_time
+        self._last_aux_data_ts = current_time
+        self._last_size_dist_data_ts = current_time
+
+    async def _verify_gatt_services(self) -> bool:
+        """Verify that GATT services are available.
+
+        Windows BLE stack sometimes reports connected but services aren't ready.
+        This method retries service discovery to work around Windows BLE cache issues.
+
+        Returns:
+            True if services are available, False otherwise
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                services = self._client.services
+                if services is None:
+                    logger.debug(
+                        f"SN{self.SERIAL_NUMBER}: Services is None, attempt {attempt + 1}/{max_retries}"
+                    )
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # Check if our service UUID is available
+                service = services.get_service(self.SERVICE_UUID)
+                if service is None:
+                    logger.debug(
+                        f"SN{self.SERIAL_NUMBER}: Service UUID not found, attempt {attempt + 1}/{max_retries}"
+                    )
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # Verify all required characteristics are present
+                required_chars = ["std", "aux", "size_dist"]
+                for char_name in required_chars:
+                    char_uuid = self.CHAR_UUIDS[char_name]
+                    try:
+                        services.get_characteristic(char_uuid)
+                    except Exception as e:
+                        logger.debug(
+                            f"SN{self.SERIAL_NUMBER}: Characteristic {char_name} not found: {e}, "
+                            f"attempt {attempt + 1}/{max_retries}"
+                        )
+                        await asyncio.sleep(0.5)
+                        break
+                else:
+                    # All characteristics found
+                    logger.debug(f"SN{self.SERIAL_NUMBER}: All GATT services verified successfully")
+                    return True
+
+            except Exception as e:
+                logger.debug(
+                    f"SN{self.SERIAL_NUMBER}: Error verifying services: {e}, "
+                    f"attempt {attempt + 1}/{max_retries}"
+                )
+                await asyncio.sleep(0.5)
+
+        logger.warning(
+            f"SN{self.SERIAL_NUMBER}: GATT service verification failed after {max_retries} attempts"
+        )
+        return False
+
     def _disconnect_callback(self, client: BleakClient) -> None:
-        """Callback on disconnect."""
-        logger.debug(f"SN{self.SERIAL_NUMBER}: Disconnect callback called")
+        """Callback on disconnect.
+
+        Sets the disconnect flag to trigger reconnection in the main loop.
+        This ensures we detect disconnections even when is_connected still returns True.
+        """
+        logger.info(f"SN{self.SERIAL_NUMBER}: Disconnect callback called")
+        self._disconnected_flag = True
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic).
@@ -263,6 +456,7 @@ class PartectorBleConnection:
         Non-blocking: puts data in decode queue instead of decoding directly.
         Actual decoding happens asynchronously in _decode_routine().
         """
+        self._last_std_data_ts = time.time()
         try:
             self._decode_queue.put_nowait(("std", bytes(data)))
         except asyncio.QueueFull:
@@ -286,6 +480,7 @@ class PartectorBleConnection:
         Non-blocking: puts data in decode queue instead of decoding directly.
         Actual decoding happens asynchronously in _decode_routine().
         """
+        self._last_size_dist_data_ts = time.time()
         try:
             self._decode_queue.put_nowait(("size_dist", bytes(data)))
         except asyncio.QueueFull:
