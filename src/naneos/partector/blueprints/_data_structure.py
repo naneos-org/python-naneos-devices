@@ -177,25 +177,68 @@ class NaneosDeviceDataPoint:
         "cs_status": "Int32",
     }
 
+    MAX_ROWS_PER_DEVICE = 300
+
+    @staticmethod
+    def to_pandas_df(points: list["NaneosDeviceDataPoint"]) -> pd.DataFrame:
+        """Build a single DataFrame from many data points.
+
+        Building one DataFrame per point (to_pandas_df_row) means a DataFrame
+        construction, an astype over the whole dtype mapping and a concat for
+        every advertisement received. On a Raspberry Pi Zero 2 W that is the
+        single most expensive thing the library does, so points are converted
+        in batches instead.
+        """
+        if not points:
+            return pd.DataFrame()
+
+        df = pd.DataFrame([p.to_dict(remove_nan=False) for p in points])
+        df = NaneosDeviceDataPoint.safe_astype(
+            df, NaneosDeviceDataPoint.PANDAS_DTYPES_MAPPING, errors="ignore"
+        )
+        df = df.set_index(["unix_timestamp"], drop=True)
+        # A point that never received a timestamp cannot be placed on the time
+        # axis; the per-row path dropped those too.
+        return df[df.index.notna()]
+
+    @staticmethod
+    def add_data_points_to_dict(
+        devices: dict, points: list["NaneosDeviceDataPoint"]
+    ) -> dict[int, pd.DataFrame]:
+        """Add many data points at once, one pandas round per device.
+
+        Batched equivalent of :meth:`add_data_point_to_dict`.
+        """
+        by_serial: dict = {}
+        for point in points:
+            by_serial.setdefault(point.serial_number, []).append(point)
+
+        for serial, serial_points in by_serial.items():
+            new_rows = NaneosDeviceDataPoint.to_pandas_df(serial_points)
+
+            existing = devices.get(serial)
+            if existing is None or existing.empty:
+                devices[serial] = new_rows
+            elif not new_rows.empty:
+                devices[serial] = pd.concat([existing, new_rows], ignore_index=False)
+            else:
+                continue
+
+            # Keep the newest rows. The old code dropped by index *label*, which
+            # removes every row sharing that timestamp - and advertisement
+            # timestamps are truncated to whole seconds, so duplicates are normal.
+            if len(devices[serial]) > NaneosDeviceDataPoint.MAX_ROWS_PER_DEVICE:
+                devices[serial] = devices[serial].iloc[
+                    -NaneosDeviceDataPoint.MAX_ROWS_PER_DEVICE :
+                ]
+
+        return devices
+
     @staticmethod
     def add_data_point_to_dict(
         devices: dict, data: "NaneosDeviceDataPoint"
     ) -> dict[int, pd.DataFrame]:
-        if data.serial_number not in devices:
-            devices[data.serial_number] = pd.DataFrame()
-
-        if len(devices[data.serial_number]) > 300:  # remove oldest rows if more than 300 rows
-            devices[data.serial_number].drop(devices[data.serial_number].index[0], inplace=True)
-
-        new_row = data.to_pandas_df_row(remove_nan=False)
-        if new_row.index.isna():
-            return devices
-
-        devices[data.serial_number] = pd.concat(
-            [devices[data.serial_number], new_row], ignore_index=False
-        )
-
-        return devices
+        return NaneosDeviceDataPoint.add_data_points_to_dict(devices, [data])
 
     def to_dict(self, remove_nan=True) -> dict[str, Union[int, float]]:
         if remove_nan:
