@@ -28,7 +28,7 @@ class PartectorBleScanner:
     for automatic startup and cleanup.
     """
 
-    SCAN_INTERVAL = 0.8  # seconds
+    SCAN_INTERVAL = 0.8  # seconds; backoff before retrying a failed discovery
     BLE_NAMES_NANEOS = {"P2", "PartectorBT"}  # P2 on windows, PartectorBT on linux / mac
     # A device that has not advertised within this window is treated as out of
     # range. Connecting to it would only block the adapter until it times out.
@@ -73,6 +73,11 @@ class PartectorBleScanner:
         self._devices: dict[str, BLEDevice] = {}
 
         self._task: asyncio.Task | None = None
+
+        # True while BlueZ discovery is actually running. The manager uses this
+        # instead of probing the adapter with a `bluetoothctl` subprocess: if the
+        # adapter goes away, starting discovery is exactly what fails.
+        self._discovery_active = False
 
         self._stop_event = asyncio.Event()
         self._stop_event.set()  # stopped by default
@@ -124,6 +129,11 @@ class PartectorBleScanner:
             return None
 
         return int(median(recent))
+
+    @property
+    def is_discovering(self) -> bool:
+        """True while BlueZ discovery is running, i.e. the adapter is usable."""
+        return self._discovery_active
 
     def get_device(self, address: str) -> BLEDevice | None:
         """Returns the most recently advertised BLEDevice for the given address.
@@ -189,14 +199,24 @@ class PartectorBleScanner:
             logger.debug(f"Scanner queue full, dropping advertisement from {device.address}")
 
     async def scan(self) -> None:
-        """Scans for BLE devices and calls the _detection_callback method for each device found."""
+        """Runs BLE discovery until stopped, feeding _detection_callback.
 
-        scanner = BleakScanner(self._detection_callback)
-
+        Discovery is started once and then left running. Re-entering the scanner
+        on a timer costs a SetDiscoveryFilter + StartDiscovery + StopDiscovery
+        D-Bus round trip per cycle, against the same bluetoothd that carries the
+        BLE links, and makes the controller restart its LE scan each time. It is
+        also pointless: a running scanner already reports every advertisement,
+        so stopping only creates windows in which advertisements are missed.
+        """
         while not self._stop_event.is_set():
             try:
-                async with scanner:
-                    await asyncio.sleep(self.SCAN_INTERVAL)
+                # A fresh scanner per attempt: after a failure the old one may
+                # still hold discovery callbacks registered with BlueZ.
+                async with BleakScanner(self._detection_callback):
+                    self._discovery_active = True
+                    await self._stop_event.wait()
             except Exception as e:
                 logger.exception(e)
                 await asyncio.sleep(self.SCAN_INTERVAL)  # small backoff before retry
+            finally:
+                self._discovery_active = False

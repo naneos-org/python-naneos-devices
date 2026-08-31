@@ -31,6 +31,9 @@ apt -y autoremove
 echo ">> Installing Python & venv..."
 apt -y install python3-full python3-pip python3-venv
 
+# `iw` is used below to turn WiFi power save off.
+apt -y install iw
+
 # 4) Create app directory and copy files
 echo ">> Creating app directory and copying files..."
 mkdir -p "$APP_DIR"
@@ -72,7 +75,53 @@ rfkill unblock bluetooth || true
 # Try to power on BT controller non-interactively
 echo -e 'power on\nquit' | bluetoothctl >/dev/null 2>&1 || true
 
-# 8) Enable & start service
+# 8) Disable WiFi power save
+# The brcmfmac chip on a Raspberry Pi Zero 2 W parks the WiFi link when idle.
+# That stalls uploads, and because WiFi and BLE share one antenna it also costs
+# BLE airtime. `iw` alone does not survive a reboot, so make it persistent too.
+echo ">> Disabling WiFi power save..."
+WIFI_DEV="$(iw dev 2>/dev/null | awk '/Interface/{print $2; exit}')"
+
+if systemctl is-active --quiet NetworkManager; then
+  # NetworkManager re-applies its own setting on every (re)connect, so a config
+  # drop-in is the only thing that sticks. 2 = disable.
+  mkdir -p /etc/NetworkManager/conf.d
+  cat > /etc/NetworkManager/conf.d/wifi-powersave-off.conf <<'EOF'
+# Installed by the naneos uploader installer.
+# 2 = disable WiFi power save; the Pi Zero 2 W otherwise sleeps the link when
+# idle, which stalls uploads and costs BLE airtime on the shared antenna.
+[connection]
+wifi.powersave = 2
+EOF
+  systemctl reload NetworkManager || true
+  echo "   Installed /etc/NetworkManager/conf.d/wifi-powersave-off.conf"
+else
+  # No NetworkManager (older Raspberry Pi OS images): re-apply it at every boot.
+  cat > /etc/systemd/system/wifi-powersave-off.service <<EOF
+[Unit]
+Description=Disable WiFi power save
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iw dev ${WIFI_DEV:-wlan0} set power_save off
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now wifi-powersave-off.service || true
+  echo "   Installed wifi-powersave-off.service"
+fi
+
+# Apply to the running link as well, so no reboot is needed.
+if [[ -n "$WIFI_DEV" ]]; then
+  iw dev "$WIFI_DEV" set power_save off || true
+  echo "   $WIFI_DEV: $(iw dev "$WIFI_DEV" get power_save 2>/dev/null || echo 'state unknown')"
+fi
+
+# 9) Enable & start service
 echo ">> Reloading systemd, enabling & starting service..."
 systemctl daemon-reload
 systemctl enable naneos_uploader.service

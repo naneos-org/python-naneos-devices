@@ -20,11 +20,15 @@ logger = get_naneos_logger(__name__, LEVEL_WARNING)
 
 
 class PartectorBleManager(threading.Thread):
-    # The adapter check shells out to `bluetoothctl`, which costs a subprocess and a
-    # D-Bus round trip to the same bluetoothd that carries the BLE connections.
-    # Running it on every loop iteration (~3x per second) starves active links, so
-    # it is throttled to this interval.
-    ADAPTER_CHECK_INTERVAL_SECONDS = 10.0
+    # How often the manager drains its queues. The queues are bounded and the
+    # producers are ~1Hz per device, so polling faster only burns CPU on a
+    # Raspberry Pi Zero 2 W without delivering data any sooner.
+    LOOP_INTERVAL_SECONDS = 1.0
+
+    # The adapter is considered lost after discovery has been down this long.
+    # Discovery failing *is* the adapter check, so no subprocess is needed while
+    # running; `bluetoothctl` is only used to decide when it is safe to restart.
+    ADAPTER_LOST_AFTER_SECONDS = 30.0
 
     def __init__(self) -> None:
         super().__init__(daemon=True)
@@ -38,13 +42,30 @@ class PartectorBleManager(threading.Thread):
         self._connection_objects: dict[int, PartectorBleConnection] = {}
         self._scanner: PartectorBleScanner | None = None
 
-        self._data: dict[int, pd.DataFrame] = {}
+        # Raw data points, converted to DataFrames only in get_data(). Building
+        # them here would put pandas on the event loop that also services the BLE
+        # notifications, which on a Raspberry Pi Zero 2 W is enough to stall the
+        # links themselves.
+        self._points: dict[int, list[NaneosDeviceDataPoint]] = {}
 
     def get_data(self) -> dict[int, pd.DataFrame]:
-        """Returns the data dictionary and deletes it."""
-        data = self._data
-        self._data = {}
-        return data
+        """Returns the collected data as DataFrames and clears the buffer."""
+        # Swap first: the BLE thread keeps appending while we convert.
+        points, self._points = self._points, {}
+
+        return {
+            serial: df
+            for serial, serial_points in points.items()
+            if not (df := NaneosDeviceDataPoint.to_pandas_df(serial_points)).empty
+        }
+
+    def _buffer_points(self, points: list[NaneosDeviceDataPoint]) -> None:
+        """Append data points to the per-device buffer, keeping the newest ones."""
+        for point in points:
+            buffered = self._points.setdefault(point.serial_number, [])
+            buffered.append(point)
+            if len(buffered) > NaneosDeviceDataPoint.MAX_ROWS_PER_DEVICE:
+                del buffered[: -NaneosDeviceDataPoint.MAX_ROWS_PER_DEVICE]
 
     def stop(self) -> None:
         self._task_stop_event.set()
@@ -187,22 +208,29 @@ class PartectorBleManager(threading.Thread):
                 logger.info("BLEManager cleanup complete.")
 
     async def _manager_loop(self) -> None:
-        next_adapter_check = 0.0
+        discovery_down_since: float | None = None
 
         while not self._stop_event.is_set():
             try:
-                if time.monotonic() >= next_adapter_check:
-                    next_adapter_check = time.monotonic() + self.ADAPTER_CHECK_INTERVAL_SECONDS
-                    if not await self._is_bluetooth_adapter_available():
+                # The scanner reports whether BlueZ discovery is actually running.
+                # Probing the adapter with a `bluetoothctl` subprocess instead cost
+                # a fork/exec plus a D-Bus round trip against the same bluetoothd
+                # that carries the BLE links.
+                if self._scanner is not None and not self._scanner.is_discovering:
+                    now = time.monotonic()
+                    if discovery_down_since is None:
+                        discovery_down_since = now
+                    elif now - discovery_down_since >= self.ADAPTER_LOST_AFTER_SECONDS:
                         logger.warning("Bluetooth adapter lost. Stopping all connections...")
                         await self._kill_all_connections()
                         return
+                else:
+                    discovery_down_since = None
 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(self.LOOP_INTERVAL_SECONDS)
 
                 await self._scanner_queue_routine()
                 await self._connection_queue_routine()
-                await self._check_device_types()
                 await self._remove_done_tasks()
 
             except asyncio.TimeoutError:
@@ -290,11 +318,7 @@ class PartectorBleManager(threading.Thread):
         return self._scanner.get_rssi(address)
 
     async def _scanner_queue_routine(self) -> None:
-        """Process scanner queue with batch collection to reduce DataFrame operations.
-
-        Instead of calling add_data_point_to_dict for each item (expensive),
-        collect all items first, then add them in bulk.
-        """
+        """Drain the scanner queue and record the advertisements in one batch."""
         to_check: dict[int, BLEDevice] = {}
         batch_data: list[NaneosDeviceDataPoint] = []
 
@@ -311,9 +335,13 @@ class PartectorBleManager(threading.Thread):
             batch_data.append(decoded)
             to_check[decoded.serial_number] = device
 
-        # Add all data points at once (more efficient than individual additions)
-        for decoded in batch_data:
-            self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, decoded)
+        # Advertisement timestamps are truncated to whole seconds and
+        # sort_and_clean_naneos_data() keeps only the last row per timestamp, so
+        # everything but the newest advertisement per device-second is built into
+        # a DataFrame just to be thrown away again downstream.
+        deduped = {(d.serial_number, d.unix_timestamp): d for d in batch_data}
+
+        self._buffer_points(list(deduped.values()))
 
         # check for new devices
         for serial, device in to_check.items():
@@ -335,11 +363,7 @@ class PartectorBleManager(threading.Thread):
             self._connections[serial] = (task, NaneosDeviceDataPoint.DEV_TYPE_P2)
 
     async def _connection_queue_routine(self) -> None:
-        """Process connection queue with batch collection to reduce DataFrame operations.
-
-        Instead of calling add_data_point_to_dict for each item (expensive),
-        collect all items first, then add them in bulk.
-        """
+        """Drain the connection queue and record the data points in one batch."""
         batch_data: list[NaneosDeviceDataPoint] = []
 
         # Collect all available items from queue (non-blocking batch)
@@ -351,30 +375,15 @@ class PartectorBleManager(threading.Thread):
 
             batch_data.append(data)
 
-        # Add all data points at once (more efficient than individual additions)
+        # A connected device reveals whether it is a P2 or a P2 Pro through the
+        # points it sends. Reading that back out of the DataFrame (.iloc[-1]) on
+        # every loop iteration was pure overhead; take it from the batch instead.
         for data in batch_data:
-            self._data = NaneosDeviceDataPoint.add_data_point_to_dict(self._data, data)
+            entry = self._connections.get(data.serial_number)
+            if entry is not None and data.device_type is not None and entry[1] != data.device_type:
+                self._connections[data.serial_number] = (entry[0], data.device_type)
 
-    async def _check_device_types(self) -> None:
-        # get_data() swaps self._data from another thread, so take one reference
-        # and work on that instead of indexing self._data again later.
-        data = self._data
-
-        for serial, data_points in list(data.items()):
-            if serial not in self._connections:
-                continue
-
-            current_type = self._connections[serial][1]
-
-            # get last value of device_type column
-            if data_points.empty:
-                continue
-            last_device_type = data_points["device_type"].iloc[-1]
-            if last_device_type != current_type:
-                self._connections[serial] = (
-                    self._connections[serial][0],
-                    last_device_type,
-                )
+        self._buffer_points(batch_data)
 
     async def _remove_done_tasks(self) -> None:
         """Remove completed tasks from the connections dictionary."""
