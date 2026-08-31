@@ -53,6 +53,10 @@ class PartectorBleConnection:
     # usable advertisement, spend one attempt anyway.
     RSSI_GATE_MAX_SILENCE_SECONDS = 120
 
+    # A P2 Pro sends its size distribution every 6s while it measures every
+    # second, so the stream is considered alive well past a single missed frame.
+    SIZE_DIST_MAX_AGE_SECONDS = 15
+
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
     CHAR_UUIDS = {
         "std": "e7add780-b042-4876-aae1-112855353cc1",
@@ -228,28 +232,9 @@ class PartectorBleConnection:
                             logger.info(f"SN{self.SERIAL_NUMBER}: Waiting time negative: {wait}")
                         self._next_ts = int(time.time()) + 1.0
 
+                    # Data points are published by _emit_data_point() on the
+                    # device's own measurement tick, not on this loop's second.
                     if self._client.is_connected:
-                        if (
-                            self._device_type == NaneosDeviceDataPoint.DEV_TYPE_P2PRO
-                            and self._data.particle_number_10nm is None
-                            and self._data.particle_number_16nm is None
-                            and self._data.particle_number_26nm is None
-                            and self._data.particle_number_43nm is None
-                            and self._data.particle_number_70nm is None
-                            and self._data.particle_number_114nm is None
-                            and self._data.particle_number_185nm is None
-                            and self._data.particle_number_300nm is None
-                        ):
-                            self._data.particle_number_concentration = None
-                            self._data.average_particle_diameter = None
-
-                        self._queue.put_nowait(self._data)
-                        self._data = NaneosDeviceDataPoint(
-                            device_type=self._device_type,
-                            serial_number=self.SERIAL_NUMBER,
-                            connection_type=NaneosDeviceDataPoint.CONN_TYPE_CONNECTED,
-                            # TODO: add firware version from device here
-                        )
                         continue
 
                     if waiting_seconds == 0:
@@ -393,6 +378,43 @@ class PartectorBleConnection:
         finally:
             await self._disconnect_gracefully()
 
+    def _emit_data_point(self) -> None:
+        """Publish the accumulated data point and start the next one.
+
+        Points follow the device's own measurement tick instead of a wall clock
+        second. The device sends one std frame per second, but its phase is
+        independent of ours: binning those arrivals into fixed one second windows
+        left a quarter of the windows empty on a P2 Pro and put two frames into
+        as many others, where the first was overwritten before it was ever
+        published.
+        """
+        point = self._data
+        self._data = NaneosDeviceDataPoint(
+            device_type=self._device_type,
+            serial_number=self.SERIAL_NUMBER,
+            connection_type=NaneosDeviceDataPoint.CONN_TYPE_CONNECTED,
+            # TODO: add firware version from device here
+        )
+
+        # A P2 Pro reports number concentration and diameter only while it is
+        # also delivering size distributions. That stream runs at 1/6 of the
+        # measurement rate, so it is judged by how recently a frame arrived
+        # rather than by whether one landed in this very point, which used to
+        # discard five of every six values the device had already sent.
+        if (
+            self._device_type == NaneosDeviceDataPoint.DEV_TYPE_P2PRO
+            and time.time() - self._last_size_dist_data_ts > self.SIZE_DIST_MAX_AGE_SECONDS
+        ):
+            point.particle_number_concentration = None
+            point.average_particle_diameter = None
+
+        try:
+            self._queue.put_nowait(point)
+        except asyncio.QueueFull:
+            logger.warning(
+                f"SN{self.SERIAL_NUMBER}: Connection queue full, dropping data point."
+            )
+
     async def _decode_routine(self) -> None:
         """Asynchronously decodes BLE data from the decode queue.
 
@@ -414,6 +436,9 @@ class PartectorBleConnection:
                 if char_type == "std":
                     self._data = PartectorBleDecoderStd.decode(data, data_structure=self._data)
                     logger.debug(f"SN{self.SERIAL_NUMBER}: Decoded std: {data.hex()}")
+                    # The std frame is the device's measurement tick, so it also
+                    # closes the data point.
+                    self._emit_data_point()
 
                 elif char_type == "aux":
                     # Check for aux error data
