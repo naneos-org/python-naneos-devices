@@ -46,7 +46,7 @@ class PartectorBleConnection:
     # Do not spend a connect attempt on a device whose last advertisement was
     # weaker than this. Attempts on barely reachable devices mostly time out and
     # only push the backoff up for everyone sharing the adapter.
-    MIN_RSSI_CONNECT_DBM = -85
+    MIN_RSSI_CONNECT_DBM = -90
 
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
     CHAR_UUIDS = {
