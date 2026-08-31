@@ -8,6 +8,7 @@ from statistics import median
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
+from bleak.exc import BleakDBusError
 
 from naneos.logger import LEVEL_WARNING, get_naneos_logger
 from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
@@ -133,7 +134,36 @@ class PartectorBleScanner:
     @property
     def is_discovering(self) -> bool:
         """True while BlueZ discovery is running, i.e. the adapter is usable."""
-        return self._discovery_active
+        return self._discovery_active and self._bluez_bus_is_alive()
+
+    @staticmethod
+    def _bluez_bus_is_alive() -> bool:
+        """False once the D-Bus connection bleak runs discovery on is gone.
+
+        Discovery is registered on the bus connection bleak holds, and bluetoothd
+        drops that connection when it decides the client is not keeping up. When
+        that happens the advertisements simply stop: nothing raises, the scan task
+        stays parked on its stop event, and the manager keeps believing discovery
+        is running. bleak builds a new bus on the next connect attempt, but the
+        discovery started on the old one is not restored, so the scanner has to be
+        torn down and started again.
+
+        The bus is read rather than requested: asking bleak for its manager would
+        reconnect the bus and hide the very failure this looks for.
+        """
+        try:
+            from bleak.backends.bluezdbus.manager import _global_instances
+
+            manager = _global_instances.get(asyncio.get_running_loop())
+            if manager is None:
+                return True  # nothing has used the bus yet
+
+            bus = manager._bus
+            return bus is not None and bus.connected
+        except Exception:
+            # Non-BlueZ backends and bleak internals that moved: never report a
+            # dead adapter because this check could not be made.
+            return True
 
     def get_device(self, address: str) -> BLEDevice | None:
         """Returns the most recently advertised BLEDevice for the given address.
@@ -215,6 +245,14 @@ class PartectorBleScanner:
                 async with BleakScanner(self._detection_callback):
                     self._discovery_active = True
                     await self._stop_event.wait()
+            except BleakDBusError as e:
+                # Stopping a discovery that BlueZ has already dropped, which is
+                # exactly the situation the scanner is restarted for.
+                if "No discovery started" in str(e):
+                    logger.debug(f"Discovery was already stopped by BlueZ: {e}")
+                else:
+                    logger.exception(e)
+                await asyncio.sleep(self.SCAN_INTERVAL)  # small backoff before retry
             except Exception as e:
                 logger.exception(e)
                 await asyncio.sleep(self.SCAN_INTERVAL)  # small backoff before retry
