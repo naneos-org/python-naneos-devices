@@ -53,10 +53,6 @@ class PartectorBleConnection:
     # usable advertisement, spend one attempt anyway.
     RSSI_GATE_MAX_SILENCE_SECONDS = 120
 
-    # A P2 Pro sends its size distribution every 6s while it measures every
-    # second, so the stream is considered alive well past a single missed frame.
-    SIZE_DIST_MAX_AGE_SECONDS = 15
-
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
     CHAR_UUIDS = {
         "std": "e7add780-b042-4876-aae1-112855353cc1",
@@ -396,14 +392,12 @@ class PartectorBleConnection:
             # TODO: add firware version from device here
         )
 
-        # A P2 Pro reports number concentration and diameter only while it is
-        # also delivering size distributions. That stream runs at 1/6 of the
-        # measurement rate, so it is judged by how recently a frame arrived
-        # rather than by whether one landed in this very point, which used to
-        # discard five of every six values the device had already sent.
-        if (
-            self._device_type == NaneosDeviceDataPoint.DEV_TYPE_P2PRO
-            and time.time() - self._last_size_dist_data_ts > self.SIZE_DIST_MAX_AGE_SECONDS
+        # A P2 Pro reports number concentration and diameter only together with
+        # the size distribution they belong to. That stream runs at 1/6 of the
+        # measurement rate, so most points carry neither.
+        if self._device_type == NaneosDeviceDataPoint.DEV_TYPE_P2PRO and not any(
+            getattr(point, field, None) is not None
+            for field in NaneosDeviceDataPoint.BLE_SIZE_DIST_FIELD_NAMES
         ):
             point.particle_number_concentration = None
             point.average_particle_diameter = None
