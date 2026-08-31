@@ -50,6 +50,11 @@ class PartectorBleDecoder:
         This is not a good practice, but it was the only way to put more data into the advertisement.
         """
         manufacturer_data = adv.manufacturer_data
+        if not manufacturer_data:
+            # BlueZ fires the detection callback on any property change (RSSI, name,
+            # connection state), and those events carry no ManufacturerData.
+            return b""
+
         manufacturer_id_bytes = next(iter(manufacturer_data.keys())).to_bytes(2, "little")
         manufacturer_payload = next(iter(manufacturer_data.values()))
         adv_bytes = manufacturer_id_bytes + manufacturer_payload
