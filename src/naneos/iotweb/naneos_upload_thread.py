@@ -70,8 +70,12 @@ class NaneosUploadThread(Thread):
 
             # detect ms timestamp and convert to s
             if df.index[0] > 1e12:
-                df.index = df.index / 1e3
-                df.index = df.index.astype(int)
+                # Rounded, not truncated: the devices sample at ~1Hz with a phase
+                # of their own, so truncating puts the two samples that straddle a
+                # second boundary into the same second, where one of them wins,
+                # and leaves the neighbouring second without a row at all. That is
+                # a gap in the uploaded series for data that arrived complete.
+                df.index = (df.index / 1e3).round().astype(int)
 
             devices.append(create_proto_device(sn, abs_time, df))
 
