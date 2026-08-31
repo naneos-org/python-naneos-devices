@@ -134,24 +134,26 @@ class PartectorBleScanner:
     @property
     def is_discovering(self) -> bool:
         """True while BlueZ discovery is running, i.e. the adapter is usable."""
-        return self._discovery_active and self._bluez_bus_is_alive()
+        return self._discovery_active and self._bluez_discovery_is_alive()
 
     @staticmethod
-    def _bluez_bus_is_alive() -> bool:
-        """False once the D-Bus connection bleak runs discovery on is gone.
+    def _bluez_discovery_is_alive() -> bool:
+        """False once BlueZ has stopped scanning underneath us.
 
-        Discovery is registered on the bus connection bleak holds, and bluetoothd
-        drops that connection when it decides the client is not keeping up. When
-        that happens the advertisements simply stop: nothing raises, the scan task
-        stays parked on its stop event, and the manager keeps believing discovery
-        is running. bleak builds a new bus on the next connect attempt, but the
-        discovery started on the old one is not restored, so the scanner has to be
-        torn down and started again.
+        Two ways that happens, both silent. The D-Bus connection bleak holds can
+        be dropped, and discovery dies with it. Or the controller itself faults
+        ("hci0: hardware error"), and the kernel resets the adapter, which clears
+        Discovering. Neither raises: the scan task stays parked on its stop event,
+        _discovery_active stays True, and the manager keeps believing discovery is
+        running while no advertisement is ever delivered again. bleak rebuilds the
+        bus on the next connect attempt but does not restore the discovery, so the
+        scanner has to be torn down and started again.
 
-        The bus is read rather than requested: asking bleak for its manager would
-        reconnect the bus and hide the very failure this looks for.
+        State is read out of bleak rather than requested: asking bleak for its
+        manager reconnects the bus and hides the very failure this looks for.
         """
         try:
+            from bleak.backends.bluezdbus import defs
             from bleak.backends.bluezdbus.manager import _global_instances
 
             manager = _global_instances.get(asyncio.get_running_loop())
@@ -159,7 +161,18 @@ class PartectorBleScanner:
                 return True  # nothing has used the bus yet
 
             bus = manager._bus
-            return bus is not None and bus.connected
+            if bus is None or not bus.connected:
+                return False
+
+            adapters = [
+                properties[defs.ADAPTER_INTERFACE]
+                for properties in manager._properties.values()
+                if defs.ADAPTER_INTERFACE in properties
+            ]
+            if not adapters:
+                return True  # no adapter seen yet, nothing to judge
+
+            return any(adapter.get("Discovering", True) for adapter in adapters)
         except Exception:
             # Non-BlueZ backends and bleak internals that moved: never report a
             # dead adapter because this check could not be made.
