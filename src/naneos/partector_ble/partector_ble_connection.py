@@ -48,6 +48,11 @@ class PartectorBleConnection:
     # only push the backoff up for everyone sharing the adapter.
     MIN_RSSI_CONNECT_DBM = -90
 
+    # A device that stops advertising is invisible to the RSSI gate, so the gate
+    # alone would keep it from ever being retried. After this long without a
+    # usable advertisement, spend one attempt anyway.
+    RSSI_GATE_MAX_SILENCE_SECONDS = 120
+
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
     CHAR_UUIDS = {
         "std": "e7add780-b042-4876-aae1-112855353cc1",
@@ -113,6 +118,10 @@ class PartectorBleConnection:
         self._gatt_error_count = 0  # Track consecutive GATT errors
         self._rssi_provider = rssi_provider
         self._device_provider = device_provider
+
+        # Last time the RSSI gate let a connect attempt through, used to bound
+        # how long the gate may keep a device locked out.
+        self._last_gate_pass_ts = time.monotonic()
 
         # Decode queue to decouple decoding from BLE callbacks
         # This prevents blocking the event loop when decoding heavy data
@@ -358,6 +367,18 @@ class PartectorBleConnection:
                         waiting_seconds = self._calculate_backoff()
                     else:
                         logger.warning(f"SN{self.SERIAL_NUMBER}: Unknown exception: {e}")
+                        # A connect that fails after the link was already up (for
+                        # example "failed to discover services, device disconnected")
+                        # can leave BlueZ holding a half-open link. The device then
+                        # stops advertising, and without an advertisement the RSSI
+                        # gate never lets a reconnect through again. Drop the link
+                        # and start the next attempt from a fresh client.
+                        await self._disconnect_gracefully()
+                        self._client = BleakClient(
+                            self._device,
+                            self._disconnect_callback,
+                            timeout=self.CONNECT_TIMEOUT_SECONDS,
+                        )
                         waiting_seconds = self._calculate_backoff()
 
                     # The disconnect callback fires while the connect attempt fails.
@@ -475,9 +496,15 @@ class PartectorBleConnection:
     def _is_signal_strong_enough(self) -> bool:
         """Check the last advertised RSSI before spending a connect attempt.
 
+        The gate is deliberately not absolute: a device whose link is stuck stops
+        advertising, so an unconditional gate would lock it out for the rest of the
+        process lifetime. After RSSI_GATE_MAX_SILENCE_SECONDS without a usable
+        advertisement one attempt is let through regardless.
+
         Returns:
-            True if no rssi_provider was supplied (behaviour unchanged), or if the
-            device advertised recently with at least MIN_RSSI_CONNECT_DBM.
+            True if no rssi_provider was supplied (behaviour unchanged), if the
+            device advertised recently with at least MIN_RSSI_CONNECT_DBM, or if
+            the gate has been blocking for too long.
             False if the device is out of range or too weak to connect reliably.
         """
         if self._rssi_provider is None:
@@ -486,19 +513,24 @@ class PartectorBleConnection:
         rssi = self._rssi_provider()
 
         if rssi is None:
-            logger.debug(
-                f"SN{self.SERIAL_NUMBER}: No recent advertisement, skipping connect attempt."
-            )
-            return False
+            reason = "No recent advertisement"
+        elif rssi < self.MIN_RSSI_CONNECT_DBM:
+            reason = f"RSSI {rssi} dBm is below {self.MIN_RSSI_CONNECT_DBM} dBm"
+        else:
+            self._last_gate_pass_ts = time.monotonic()
+            return True
 
-        if rssi < self.MIN_RSSI_CONNECT_DBM:
-            logger.debug(
-                f"SN{self.SERIAL_NUMBER}: RSSI {rssi} dBm is below "
-                f"{self.MIN_RSSI_CONNECT_DBM} dBm, skipping connect attempt."
+        gated_seconds = time.monotonic() - self._last_gate_pass_ts
+        if gated_seconds >= self.RSSI_GATE_MAX_SILENCE_SECONDS:
+            logger.info(
+                f"SN{self.SERIAL_NUMBER}: {reason}, but gated for {gated_seconds:.0f}s, "
+                "attempting connect anyway."
             )
-            return False
+            self._last_gate_pass_ts = time.monotonic()
+            return True
 
-        return True
+        logger.debug(f"SN{self.SERIAL_NUMBER}: {reason}, skipping connect attempt.")
+        return False
 
     def _reset_data_timestamps(self) -> None:
         """Reset all characteristic data timestamps to current time.
