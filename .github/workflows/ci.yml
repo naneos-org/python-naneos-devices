@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"  # the minimum we support; mypy checks that syntax level
       - run: uv sync --group dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .

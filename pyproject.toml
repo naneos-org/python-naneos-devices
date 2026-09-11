@@ -99,6 +99,8 @@ select = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+# No python_version: mypy follows the interpreter it runs under, so the
+# dependency stubs it sees match that interpreter (numpy 2.5 stubs use the
+# 3.12 `type` statement, numpy 2.4 on 3.11 does not).
 files = ["src"]
 exclude = ["protoV1_pb2\\.py$"]
