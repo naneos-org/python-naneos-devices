@@ -15,11 +15,11 @@
 
 [![Projektlogo](https://raw.githubusercontent.com/naneos-org/public-data/master/img/logo_naneos.png)](https://naneos.ch)
 
-This repository contains a collection of Python scripts and utilities for our [naneos particle solutions](https://naneos.ch) measurement devices. These scripts will provide various functionalities related to data acquisition, analysis, and visualization for your measurement devices.
+Python package for the [naneos particle solutions](https://naneos.ch) measurement devices (Partector 1, Partector 2, Partector 2 Pro). It connects to the devices over USB and Bluetooth Low Energy, delivers the measurements as pandas DataFrames, and can upload them to the naneos IoT service.
 
 # Installation
 
-You can install the `naneos-devices` package using pip. Make sure you have Python 3.11 or higher installed. Open a terminal and run the following command:
+You can install the `naneos-devices` package using pip. Python 3.11 to 3.14 is supported. Open a terminal and run the following command:
 
 ```bash
 pip install naneos-devices
@@ -43,7 +43,10 @@ Clean start/stop APIs make integration trivial.
 ```python
 import time
 
-from naneos.manager import NaneosDeviceManager
+from naneos import NaneosDeviceManager, enable_console_logging
+from naneos.logger import LEVEL_INFO
+
+enable_console_logging(LEVEL_INFO)  # the library is silent by default, see Logging
 
 manager = NaneosDeviceManager(
     use_serial=True,
@@ -93,6 +96,9 @@ print("Interval (s):", manager.get_gathering_interval_seconds())
 Register a queue to receive each gathered snapshot (no uploads required):
 ```python
 import queue
+import time
+
+from naneos import NaneosDeviceManager
 
 out_q: queue.Queue = queue.Queue()
 
@@ -141,9 +147,10 @@ to the root logger like any other library.
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
 # Protobuf
-Use this command to create a py and pyi file from the proto file
+The upload format is defined in `src/naneos/protobuf/protoV1.proto` (shared with the backend, never
+renumber fields). Regenerate the Python module and the stub in that directory with:
 ```bash
-protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto 
+protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto
 ```
 
 # Testing
@@ -153,9 +160,11 @@ The default test run only contains tests that need no hardware:
 uv run pytest
 ```
 
-Tests that need a Partector connected via USB or BLE are marked `hardware` and run with:
+Tests that need a Partector connected via USB or BLE are marked `hardware`, tests that need
+internet access and an IoT token are marked `network`:
 ```bash
 uv run pytest -m hardware
+IOT_GUEST_TOKEN=... uv run pytest -m network
 ```
 
 Testing every supported python version:
@@ -209,7 +218,7 @@ sudo systemctl stop naneos_uploader.service
 # Examples
 The `examples/` folder contains runnable scripts: `demo.py` (device manager with queue hand-off),
 `serial_device.py` (connect to one USB device), `send_commands.py` and `download_iotweb.py`.
-The script the Raspberry Pi service runs is `installers/rp-naneos-uploader/uploader-script.py`.
+The Raspberry Pi service runs the `naneos-uploader` command, implemented in `src/naneos/uploader.py`.
 
 # Ideas for future development
 * P2 bidirectional BLE implementation that allows to send commands to the P2
