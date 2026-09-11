@@ -1,8 +1,11 @@
 import time
 
 import pandas as pd
+import pytest
 
 from naneos.partector_ble.partector_ble_manager import PartectorBleManager
+
+pytestmark = pytest.mark.hardware  # needs a Partector on USB or BLE
 
 
 def test_ble_manager():

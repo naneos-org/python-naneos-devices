@@ -1,31 +1,37 @@
-import os
 import queue
-import signal
 import threading
 import time
+from collections import deque
+from typing import TypeVar
 
 import pandas as pd
 
+from naneos.frames import add_to_existing_naneos_data, sort_and_clean_naneos_data
 from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
-from naneos.logger import LEVEL_WARNING, get_naneos_logger
-from naneos.partector.blueprints._data_structure import (
-    add_to_existing_naneos_data,
-    sort_and_clean_naneos_data,
-)
+from naneos.logger import get_naneos_logger
 from naneos.partector.partector_serial_manager import PartectorSerialManager
 from naneos.partector_ble.partector_ble_manager import PartectorBleManager
 
-logger = get_naneos_logger(__name__, LEVEL_WARNING)
+logger = get_naneos_logger(__name__)
+
+ManagerT = TypeVar("ManagerT", PartectorSerialManager, PartectorBleManager)
 
 
 class NaneosDeviceManager(threading.Thread):
-    """
-    NaneosDeviceManager is a class that manages Naneos devices.
-    It connects and disconnects automatically.
-    """
+    """Connects to every Partector on USB and BLE, gathers their data in snapshots
+    and hands each snapshot to the output queue and / or the naneos upload."""
+
+    # Snapshots whose upload failed are kept and retried on the next upload
+    # tick, oldest first. With the default 30 s interval this covers a network
+    # outage of about 10 minutes; older snapshots are dropped.
+    MAX_PENDING_UPLOADS = 20
 
     def __init__(
-        self, use_serial=True, use_ble=True, upload_active=True, gathering_interval_seconds=30
+        self,
+        use_serial: bool = True,
+        use_ble: bool = True,
+        upload_active: bool = True,
+        gathering_interval_seconds: int = 30,
     ) -> None:
         super().__init__(daemon=True)
         self._use_serial = use_serial
@@ -42,6 +48,9 @@ class NaneosDeviceManager(threading.Thread):
         self._manager_ble: PartectorBleManager | None = None
 
         self._data: dict[int, pd.DataFrame] = {}
+        self._pending_uploads: deque[dict[int, pd.DataFrame]] = deque(
+            maxlen=self.MAX_PENDING_UPLOADS
+        )
 
         self.upload_blocked_devices: list[int | None] = []
 
@@ -110,6 +119,10 @@ class NaneosDeviceManager(threading.Thread):
 
         return self._manager_ble.get_connected_device_strings()
 
+    def get_pending_upload_count(self) -> int:
+        """Number of snapshots waiting to be uploaded, including retries."""
+        return len(self._pending_uploads)
+
     def get_seconds_until_next_upload(self) -> float:
         """
         Returns the number of seconds until the next upload.
@@ -118,42 +131,37 @@ class NaneosDeviceManager(threading.Thread):
         return max(0, self._next_upload_time - time.time())
 
     def _loop_serial_manager(self) -> None:
-        # normal operation
-        if (
-            isinstance(self._manager_serial, PartectorSerialManager)
-            and self._manager_serial.is_alive()
-        ):
+        if self._manager_serial is not None and self._manager_serial.is_alive():
             self.upload_blocked_devices = self._manager_serial.get_gain_test_activating_devices()
-            data_serial = self._manager_serial.get_data()
-            self._data = add_to_existing_naneos_data(self._data, data_serial)
-        # starting
-        if self._manager_serial is None and self._use_serial:
-            logger.info("Starting serial manager...")
-            self._manager_serial = PartectorSerialManager()
-            self._manager_serial.start()
-        # stopping
-        if isinstance(self._manager_serial, PartectorSerialManager) and not self._use_serial:
-            logger.info("Stopping serial manager...")
-            self._manager_serial.stop()
-            self._manager_serial.join()
-            self._manager_serial = None
+            self._data = add_to_existing_naneos_data(self._data, self._manager_serial.get_data())
+
+        self._manager_serial = self._sync_manager(
+            self._manager_serial, self._use_serial, PartectorSerialManager, "serial"
+        )
 
     def _loop_ble_manager(self) -> None:
-        # normal operation
-        if isinstance(self._manager_ble, PartectorBleManager) and self._manager_ble.is_alive():
-            data_ble = self._manager_ble.get_data()
-            self._data = add_to_existing_naneos_data(self._data, data_ble)
-        # starting
-        if self._manager_ble is None and self._use_ble:
-            logger.info("Starting BLE manager...")
-            self._manager_ble = PartectorBleManager()
-            self._manager_ble.start()
-        # stopping
-        if isinstance(self._manager_ble, PartectorBleManager) and not self._use_ble:
-            logger.info("Stopping BLE manager...")
-            self._manager_ble.stop()
-            self._manager_ble.join()
-            self._manager_ble = None
+        if self._manager_ble is not None and self._manager_ble.is_alive():
+            self._data = add_to_existing_naneos_data(self._data, self._manager_ble.get_data())
+
+        self._manager_ble = self._sync_manager(
+            self._manager_ble, self._use_ble, PartectorBleManager, "BLE"
+        )
+
+    @staticmethod
+    def _sync_manager(
+        manager: ManagerT | None, wanted: bool, factory: type[ManagerT], name: str
+    ) -> ManagerT | None:
+        """Starts or stops a sub-manager so that it matches the wanted state."""
+        if manager is None and wanted:
+            logger.info(f"Starting {name} manager...")
+            manager = factory()
+            manager.start()
+        elif manager is not None and not wanted:
+            logger.info(f"Stopping {name} manager...")
+            manager.stop()
+            manager.join()
+            manager = None
+        return manager
 
     def _loop(self) -> None:
         self._next_upload_time = time.time() + self._gathering_interval_seconds
@@ -180,150 +188,54 @@ class NaneosDeviceManager(threading.Thread):
                     upload_data = sort_and_clean_naneos_data(self._data, serial_connected_sns)
                     self._data = {}
 
-                    if isinstance(self._out_queue, queue.Queue):
-                        self._out_queue.put(upload_data)
-
-                    if self._upload_active:
-                        uploader = NaneosUploadThread(
-                            upload_data,
-                            callback=lambda success: logger.info(f"Upload success: {success}"),
-                        )
-                        uploader.start()
-                        uploader.join()
+                    self._publish_snapshot(upload_data)
 
             except Exception as e:
                 logger.exception(f"DeviceManager loop exception: {e}")
 
+    def _publish_snapshot(self, snapshot: dict[int, pd.DataFrame]) -> None:
+        """Hand a gathered snapshot to the output queue and the uploader."""
+        if isinstance(self._out_queue, queue.Queue):
+            self._out_queue.put(snapshot)
 
-def minimal_example() -> None:
-    manager = NaneosDeviceManager(
-        use_serial=True,
-        use_ble=True,
-        upload_active=False,
-        gathering_interval_seconds=10,  # clamped to [10, 600]
-    )
-    manager.start()
+        if not self._upload_active:
+            return
 
-    try:
-        while True:
-            # Sleep exactly until the next publish window
-            remaining = manager.get_seconds_until_next_upload()
-            print(f"Next upload in: {remaining:.0f}s")
-            time.sleep(remaining + 1)
+        if snapshot:
+            self._pending_uploads.append(snapshot)
+        self._upload_pending()
 
-            print("Serial:", manager.get_connected_serial_devices())
-            print("BLE   :", manager.get_connected_ble_devices())
-            print()
-    except KeyboardInterrupt:
-        pass
+    def _upload_pending(self) -> None:
+        """Upload queued snapshots oldest first; stop at the first failure.
 
-    manager.stop()
-    manager.join()
-    print("Stopped.")
-
-
-def queue_example() -> None:
-    import queue
-
-    out_q: queue.Queue = queue.Queue()
-
-    manager = NaneosDeviceManager(
-        upload_active=True,
-        gathering_interval_seconds=10,
-        use_ble=True,
-        use_serial=True,
-    )
-    manager.register_output_queue(out_q)
-    manager.start()
-
-    try:
-        while True:
-            # Wait until a snapshot is ready, then pull all pending ones
-            time.sleep(manager.get_seconds_until_next_upload() + 1)
-
-            while not out_q.empty():
-                snapshot = out_q.get()
-                # snapshot: dict[int, pandas.DataFrame] keyed by device serial
-                print(f"Received snapshot for {len(snapshot)} device(s)")
-                for serial, df in snapshot.items():
-                    print(f"  - {serial}: {len(df)} rows, ldsa: {df['ldsa'].mean():.1f}")
-                    # >>> Your processing here (store, analyze, forward, etc.)
-                    # print(df.dropna(axis=1, how="all"))
-    except KeyboardInterrupt:
-        pass
-
-    manager.stop()
-    manager.join()
-
-
-def raise_keyboard_interrupt():
-    os.kill(os.getpid(), signal.SIGINT)
-
-
-def test_naneos_device_manager():
-    timer = threading.Timer(300, raise_keyboard_interrupt)  # trigger keyboard interrupt after 20s
-    timer.start()
-
-    manager = NaneosDeviceManager()
-    manager.start()
-
-    try:
-        while True:
-            time.sleep(1)
-            print(f"Seconds until next upload: {manager.get_seconds_until_next_upload():.0f}")
-            print(manager.get_connected_serial_devices())
-            print(manager.get_connected_ble_devices())
-            print()
-    except KeyboardInterrupt:
-        manager.stop()
-        manager.join()
-        print("NaneosDeviceManager stopped.")
-
-    timer.cancel()
-
-
-def ble_connect_example() -> None:
-    manager = NaneosDeviceManager(
-        use_serial=False,
-        use_ble=True,
-        upload_active=False,
-        gathering_interval_seconds=10,  # clamped to [10, 600]
-    )
-    manager.start()
-
-    try:
-        while True:
-            # check if 8617 is connected
-            devices = manager.get_connected_ble_devices()
-            if "SN8617" in devices:
-                print("8617 is connected")
-                manager.stop()
-                manager.join()
-                print("Stopped.")
-
-                # restart
-                manager = NaneosDeviceManager(
-                    use_serial=False,
-                    use_ble=True,
-                    upload_active=False,
-                    gathering_interval_seconds=10,  # clamped to [10, 600]
+        The point timestamps are absolute, so a snapshot uploaded a few
+        intervals late lands at the right time on the server.
+        """
+        while self._pending_uploads:
+            outcome = self._try_upload(self._pending_uploads[0])
+            if outcome == "retry":
+                logger.warning(
+                    f"Upload failed, keeping {len(self._pending_uploads)} snapshot(s) for retry."
                 )
-                manager.start()
-                print("Restarted.")
+                return
+            self._pending_uploads.popleft()
 
-    except KeyboardInterrupt:
-        pass
+    @staticmethod
+    def _try_upload(snapshot: dict[int, pd.DataFrame]) -> str:
+        """Returns "ok", "retry" (network / server problem) or "drop" (rejected)."""
+        try:
+            response = NaneosUploadThread.upload(snapshot)
+        except Exception as e:
+            logger.warning(f"Upload failed: {e}")
+            return "retry"
 
-    manager.stop()
-    manager.join()
-    print("Stopped.")
+        if response.status_code == 200:
+            logger.info("Upload success: True")
+            return "ok"
+        if response.status_code >= 500:
+            logger.warning(f"Upload failed with HTTP {response.status_code}, will retry.")
+            return "retry"
 
-
-if __name__ == "__main__":
-    # minimal_example()
-    queue_example()
-    # test_naneos_device_manager()
-    # ble_connect_example()
-
-    # df = pd.read_pickle("partector_data_sn24.pkl")
-    # print(df)
+        # A 4xx will not get better by resending the same payload.
+        logger.error(f"Upload rejected with HTTP {response.status_code}, dropping snapshot.")
+        return "drop"

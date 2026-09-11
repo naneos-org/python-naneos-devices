@@ -10,13 +10,12 @@ from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from bleak.exc import BleakDBusError
 
-from naneos.logger import LEVEL_WARNING, get_naneos_logger
-from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
-from naneos.partector_ble.decoder.partector_ble_decoder_aux import PartectorBleDecoderAux
-from naneos.partector_ble.decoder.partector_ble_decoder_std import PartectorBleDecoderStd
+from naneos.data_point import ConnectionType, NaneosDeviceDataPoint
+from naneos.logger import get_naneos_logger
+from naneos.partector_ble.decoders import PartectorBleDecoderAux, PartectorBleDecoderStd
 from naneos.partector_ble.partector_ble_decoder import PartectorBleDecoder
 
-logger = get_naneos_logger(__name__, LEVEL_WARNING)
+logger = get_naneos_logger(__name__)
 
 
 class PartectorBleScanner:
@@ -227,7 +226,7 @@ class PartectorBleScanner:
         if adv_data[1]:
             decoded = PartectorBleDecoderAux.decode(adv_data[1], data_structure=decoded)
         decoded.unix_timestamp = int(time.time()) * 1000
-        decoded.connection_type = NaneosDeviceDataPoint.CONN_TYPE_ADVERTISEMENT
+        decoded.connection_type = ConnectionType.ADVERTISEMENT
 
         # Non-blocking put with overflow handling: drop oldest item if queue is full
         # This prevents callbacks from being delayed by queue operations

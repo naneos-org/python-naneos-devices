@@ -1,6 +1,10 @@
 import time
 
+from naneos.logger import LEVEL_INFO, enable_console_logging
 from naneos.manager import NaneosDeviceManager
+
+# The library is silent by default; this shows connects, uploads and warnings.
+enable_console_logging(LEVEL_INFO)
 
 
 def minimal_example() -> None:
@@ -52,9 +56,8 @@ def queue_example() -> None:
                 snapshot = out_q.get()
                 print(f"Received snapshot for {len(snapshot)} device(s)")
                 for serial, df in snapshot.items():
-                    print(
-                        f"  - {serial}: {len(df)} rows, corona_voltage: {df['corona_voltage'].mean():.1f}"
-                    )
+                    corona = df["corona_voltage"].mean()
+                    print(f"  - {serial}: {len(df)} rows, corona_voltage: {corona:.1f}")
     except KeyboardInterrupt:
         pass
 

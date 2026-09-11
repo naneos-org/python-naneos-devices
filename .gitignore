@@ -15,5 +15,3 @@ __pycache__
 **/.env
 **/.coverage-reports/
 naneos-devices.log
-
-tests/demo_martin.py

@@ -1,10 +1,8 @@
-from typing import Optional
-
 from bleak.backends.scanner import AdvertisementData
 
-from naneos.logger import LEVEL_WARNING, get_naneos_logger
+from naneos.logger import get_naneos_logger
 
-logger = get_naneos_logger(__name__, LEVEL_WARNING)
+logger = get_naneos_logger(__name__)
 
 
 class PartectorBleDecoder:
@@ -17,14 +15,14 @@ class PartectorBleDecoder:
     # One frame: protocol byte, 20 payload bytes, protocol byte.
     FRAME_LENGTH = 22
 
-    EXPECTED_PROTOCOL_BYTE_1 = "X".encode("utf-8")[0]
+    EXPECTED_PROTOCOL_BYTE_1 = b"X"[0]
     EXPECTED_PROTOCOL_BYTE_1_POSITION = 0
-    EXPECTED_PROTOCOL_BYTE_2 = "F".encode("utf-8")[0]
+    EXPECTED_PROTOCOL_BYTE_2 = b"F"[0]
     EXPECTED_PROTOCOL_BYTE_2_POSITION = 21
 
-    EXPECTED_PROTOCOL_BYTE_3 = "Y".encode("utf-8")[0]
+    EXPECTED_PROTOCOL_BYTE_3 = b"Y"[0]
     EXPECTED_PROTOCOL_BYTE_3_POSITION = 22
-    EXPECTED_PROTOCOL_BYTE_4 = "F".encode("utf-8")[0]
+    EXPECTED_PROTOCOL_BYTE_4 = b"F"[0]
     EXPECTED_PROTOCOL_BYTE_4_POSITION = 43
 
     SLICE_ADVERTISEMENT = slice(1, 21)
@@ -34,7 +32,7 @@ class PartectorBleDecoder:
     @classmethod
     def decode_partector_advertisement(
         cls, adv: AdvertisementData
-    ) -> Optional[tuple[bytes, Optional[bytes]]]:
+    ) -> tuple[bytes, bytes | None] | None:
         """
         Decode the standard characteristic data from the Partector device.
         """
@@ -49,8 +47,8 @@ class PartectorBleDecoder:
     def _get_adv_bytes(cls, adv: AdvertisementData) -> bytes:
         """
         Returns the full advertisement data from the Partector device.
-        We are violating the BLE standard here by using the manufacturer data field for our own purposes.
-        This is not a good practice, but it was the only way to put more data into the advertisement.
+        We are violating the BLE standard here by using the manufacturer data field for our
+        own purposes. Not good practice, but the only way to put more data into the advertisement.
 
         Because the two protocol bytes end up in the manufacturer id, almost every
         frame arrives under a different id. BlueZ merges those into one map and
@@ -117,7 +115,7 @@ class PartectorBleDecoder:
         return True
 
     @classmethod
-    def _remove_protocol_bytes(cls, data: bytes) -> tuple[bytes, Optional[bytes]]:
+    def _remove_protocol_bytes(cls, data: bytes) -> tuple[bytes, bytes | None]:
         """
         Remove the protocol bytes from the data and returns the advertisement data and the scan
         response data in a tuple. The scan response data is optional and may be None if not present.

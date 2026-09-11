@@ -1,56 +1,39 @@
-# import datetime as dt
-# import os
+"""Tests against the naneos IoT service. They need internet access and a token,
+so they are marked `network` and skipped by default: `uv run pytest -m network`."""
 
-# import pandas as pd
+import datetime as dt
+import os
+from pathlib import Path
 
-# from naneos.iotweb import download_from_iotweb
-# from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
+import pandas as pd
+import pytest
 
+from naneos.iotweb import NaneosUploadThread, download_from_iotweb
 
-# def test_download_8134() -> None:
-#     token: str | None = os.getenv("IOT_GUEST_TOKEN", None)
-#     if token is None:
-#         raise ValueError("No token found in your environment")
+pytestmark = pytest.mark.network
 
-#     # use local timezone for start
-#     start = dt.datetime(2025, 4, 1)
-#     stop = dt.datetime(2025, 4, 7)
-#     serial_number = "8134"
-#     name = "iot_guest"
-
-#     df: pd.DataFrame = download_from_iotweb(name, serial_number, start, stop, token)
-#     assert len(df) == 206545
+DATA_DIR = Path(__file__).parent / "data"
 
 
-# callback_upload_success = {"result": False}
+def test_download_8134() -> None:
+    token = os.getenv("IOT_GUEST_TOKEN")
+    if token is None:
+        pytest.skip("IOT_GUEST_TOKEN is not set")
+
+    df = download_from_iotweb(
+        "iot_guest", "8134", dt.datetime(2025, 4, 1), dt.datetime(2025, 4, 7), token
+    )
+
+    assert len(df) == 206545
 
 
-# def callback_upload(ret: bool) -> None:
-#     callback_upload_success["result"] = ret
+def test_upload_recorded_frames() -> None:
+    data = {
+        777: pd.read_pickle(DATA_DIR / "p2_pro_test_data.pkl"),
+        666: pd.read_pickle(DATA_DIR / "p2_test_data.pkl"),
+    }
+    assert all(not df.empty for df in data.values())
 
+    response = NaneosUploadThread.upload(data)
 
-# def test_upload() -> None:
-#     data_dir = os.path.join(os.path.dirname(__file__), "data")
-
-#     df_p2 = pd.read_pickle(os.path.join(data_dir, "p2_test_data.pkl"))
-#     assert not df_p2.empty, "DataFrame is empty or not loaded correctly"
-
-#     df_p2_pro = pd.read_pickle(os.path.join(data_dir, "p2_pro_test_data.pkl"))
-#     assert not df_p2_pro.empty, "DataFrame is empty or not loaded correctly"
-
-#     data = [
-#         (int(777), str("P2pro"), df_p2_pro),
-#         (int(666), str("P2"), df_p2),
-#     ]
-
-#     thread = NaneosUploadThread(data, callback_upload)
-
-#     thread.start()
-#     thread.join()
-
-#     assert callback_upload_success["result"], "Upload failed, callback returned False"
-
-
-# if __name__ == "__main__":
-#     # test_download_8134()
-#     test_upload()
+    assert response.status_code == 200

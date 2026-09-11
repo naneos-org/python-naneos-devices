@@ -1,0 +1,127 @@
+"""Hardware-free tests for the reconnect logic of PartectorBleConnection.
+
+A fake BleakClient is injected through _new_client(), so the watchdog, the
+connect attempt and the error handling run without an adapter.
+"""
+
+import asyncio
+import time
+
+import pytest
+from bleak.backends.device import BLEDevice
+
+from naneos.partector_ble import partector_ble_connection as module
+from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
+
+
+class _FakeServices:
+    def get_service(self, uuid):
+        return object()
+
+    def get_characteristic(self, uuid):
+        return object()
+
+
+class _FakeClient:
+    def __init__(self) -> None:
+        self.is_connected = False
+        self.services = _FakeServices()
+        self.calls: list[str] = []
+
+    async def connect(self, timeout=None):
+        self.calls.append("connect")
+        self.is_connected = True
+
+    async def start_notify(self, uuid, callback):
+        self.calls.append(f"notify:{uuid[6:8]}")
+
+    async def stop_notify(self, uuid):
+        self.calls.append(f"stop:{uuid[6:8]}")
+
+    async def disconnect(self):
+        self.calls.append("disconnect")
+        self.is_connected = False
+
+
+@pytest.fixture
+def connection(monkeypatch) -> PartectorBleConnection:
+    monkeypatch.setattr(PartectorBleConnection, "_new_client", lambda self: _FakeClient())
+
+    async def no_sleep(seconds):  # the error handler pauses 0.5 s per failure
+        return None
+
+    monkeypatch.setattr(module.asyncio, "sleep", no_sleep)
+
+    loop = asyncio.new_event_loop()
+    device = BLEDevice("AA:BB:CC:DD:EE:FF", "P2", None)
+    conn = PartectorBleConnection(
+        device, loop, 8617, PartectorBleConnection.create_connection_queue()
+    )
+    yield conn
+    loop.close()
+
+
+def test_connect_attempt_subscribes_and_resets_the_failure_counters(connection) -> None:
+    connection._reconnect_attempt = 3
+    connection._gatt_error_count = 2
+
+    asyncio.run(connection._try_connect())
+
+    client = connection._client
+    assert client.is_connected
+    assert client.calls == ["connect", "notify:80", "notify:81", "notify:84"]
+    assert connection._reconnect_attempt == 0
+    assert connection._gatt_error_count == 0
+
+
+def test_watchdog_drops_a_link_reported_dead_by_the_callback(connection) -> None:
+    asyncio.run(connection._try_connect())
+    connection._disconnect_callback(connection._client)
+
+    dropped = asyncio.run(connection._watchdog())
+
+    assert dropped
+    assert not connection._client.is_connected
+    assert connection._backoff_remaining == 5  # first backoff step
+    assert connection._disconnected_flag is False
+
+
+def test_watchdog_drops_a_link_that_stopped_sending(connection) -> None:
+    asyncio.run(connection._try_connect())
+    assert not asyncio.run(connection._watchdog())  # fresh link, nothing to do
+
+    connection._last_aux_data_ts = time.time() - connection.DATA_TIMEOUT_SECONDS - 1
+    assert asyncio.run(connection._watchdog())
+    assert not connection._client.is_connected
+    assert "disconnect" in connection._client.calls
+
+
+def test_connect_errors_back_off_and_recreate_the_client_when_needed(connection) -> None:
+    first_client = connection._client
+
+    asyncio.run(connection._handle_connect_error(TimeoutError()))
+    assert connection._backoff_remaining == 5
+    assert connection._client is first_client
+
+    asyncio.run(connection._handle_connect_error(RuntimeError("GATT failure")))
+    assert connection._gatt_error_count == 1
+    assert connection._client is first_client  # recreated only from the second GATT error
+
+    asyncio.run(connection._handle_connect_error(RuntimeError("device unreachable")))
+    assert connection._gatt_error_count == 2
+    assert connection._client is not first_client
+
+    recreated = connection._client
+    asyncio.run(connection._handle_connect_error(RuntimeError("something else")))
+    assert connection._client is not recreated  # unknown errors always start fresh
+    assert connection._backoff_remaining == 30  # capped at MAX_BACKOFF_SECONDS
+
+
+def test_disconnect_stops_every_notification_once(connection) -> None:
+    asyncio.run(connection._try_connect())
+
+    asyncio.run(connection._disconnect_gracefully())
+
+    assert connection._client.calls[-4:] == ["stop:80", "stop:81", "stop:84", "disconnect"]
+    asyncio.run(connection._disconnect_gracefully())  # already down: nothing more
+    assert connection._client.calls.count("disconnect") == 1

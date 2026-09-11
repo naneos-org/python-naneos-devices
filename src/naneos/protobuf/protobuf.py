@@ -1,17 +1,81 @@
-from typing import Optional
+"""DataFrame -> protobuf conversion for the upload."""
 
 import pandas as pd
 
 import naneos.protobuf.protoV1_pb2 as pbScheme
-from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
+from naneos.frames import device_type_of
+from naneos.logger import get_naneos_logger
+
+logger = get_naneos_logger(__name__)
+
+# (frame column, DevicePoint field, scale). The backend stores integers, so
+# each value is multiplied by the scale of its field (see protoV1.proto) and
+# rounded. Columns missing from a row leave the optional field unset.
+DEVICE_POINT_FIELDS: tuple[tuple[str, str, float], ...] = (
+    ("device_status", "device_status", 1),
+    ("firmware_version", "firmware_version", 1),
+    ("ldsa", "ldsa", 100),
+    ("particle_number_concentration", "particle_number_concentration", 1),
+    ("average_particle_diameter", "average_particle_diameter", 1),
+    ("particle_mass", "particle_mass", 100),
+    ("particle_surface", "particle_surface", 100),
+    ("diffusion_current", "diffusion_current", 100),
+    ("diffusion_current_offset", "diffusion_current_offset", 100),
+    ("diffusion_current_stddev", "diffusion_current_stddev", 100),
+    ("diffusion_current_delay_on", "diffusion_current_delay_on", 1),
+    ("diffusion_current_delay_off", "diffusion_current_delay_off", 1),
+    ("corona_voltage", "corona_voltage", 1),
+    ("electrometer_1_amplitude", "electrometer_1_offset", 10),
+    ("electrometer_2_amplitude", "electrometer_2_offset", 10),
+    ("electrometer_1_gain", "electrometer_1_gain", 100),
+    ("electrometer_2_gain", "electrometer_2_gain", 100),
+    ("temperature", "temperature", 1),
+    ("relative_humidity", "relative_humidity", 1),
+    ("flow_from_dp", "flow", 1000),
+    ("deposition_voltage", "deposition_voltage", 1),
+    ("battery_voltage", "battery_voltage", 100),
+    ("ambient_pressure", "ambient_pressure", 10),
+    ("channel_pressure", "channel_pressure", 10),
+    ("differential_pressure", "differential_pressure", 10),
+    ("pump_voltage", "pump_voltage", 100),
+    ("pump_current", "pump_current", 1000),
+    ("pump_pwm", "pump_pwm", 1),
+    ("particle_number_10nm", "particle_number_10nm", 1),
+    ("particle_number_16nm", "particle_number_16nm", 1),
+    ("particle_number_26nm", "particle_number_26nm", 1),
+    ("particle_number_43nm", "particle_number_43nm", 1),
+    ("particle_number_70nm", "particle_number_70nm", 1),
+    ("particle_number_114nm", "particle_number_114nm", 1),
+    ("particle_number_185nm", "particle_number_185nm", 1),
+    ("particle_number_300nm", "particle_number_300nm", 1),
+    ("sigma_size_dist", "sigma_size_dist", 100),
+    ("steps_inversion", "steps_inversion", 1),
+    ("current_dist_0", "current_dist_0", 100_000),
+    ("current_dist_1", "current_dist_1", 100_000),
+    ("current_dist_2", "current_dist_2", 100_000),
+    ("current_dist_3", "current_dist_3", 100_000),
+    ("current_dist_4", "current_dist_4", 100_000),
+    ("supply_voltage_5V", "supply_voltage_5V", 10),
+    ("positive_voltage_3V3", "positive_voltage_3V3", 10),
+    ("negative_voltage_3V3", "negative_voltage_3V3", 10),
+    ("usb_cc_voltage", "usb_cc_voltage", 10),
+)
+
+# Unsigned on the wire; a negative reading is clamped instead of wrapping.
+NON_NEGATIVE_COLUMNS = frozenset(
+    {"diffusion_current", "diffusion_current_delay_on", "diffusion_current_delay_off"}
+)
+
+# Not implemented in the protobuf schema yet: diffusion_current_average,
+# diffusion_current_max, corona_voltage_onset.
 
 
 def create_combined_entry(
     devices: list[pbScheme.Device],
     abs_timestamp: int,
-    gateway_points: Optional[list[pbScheme.GatewayPointLegacy]] = None,
-    position_points: Optional[list[pbScheme.PositionPoint]] = None,
-    wind_points: Optional[list[pbScheme.WindPoint]] = None,
+    gateway_points: list[pbScheme.GatewayPointLegacy] | None = None,
+    position_points: list[pbScheme.PositionPoint] | None = None,
+    wind_points: list[pbScheme.WindPoint] | None = None,
 ) -> pbScheme.CombinedData:
     combined = pbScheme.CombinedData()
     combined.abs_timestamp = abs_timestamp
@@ -31,156 +95,37 @@ def create_combined_entry(
 
 
 def create_proto_device(sn: int, abs_time: int, df: pd.DataFrame) -> pbScheme.Device:
+    """One Device message from a frame indexed by unix seconds."""
     device = pbScheme.Device()
-    device.type = (
-        int(df["device_type"].iloc[-1])
-        if "device_type" in df
-        else NaneosDeviceDataPoint.DEV_TYPE_P2
-    )
+    device.type = int(device_type_of(df))
     device.serial_number = sn
 
-    device_points = df.apply(_create_device_point, axis=1, abs_time=abs_time).to_list()  # type: ignore
-    device_points = [x for x in device_points if x is not None]
-
-    device.device_points.extend(device_points)
+    device_points = [_create_device_point(row, abs_time) for _, row in df.iterrows()]
+    device.device_points.extend(point for point in device_points if point is not None)
 
     return device
 
 
-def _create_device_point(ser: pd.Series, abs_time: int) -> Optional[pbScheme.DevicePoint]:
+def _create_device_point(ser: pd.Series, abs_time: int) -> pbScheme.DevicePoint | None:
     try:
-        device_point = pbScheme.DevicePoint()
-
         ser = ser.dropna()
 
-        # mandatory fields
-        if isinstance(ser.name, int):
-            timestamp = ser.name
-        else:
+        if not isinstance(ser.name, int):
             raise ValueError("Timestamp is not an int!")
-        device_point.timestamp = abs_time - timestamp
-        if "device_status" in ser:
-            device_point.device_status = int(ser["device_status"])
-        if "firmware_version" in ser:
-            device_point.firmware_version = int(ser["firmware_version"])
 
-        if "ldsa" in ser:
-            device_point.ldsa = int(ser["ldsa"] * 100.0)
-        if "particle_number_concentration" in ser:
-            device_point.particle_number_concentration = int(
-                round(ser["particle_number_concentration"])
-            )
-        if "average_particle_diameter" in ser:
-            device_point.average_particle_diameter = int(round(ser["average_particle_diameter"]))
-        if "particle_mass" in ser:
-            device_point.particle_mass = int(round(ser["particle_mass"] * 100.0))
-        if "particle_surface" in ser:
-            device_point.particle_surface = int(round(ser["particle_surface"] * 100.0))
-        if "diffusion_current" in ser:
-            idiff_tmp = ser["diffusion_current"] if ser["diffusion_current"] > 0 else 0
-            device_point.diffusion_current = int(round(idiff_tmp * 100.0))
-        if "diffusion_current_offset" in ser:
-            device_point.diffusion_current_offset = int(
-                round(ser["diffusion_current_offset"] * 100.0)
-            )
-        if "diffusion_current_stddev" in ser:
-            device_point.diffusion_current_stddev = int(
-                round(ser["diffusion_current_stddev"] * 100.0)
-            )
-        # TODO: implement in protobuf
-        # if "diffusion_current_average" in ser:
-        #     device_point.diffusion_current_average = int(
-        #         round(ser["diffusion_current_average"] * 100.0)
-        #     )
-        # if "diffusion_current_max" in ser:
-        #     device_point.diffusion_current_max = int(round(ser["diffusion_current_max"] * 100.0))
-        if "diffusion_current_delay_on" in ser:
-            delay_on_tmp = max(ser["diffusion_current_delay_on"], 0)
-            device_point.diffusion_current_delay_on = int(round(delay_on_tmp))
-        if "diffusion_current_delay_off" in ser:
-            delay_off_tmp = max(ser["diffusion_current_delay_off"], 0)
-            device_point.diffusion_current_delay_off = int(round(delay_off_tmp))
-        if "corona_voltage" in ser:
-            device_point.corona_voltage = int(round(ser["corona_voltage"]))
-        # TODO: implement in protobuf
-        # if "corona_voltage_onset" in ser:
-        #     device_point.corona_voltage_onset = int(round(ser["corona_voltage_onset"]))
-        if "electrometer_1_amplitude" in ser:
-            device_point.electrometer_1_offset = int(round(ser["electrometer_1_amplitude"] * 10.0))
-        if "electrometer_2_amplitude" in ser:
-            device_point.electrometer_2_offset = int(round(ser["electrometer_2_amplitude"] * 10.0))
-        if "electrometer_1_gain" in ser:
-            device_point.electrometer_1_gain = int(round(ser["electrometer_1_gain"] * 100.0))
-        if "electrometer_2_gain" in ser:
-            device_point.electrometer_2_gain = int(round(ser["electrometer_2_gain"] * 100.0))
-        if "temperature" in ser:
-            device_point.temperature = int(round(ser["temperature"]))
-        if "relative_humidity" in ser:
-            device_point.relative_humidity = int(round(ser["relative_humidity"]))
-        if "flow_from_dp" in ser:
-            device_point.flow = int(round(ser["flow_from_dp"] * 1000.0))
-        if "deposition_voltage" in ser:
-            device_point.deposition_voltage = int(round(ser["deposition_voltage"]))
-        if "battery_voltage" in ser:
-            device_point.battery_voltage = int(round(ser["battery_voltage"] * 100.0))
-        if "ambient_pressure" in ser:
-            device_point.ambient_pressure = int(round(ser["ambient_pressure"] * 10.0))
-        if "channel_pressure" in ser:
-            device_point.channel_pressure = int(round(ser["channel_pressure"] * 10.0))
-        if "differential_pressure" in ser:
-            device_point.differential_pressure = int(round(ser["differential_pressure"] * 10.0))
-        if "pump_voltage" in ser:
-            device_point.pump_voltage = int(round(ser["pump_voltage"] * 100.0))
-        if "pump_current" in ser:
-            device_point.pump_current = int(round(ser["pump_current"] * 1000.0))
-        if "pump_pwm" in ser:
-            device_point.pump_pwm = int(round(ser["pump_pwm"]))
-        if "particle_number_10nm" in ser:
-            device_point.particle_number_10nm = int(round(ser["particle_number_10nm"]))
-        if "particle_number_16nm" in ser:
-            device_point.particle_number_16nm = int(round(ser["particle_number_16nm"]))
-        if "particle_number_26nm" in ser:
-            device_point.particle_number_26nm = int(round(ser["particle_number_26nm"]))
-        if "particle_number_43nm" in ser:
-            device_point.particle_number_43nm = int(round(ser["particle_number_43nm"]))
-        if "particle_number_70nm" in ser:
-            device_point.particle_number_70nm = int(round(ser["particle_number_70nm"]))
-        if "particle_number_114nm" in ser:
-            device_point.particle_number_114nm = int(round(ser["particle_number_114nm"]))
-        if "particle_number_185nm" in ser:
-            device_point.particle_number_185nm = int(round(ser["particle_number_185nm"]))
-        if "particle_number_300nm" in ser:
-            device_point.particle_number_300nm = int(round(ser["particle_number_300nm"]))
-        if "sigma_size_dist" in ser:
-            device_point.sigma_size_dist = int(round(ser["sigma_size_dist"] * 100.0))
-        if "steps_inversion" in ser:
-            device_point.steps_inversion = int(round(ser["steps_inversion"]))
-        if "current_dist_0" in ser:
-            device_point.current_dist_0 = int(round(ser["current_dist_0"] * 100000.0))
-        if "current_dist_1" in ser:
-            device_point.current_dist_1 = int(round(ser["current_dist_1"] * 100000.0))
-        if "current_dist_2" in ser:
-            device_point.current_dist_2 = int(round(ser["current_dist_2"] * 100000.0))
-        if "current_dist_3" in ser:
-            device_point.current_dist_3 = int(round(ser["current_dist_3"] * 100000.0))
-        if "current_dist_4" in ser:
-            device_point.current_dist_4 = int(round(ser["current_dist_4"] * 100000.0))
+        device_point = pbScheme.DevicePoint()
+        device_point.timestamp = abs_time - ser.name
 
-        if "supply_voltage_5V" in ser:
-            device_point.supply_voltage_5V = int(round(ser["supply_voltage_5V"] * 10.0))
-        if "positive_voltage_3V3" in ser:
-            device_point.positive_voltage_3V3 = int(round(ser["positive_voltage_3V3"] * 10.0))
-        if "negative_voltage_3V3" in ser:
-            device_point.negative_voltage_3V3 = int(round(ser["negative_voltage_3V3"] * 10.0))
-        if " usb_cc_voltage" in ser:
-            device_point.usb_cc_voltage = int(round(ser[" usb_cc_voltage"] * 10.0))
-
-        # Needed for the garagenbox
-        if "cs_status" in ser:
-            device_point.cs_status = int(ser["cs_status"])
+        for column, field, scale in DEVICE_POINT_FIELDS:
+            if column not in ser:
+                continue
+            value = ser[column]
+            if column in NON_NEGATIVE_COLUMNS:
+                value = max(value, 0)
+            setattr(device_point, field, int(round(value * scale)))
 
     except Exception as e:
-        print(f"Error in _create_device_Point: {e}")
+        logger.warning(f"Could not convert a data point for upload: {e}")
         return None
 
     return device_point

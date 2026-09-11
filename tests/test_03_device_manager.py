@@ -7,6 +7,8 @@ import pytest
 
 from naneos.manager import NaneosDeviceManager
 
+pytestmark = pytest.mark.hardware  # needs a Partector on USB or BLE
+
 
 def raise_keyboard_interrupt():
     os.kill(os.getpid(), signal.SIGINT)

@@ -19,7 +19,7 @@ This repository contains a collection of Python scripts and utilities for our [n
 
 # Installation
 
-You can install the `naneos-devices` package using pip. Make sure you have Python 3.10 or higher installed. Open a terminal and run the following command:
+You can install the `naneos-devices` package using pip. Make sure you have Python 3.11 or higher installed. Open a terminal and run the following command:
 
 ```bash
 pip install naneos-devices
@@ -49,7 +49,7 @@ manager = NaneosDeviceManager(
     use_serial=True,
     use_ble=True,
     upload_active=True,
-    gathering_interval_seconds=30 # clamped to [10, 600]
+    gathering_interval_seconds=30,  # clamped to [10, 600]
 )
 manager.start()
 
@@ -73,15 +73,15 @@ print("Stopped.")
 ### Runtime Controls (toggle anytime during execution)
 ```python
 # Turn Serial on/off during runtime
-manager.use_serial_connections(True)   # or False
+manager.use_serial_connections(True)  # or False
 print("Serial enabled:", manager.get_serial_connection_status())
 
 # Turn BLE on/off during runtime
-manager.use_ble_connections(False)     # or True
+manager.use_ble_connections(False)  # or True
 print("BLE enabled:", manager.get_ble_connection_status())
 
 # Enable/disable uploads on the fly
-manager.set_upload_status(False)       # keep gathering, but don't upload
+manager.set_upload_status(False)  # keep gathering, but don't upload
 print("Upload active:", manager.get_upload_status())
 
 # Update the gathering interval at runtime (10–600 s)
@@ -97,8 +97,8 @@ import queue
 out_q: queue.Queue = queue.Queue()
 
 manager = NaneosDeviceManager(
-    upload_active=False,              # we'll handle data ourselves
-    gathering_interval_seconds=15
+    upload_active=False,  # we'll handle data ourselves
+    gathering_interval_seconds=15,
 )
 manager.register_output_queue(out_q)
 manager.start()
@@ -124,6 +124,18 @@ manager.join()
 
 Make sure to modify the code according to your specific requirements. Refer to the documentation and comments within the code for detailed explanations and usage instructions.
 
+# Logging
+The package follows the usual library convention: it logs to loggers below `naneos` and prints
+nothing unless the application configures logging. To see what the managers are doing:
+```python
+from naneos.logger import LEVEL_INFO, enable_console_logging, enable_file_logging
+
+enable_console_logging(LEVEL_INFO)  # coloured output on stderr
+enable_file_logging("logs/", LEVEL_INFO)  # appends to logs/naneos-devices.log
+```
+Applications that configure `logging` themselves need neither; the `naneos` logger propagates
+to the root logger like any other library.
+
 # Documentation
 
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
@@ -136,9 +148,14 @@ protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto
 
 # Testing
 I recommend working with uv.
-Testing with the local python venv in vscode GUI or with:
+The default test run only contains tests that need no hardware:
 ```bash
-uv run --env-file .env pytest
+uv run pytest
+```
+
+Tests that need a Partector connected via USB or BLE are marked `hardware` and run with:
+```bash
+uv run pytest -m hardware
 ```
 
 Testing every supported python version:
@@ -146,52 +163,69 @@ Testing every supported python version:
 nox -s tests
 ```
 
+Lint, format and type checks (also run in CI):
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+```
+
 # Building executables
-Sometimes you want to build an executable for a customer with you custom script.
+Sometimes you want to build an executable for a customer with your custom script.
 The build must happen on the same OS as the target OS.
 For example if you want to build an executable for windows you need to build it on Windows.
 
 ```bash
-pyinstaller demo/p1UploadTool.py  --console --noconfirm --clean --onefile
+pyinstaller examples/demo.py --console --noconfirm --clean --onefile
 ```
 
-# Easy installation on Raspberry Pi
-Before running the installation script, make sure your Raspberry Pi is set up with Raspberry Pi OS.
-You can copy the operating system to an SD card using the official Raspberry Pi Imager.
-It does not matter whether you install it headless or with a display.
-
-Download the Imager here: https://www.raspberrypi.com/software/
-
-This script automatically downloads all required files for the uploader, makes the installer executable, and runs it.
-It sets up a Python virtual environment, installs the python-naneos-devices package, and creates a systemd service that starts automatically on boot.
+# Raspberry Pi as an always-on uploader
+Flash Raspberry Pi OS (Bookworm or newer) with the official [Raspberry Pi Imager](https://www.raspberrypi.com/software/),
+headless or with a display, and run the installer on the Pi:
 
 ```bash
-mkdir tmp_naneos \
-&& cd tmp_naneos \
-&& curl -L https://api.github.com/repos/naneos-org/python-naneos-devices/contents/installers/rp-naneos-uploader/?ref=main \
-     -H "Accept: application/vnd.github.v3+json" \
-     | grep download_url \
-     | cut -d '"' -f 4 \
-     | wget -i - \
-&& sudo chmod +x install.sh \
-&& sudo ./install.sh \
-&& cd .. \
-&& sudo rm -rf tmp_naneos
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash
 ```
 
-After installation, the uploader runs automatically in the background and will restart after every reboot.
+It creates a virtual environment in `~/naneos-uploader`, installs the package from the `master`
+branch, and sets up the `naneos_uploader` systemd service that starts on every boot. The service
+runs the `naneos-uploader` command, which gathers from every Partector on USB and BLE and uploads
+every 30 s. Re-running the installer upgrades the installation.
 
-To check the service status:
+To install a specific branch or tag, for example a release or the hardware test branch:
 ```bash
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --ref v1.2.0
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --ref release_test
+```
+
+Useful afterwards:
+```bash
+journalctl -u naneos_uploader.service -f          # live log
 sudo systemctl status naneos_uploader.service
+sudo systemctl stop naneos_uploader.service
+~/naneos-uploader/.venv/bin/naneos-uploader --no-upload --interval 10   # run by hand, no upload
 ```
+
+# Examples
+The `examples/` folder contains runnable scripts: `demo.py` (device manager with queue hand-off),
+`serial_device.py` (connect to one USB device), `send_commands.py` and `download_iotweb.py`.
+The script the Raspberry Pi service runs is `installers/rp-naneos-uploader/uploader-script.py`.
 
 # Ideas for future development
-* P2 BLE implementation that integrates into the implementation of the serial P2
-* P2 Bidirectional Implementation that allows to send commands to the P2
+* P2 bidirectional BLE implementation that allows to send commands to the P2
 * Automatically activate Bluetooth or ask when BLE is used
 
 # Contributing
+
+## Hardware testing before a merge
+Changes that touch the serial or BLE code are tested on real devices before they reach `master`:
+
+1. Point the `release_test` branch at the feature branch: `git branch -f release_test <feature> && git push -f origin release_test`.
+2. Raspberry Pi: `curl -fsSL .../installers/install.sh | sudo bash -s -- --ref release_test` (see above), then watch `journalctl -u naneos_uploader.service -f`.
+3. Windows / macOS: in any virtual environment
+   `pip install "https://github.com/naneos-org/python-naneos-devices/archive/release_test.tar.gz"`
+   and run `pytest -m hardware` from a checkout with the devices attached.
+4. When it works, open the pull request from the feature branch to `master`, merge, tag the release.
 
 Contributions are welcome! If you encounter any issues or have suggestions for improvements, please submit an issue on the [issue tracker](https://github.com/naneos-org/python-naneos-devices/issues).
 

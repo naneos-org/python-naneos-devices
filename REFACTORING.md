@@ -1,0 +1,297 @@
+# Refactoring & cleanup overview
+
+Snapshot of the codebase as of 2026-09-11 (branch `dev_improve_raspi_ble`, started at v1.1.17, released as v1.2.0).
+Goal: simplify the repo and fix known bugs **before** new features are built.
+
+Legend: `[ ]` open, `[x]` done. Priorities: **P0** bug / data loss, **P1** requested cleanup,
+**P2** structural simplification, **P3** hygiene.
+
+---
+
+## 0. Snapshot
+
+| Metric | Value |
+|---|---|
+| Source lines (`src/`, without generated `_pb2`) | ~4 900 at the start; Python 3.11-3.14, bleak 3, pandas 3, protobuf 7 since 1.2.0 |
+| Largest files | `partector_ble_connection.py` 731, `_data_structure.py` 565, `_partector_blueprint.py` 541, `partector_ble_manager.py` 415 |
+| `ruff check` | clean with `E, F, I, B, UP` |
+| `ruff format --check` | clean (`[tool.ruff]` with line length 100 in `pyproject.toml`) |
+| `mypy src` | clean |
+| Tests runnable without hardware | 53; the 9 hardware and 2 network tests are marked and skipped by default |
+| `__main__` demo blocks inside library modules | none, runnable scripts live in `examples/` |
+| CI | `ci.yml`: ruff, mypy, pytest on 3.10-3.13 (hardware tests excluded via marker) |
+
+---
+
+## 1. P0 - Bugs found while reading (fix first)
+
+- [x] **Module-level data-structure dicts are mutated in place.**
+  `partector2.py` and `partector2_pro.py` do `self._data_structure = PARTECTOR2_DATA_STRUCTURE_V320`
+  and then `self._data_structure.update(...)` for pulse-diagnostic / gain-test columns. The
+  module constant is changed for the whole process, so the next device (or the same device with
+  `gain_test_active=False`) expects the wrong line length and drops every data line as "info".
+  Fix: copy (`dict(...)`) before extending, or build the structure per instance.
+
+- [x] **`_fw` / `_integration_time` are not initialised.** `_init_get_device_info()` swallows every
+  exception, but `Partector2._init_serial_data_structure()` and `_create_naneos_device_point()`
+  read `self._fw` unconditionally -> `AttributeError` on a flaky device during construction,
+  after the reader thread has already been started. Initialise both in `_init_variables()`.
+
+- [x] **`__scan_port` can raise `UnboundLocalError`.** In `scanPartector.py` the `except` branch
+  references `partector`, which does not exist if `ScanPartector(port=port)` itself raised.
+
+- [x] **`" usb_cc_voltage"` typo in `protobuf.py` (leading space).** The field is never uploaded.
+
+- [x] **Serial-manager data is read from two threads without a lock.**
+  `PartectorSerialManager._manager_loop()` calls `_fetch_data()` every second, and
+  `NaneosDeviceManager` calls `get_data()` (which also calls `_fetch_data()` and then swaps
+  `self._data`) from its own thread. `PartectorBluePrint.get_data()` is therefore also called
+  concurrently on the same device (`list(self._queue)[0:-1]` + `clear_data_cache()`), so points
+  can be duplicated or lost. Decide on one owner of the data (the manager loop) and hand it over
+  through a `queue.Queue` or under a lock.
+
+- [x] **P2 Pro serial columns `surface` and `steps` are silently dropped.** The serial data
+  structures use keys `surface`, `steps`, `flow_from_phase_angle`, `DAC`, `HVon`, `idiffset`,
+  `lag` which are not fields of `NaneosDeviceDataPoint`; `setattr` adds them as stray attributes
+  and `to_dict()` ignores them. The dataclass fields are `particle_surface` / `steps_inversion`,
+  which the uploader would send if they existed. Rename the keys or drop them explicitly.
+
+- [x] **Upload failure = data loss.** (fixed: the manager keeps the last `MAX_PENDING_UPLOADS` snapshots and retries them oldest first; 4xx responses are dropped, network errors and 5xx retried) `NaneosDeviceManager._loop()` clears `self._data` before the
+  upload and nothing is retried on a non-200 / exception (the callback comment even says
+  "delete data because it was corrupted"). On a Raspberry Pi with flaky WiFi this is the main
+  way data disappears. Decide: keep a bounded retry buffer (e.g. last N snapshots) or document
+  the limitation.
+
+- [x] **`Partector2ProCs.set_catalyst_state()` writes `self._cs_state` but everything else reads
+  `self._catalyst_state`.** Goes away with the CS removal (section 2), listed for completeness.
+
+- [x] **mypy errors** (4): Optional serial number used as dict key in `partector_ble_manager.py`;
+  `Index.round` in `naneos_upload_thread.py`. Cheap to fix, and then mypy can go into CI.
+
+---
+
+## 2. P1 - Remove the catalytic stripper (`*_cs`) entity
+
+Everything that exists only for the P2 Pro CS:
+
+- [x] Delete `src/naneos/partector/partector2_pro_cs.py` (whole file, incl. its `__main__` demo).
+- [x] `_data_structure.py`
+  - [x] delete `PARTECTOR2_PRO_CS_DATA_STRUCTURE_V315`
+  - [x] delete `NaneosDeviceDataPoint.cs_status` field and the `"cs_status": "Int32"` dtype entry
+  - [x] delete `DEV_TYPE_P2PRO_CS = 3` and fix the comment on `device_type`
+    (`# 0: P2, 1: P1, 2: P2PRO, 3: P2PRO_CS`). **Do not reuse the number 3**; the backend still
+    knows it.
+- [x] `scanPartector.py`
+  - [x] drop `q_2_pro_cs` from `scan_for_serial_partector`, `scan_for_serial_partectors`, `__scan_port`
+  - [x] drop the `"P2proCS"` branches and the `"P2proCS"` key of the returned dict
+    (callers: `partector_serial_manager.py` uses P1/P2/P2pro keys, `send_commands.py` merges all)
+- [x] `protobuf.py`: delete the `cs_status` block (`# Needed for the garagenbox`).
+- [x] `protoV1.proto`: **leave field 38 `cs_status` and the type comment as they are.** The file is
+  the server's schema ("make sure to be up to date with the version from: upload timeseries");
+  removing or renumbering would break wire compatibility. Optionally add `// reserved, former P2proCS`.
+- [x] Remove leftovers: `tests/demo_martin.py` line in `.gitignore`, `df_garagae.pkl` comment,
+  `partector_data.pkl` in the repo root (only used by the `__main__` of the upload thread).
+- [x] grep afterwards: `grep -rni "_cs\b\|procs\|catalyst\|cs_status" src tests examples docs README.md`
+
+---
+
+## 3. P2 - Things that are too complicated
+
+### 3.1 Serial side (`naneos/partector`)
+
+- [x] **`PartectorSerialManager` keeps three parallel dicts** (`_connected_p1`, `_connected_p2`,
+  `_connected_p2_pro`) and every method is written three times (`_fetch_data`,
+  `get_connected_device_strings`, `get_connected_addresses`, `get_connected_serial_numbers`,
+  `_disconnect_unplugged_ports`, `_connect_to_new_ports`, `_close_all_ports`).
+  -> one `dict[str, PartectorBluePrint]` keyed by port; device type comes from the instance.
+  Also remove the stray `print(f"Disconnecting P2 Pro port: ...")`.
+
+- [x] **`scanPartector.py` has two near-identical scan functions** threading four queues through
+  `__scan_port`. -> one `scan_serial_ports() -> list[FoundDevice(sn, port, kind, fw)]`, and the
+  two public functions become one-line filters on top of it. Rename the file to `scan.py`
+  (camelCase file name is the only one in the repo).
+
+- [ ] **`PartectorBluePrint` does too much** (541 lines; the small cleanups below are done, the
+  transport / device / reader-thread split is still open and needs devices on the desk to verify): `Thread` + `PartectorDefaults` mixin + ABC;
+  the constructor scans ports, opens serial, starts the thread, queries the device and configures
+  it. Overlapping "connection check" methods: `_check_connection`, `_check_serial_connection`,
+  `_check_device_connection`, `_run_check_connection`, `_checker_thread`. Suggested split:
+  - a small `SerialTransport` (open/close/readline/write, reconnect) with no threads
+  - a `PartectorDevice` (protocol: `N?`, `f?`, `H?`, verbose freq, data-structure selection)
+  - the reader thread owned by the manager, not by every device
+  Also: constants from `PartectorDefaults` become class attributes, `hw_version: str = "None"`
+  becomes `Optional[str]`, `write_line()` stops smuggling its arguments through instance state
+  (`custom_info_str` / `custom_info_size`), `_serial_wrapper` stops returning `False | None | value`.
+
+- [x] **Configuration block copied three times.** The `opd01!/opd00!` + `h2001!/e1100!` +
+  `_wait_with_data_output_until` sequence exists in `Partector2._init_serial_data_structure`
+  and twice in `Partector2Pro._set_verbose_freq`. -> one `_apply_diagnostics_config()` in the base.
+  `_set_verbose_freq` on the P2 Pro also selects the data structure and switches modes; split
+  "set mode" from "set frequency".
+
+- [x] **Six near-identical serial data-structure dicts.** `PARTECTOR2_DATA_STRUCTURE_V320`,
+  `..._V295_V297_V298`, `..._LEGACY` are byte-for-byte identical; `..._V265_V275` only adds
+  `lag`; the two P2 Pro dicts differ in one column. -> one base list per family plus small
+  per-firmware deltas, or a single `FIRMWARE_COLUMNS` table. Keep the firmware -> structure
+  selection in one function instead of in each class.
+
+- [x] **Delete dead code**: `blueprints/_partectorCheckerThread.py` (never imported),
+  `serial_utils/list_serial_ports._get_all_open_ports` (commented-out call), commented code in
+  `get_data` / `_get_and_check_info`, the 100-iteration open/close loop in `_check_port_function`
+  (document why, or replace with a bounded retry with sleep).
+
+- [x] `list_serial_ports(ports_exclude: list = [])` and
+  `sort_and_clean_naneos_data(serial_only: list[int | None] = [])` use mutable defaults.
+
+- [x] `utils/send_commands.py` has no `__init__.py`, a hard-coded `/Users/huegi/Downloads/...`
+  path and only filters lines starting with `"2"`. Move to `examples/` or make it a proper CLI.
+
+### 3.2 Shared data model (`blueprints/_data_structure.py`)
+
+Done: `naneos/data_point.py` (dataclass, `DeviceType`, `ConnectionType`) and `naneos/frames.py`
+(dtype mapping, DataFrame builders, `sort_and_clean_naneos_data`). `_data_structure.py` keeps only
+the serial line layouts plus compatibility re-exports; the `DEV_TYPE_*` / `CONN_TYPE_*` aliases and
+the three DataFrame static methods stay on the dataclass for users of 1.1.x. Frames are indexed by
+unix ms everywhere; the uploader converts to seconds unconditionally.
+
+- [x] **`NaneosDeviceDataPoint` lives in a "private" module under `partector/blueprints/` but is the
+  central type** for BLE, protobuf, manager and tests. Move it to `naneos/data_point.py` (or
+  `naneos/model.py`) and re-export from `naneos/__init__.py`. The module-level helpers
+  `add_to_existing_naneos_data` / `sort_and_clean_naneos_data` belong next to the manager.
+- [x] The dataclass mixes 55 optional measurement fields with class constants (`DEV_TYPE_*`,
+  `CONN_TYPE_*`, four `BLE_*_FIELD_NAMES` sets, `PANDAS_DTYPES_MAPPING`, `MAX_ROWS_PER_DEVICE`) and
+  pandas conversion logic. -> `DeviceType` / `ConnectionType` enums, dtype mapping and
+  DataFrame builders in a separate `frames.py`.
+- [x] `PANDAS_DTYPES_MAPPING["connection_type"] = "Int32"` is wrong (it is a string). It only works
+  because `astype(errors="ignore")` hides the failure, which also hides any real dtype problem.
+- [x] `device_type` defaults to `0` (= P2), so a P2 Pro seen only by advertisement is reported as
+  P2; `sort_and_clean_naneos_data` then has a special case to drop P2 rows when P2PRO rows exist.
+  Make the default `None` / unknown and let the advertisement decoder not claim a type.
+- [x] Timestamps: serial and BLE-connection points are in ms, the scanner truncates to whole
+  seconds `* 1000`, and the uploader guesses the unit with `df.index[0] > 1e12`. Pick one unit at
+  the source (ms int) and drop the heuristic.
+- [x] `to_pandas_df_row` / `add_data_point_to_dict` are the slow per-point path kept "for
+  compatibility"; only `__main__` demos and the serial manager still use them. Remove after 3.1.
+
+### 3.3 BLE side (`naneos/partector_ble`)
+
+Done in commits `e7f9f96`, `25eeeec` and the connection split. Not verified against a real
+adapter: run the `hardware` BLE tests (`test_02_01` to `test_02_03`) on a Pi and a Windows box
+before releasing, the Windows-only branches in the connection are untested here.
+
+- [x] **`PartectorBleConnection._run()` is ~200 lines** of nested try/except with three separate
+  places that recreate the `BleakClient`, Windows-only branches, and a hand-rolled 1 s tick.
+  Extract: `_connect_once()`, `_handle_connect_error(e)`, `_recreate_client()`, `_watchdog()`
+  (the std/aux timeout check). Keep the well-documented behaviour, drop the duplication.
+- [x] `_decode_routine()` task is created with `create_task` and its reference dropped (asyncio
+  can garbage-collect it; keep a reference and cancel it in `stop()`).
+- [x] `start()` logs `"SN{self._serial_number}"` (no f-string, wrong attribute name).
+- [x] `_disconnect_gracefully()` sleeps 0.5 s four times "for Windows" on every platform; gate it on
+  `_SERIALIZE_CONNECTS` like the connect path already does.
+- [x] **`PartectorBleManager` tracks connections in two dicts** (`_connections: {sn: (task, type)}`
+  and `_connection_objects: {sn: connection}`) and rebuilds tuples to update the device type.
+  -> one `dict[int, BleLink]` holding task, connection and type.
+- [x] Three shutdown paths (`_kill_all_connections`, `_finish_all_connections`,
+  `_finish_all_connections_blocking`) and four adapter-check methods
+  (`_bleak_is_bluetooth_adapter_available`, `_linux_is_bluetooth_adapter_available`,
+  `_is_bluetooth_adapter_available`, `_wait_for_bluetooth_adapter`; one with a German docstring).
+  The manager loop already uses `scanner.is_discovering` as the adapter check, so the
+  `bluetoothctl` probe is only needed once before start. Collapse to one `shutdown()` and one
+  `adapter_available()`.
+- [x] `get_connected_serial_numbers()` returns every serial with a task (including devices that are
+  only being retried) while `get_connected_device_strings()` returns only live links. Align.
+- [x] `pd.set_option("future.no_silent_downcasting", True)` at import time changes a global pandas
+  option for the host application. Remove or scope it.
+- [x] Decoders: `partectod_ble_decoder_aux_error.py` (typo in file name); every decoder is a class
+  with one `decode` and ten one-line `_get_*` classmethods with docstrings. A table of
+  `(field, slice, factor)` per characteristic plus one generic decode loop would replace ~450
+  lines with ~80 and make the offsets reviewable at a glance.
+- [x] `partector_ble/__init__.py` is empty; export `PartectorBleManager`.
+
+### 3.4 Device manager / upload (`naneos/manager`, `naneos/iotweb`)
+
+- [x] `NaneosDeviceManager._loop()` starts an upload thread and immediately `join()`s it, so the
+  manager blocks for up to the 10 s request timeout every interval. Either call `upload()`
+  directly or let the thread run and collect the result later. (calls `upload()` directly now)
+- [x] `NaneosUploadThread.get_body()` builds JSON by string formatting; use `json.dumps`.
+  `published_at` is naive local time; use UTC with tz info.
+- [x] `naneos_device_manager.py` contains four example functions (`minimal_example`,
+  `queue_example`, `test_naneos_device_manager`, `ble_connect_example`, one of them sending
+  SIGINT to the own process). Move to `examples/`, they duplicate `examples/demo.py`.
+- [x] `protobuf.py::_create_device_point` is a 130-line `if "x" in ser` ladder. A
+  `(column, proto_field, scale)` table + loop removes most of it and makes the typo class of bug
+  (see P0) impossible. Replace `print(...)` with the logger.
+- [x] `_data_structure.MAX_ROWS_PER_DEVICE = 300` caps buffered rows per device between two
+  `get_data()` calls. Fine at 1 Hz with a 1 s drain, but silently drops rows for the 10/100 Hz
+  serial modes. Document or make it a manager setting.
+
+### 3.5 Logging
+
+- [x] `get_naneos_logger()` attaches a `StreamHandler` (and optionally a `FileHandler`) to every
+  module logger and hard-codes a level per module (`LEVEL_WARNING` in most, `INFO` in others).
+  A library should add a `NullHandler` once and let the application configure levels and
+  handlers; otherwise every message is printed twice as soon as the host app configures logging,
+  and there is no single switch to turn on debug output. Keep `CustomFormatter` as an opt-in
+  helper (`naneos.logger.enable_console_logging(level)`).
+- [x] `stream_handler.terminator = "\r\n"` and the "create the log file at import time if the path
+  exists" logic should go.
+
+---
+
+## 4. P3 - Hygiene, tooling, docs, tests
+
+- [x] **Tooling config**: add `[tool.ruff]` (`line-length = 100`, select rules, `isort`) and
+  `[tool.mypy]` to `pyproject.toml`; run `ruff format` once. Move `pytest` / `coverage` /
+  `hypothesis` out of `[project.optional-dependencies].test` (unused, duplicates the `dev` group)
+  or make `noxfile.py` use the dev group. Translate the German comment in `noxfile.py`.
+- [x] **CI**: add a GitHub workflow for `ruff check`, `ruff format --check`, `mypy`, and the
+  hardware-free tests. Mark hardware tests with `@pytest.mark.hardware` and skip them by default.
+- [x] **Tests**: `test_00_demo_code.py` is a copy of `test_01::test_serial_manager`; `test_10_iotweb.py`
+  is fully commented out (and its `NaneosUploadThread(data, ...)` call uses an old signature).
+  Add real unit tests that need no hardware: serial line -> `NaneosDeviceDataPoint` casting for
+  each data structure, `sort_and_clean_naneos_data`, `add_data_points_to_dict`, protobuf
+  round-trip (`create_proto_device` on the pickles in `tests/data/`), BLE std/aux decoders
+  (same pattern as the size-dist test), advertisement frame selection in `PartectorBleDecoder`.
+- [x] **`__main__` blocks**: remove the demo code from `partector1/2/2_pro`,
+  `partector_serial_manager`, `partector_ble_manager`, `partector_ble_connection`
+  (`main`, `main_x`, `_map_sn_to_device`), `naneos_upload_thread`, `downloader`,
+  `custom_logger`, `scanPartector`, `send_commands`. Keep one runnable example per feature in
+  `examples/`. This also removes the private-API use in `examples/ble_adapter_demo.py`
+  (`manager._is_bluetooth_adapter_available()`).
+- [x] **Public API**: `naneos/__init__.py` is empty. Export `NaneosDeviceManager`,
+  `PartectorSerialManager`, `PartectorBleManager`, `NaneosDeviceDataPoint`, `NaneosUploadThread`,
+  `download_from_iotweb`, and a `__version__`.
+- [x] **Naming**: `PartectorBluePrint` vs `PartectorBleDecoderBlueprint`, `scanPartector.py`,
+  `_partectorCheckerThread.py`, `partectod_ble_decoder_aux_error.py`; German leftovers
+  (`momentanwert`, `garagenbox`, `Nutzt BlueZ ...`).
+- [x] **README / docs**: "Building executables" points at `demo/p1UploadTool.py` which does not
+  exist; "Ideas for future development" lists the P2 BLE integration that is already done;
+  `mkdocs` api-autonav documents every `__main__` demo. `installers/rp-naneos-uploader/
+  uploader-script.py` and `examples/raspberry-pi-service.py` are the same script (one with the
+  WiFi warning); keep one and reference it from the installer.
+- [x] **Repo**: `uv.lock` still records the package at 1.1.10 while `pyproject.toml` says 1.1.17 (run `uv lock` and commit); `partector_data.pkl` in the root, `.DS_Store` files, `requirements.txt` in the
+  installer with no version pin (a Pi installed today gets whatever is on PyPI).
+
+---
+
+## 5. Suggested order
+
+1. **P0 bugs** in isolation, each its own commit, with a unit test where possible
+   (data-structure mutation, `_fw` init, `__scan_port`, `usb_cc_voltage`, mypy).
+2. **CS removal** (section 2) - mechanical, one commit, run the grep at the end.
+3. **Tooling** (ruff config + format, mypy config, CI, hardware marker) so every following step
+   is checked automatically.
+4. **Data model move** (3.2) - touches every package but is mostly imports.
+5. **Serial simplification** (3.1) - manager dicts and scan first (low risk), blueprint split
+   last (needs devices on the desk to verify).
+6. **BLE simplification** (3.3) - decoders first (pure functions, easy to test), then manager,
+   then `_run()`.
+7. **Manager / upload / logging** (3.4, 3.5).
+8. **Hygiene** (section 4) as you go; the `__main__` removal can happen with each touched file.
+
+## 6. Decisions needed from you
+
+- Keep `DEV_TYPE` numeric values as an `IntEnum` with `3` reserved, or just drop 3?
+- Are the 10 Hz / 100 Hz serial modes (`verb_freq` 2 / 3) still used by anyone? If not, the
+  P2 mode handling and `MAX_ROWS_PER_DEVICE` can be simplified further.
+- Is `iotweb/download` (InfluxDB) still in use? It pulls `influxdb-client[ciso]` into every install.

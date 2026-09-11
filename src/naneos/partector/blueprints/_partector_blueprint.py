@@ -1,44 +1,60 @@
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from datetime import datetime, timezone
+from collections.abc import Callable
 from threading import Event, Thread
-from typing import Any, Callable, Optional, Union
+from typing import Any
 
 import serial
 
-from naneos.logger import LEVEL_WARNING, get_naneos_logger
-from naneos.partector.blueprints._data_structure import NaneosDeviceDataPoint
-from naneos.partector.blueprints._partector_defaults import PartectorDefaults
+from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
+from naneos.logger import get_naneos_logger
+from naneos.partector.blueprints._data_structure import (
+    PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE,
+    PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE,
+)
 
-logger = get_naneos_logger(__name__, LEVEL_WARNING)
+logger = get_naneos_logger(__name__)
 
 
-class PartectorBluePrint(Thread, PartectorDefaults, ABC):
+class PartectorBlueprint(Thread, ABC):
     """
     Class with the basic functionality of every Partector.
-    Mandatory device specific methods are defined abstract and have to be implemented in the child class.
+    Mandatory device specific methods are abstract and implemented in the child class.
     """
+
+    SERIAL_INIT_SCAN_RETRIES = 5
+    SERIAL_INIT_RETRIES_TIMEOUT_S = 0.5
+    SERIAL_RETRIES = 7
+    SERIAL_TIMEOUT = 0.2
+    SERIAL_TIMEOUT_INFO = SERIAL_TIMEOUT + 0.05
+    SERIAL_BAUDRATE = 9600
+    SERIAL_QUEUE_MAXSIZE = 200
+    SERIAL_INFO_QUEUE_MAXSIZE = 20
 
     def __init__(
         self,
-        serial_number: Optional[int] = None,
-        port: Optional[str] = None,
+        serial_number: int | None = None,
+        port: str | None = None,
         verb_freq: int = 1,
-        hw_version: str = "None",
+        device_type: DeviceType | None = None,
     ) -> None:
-        """Initializes the Partector2 and starts the reading thread."""
+        """Opens the serial connection and starts the reading thread."""
         super().__init__()
 
         self._init_variables()
         self._verb_freq = verb_freq
-        self._init(serial_number, port, verb_freq, hw_version)
+        self._init(serial_number, port, verb_freq, device_type)
 
     def _init_variables(self) -> None:
-        self.device_type: int = 0  # gets initalized by child class
+        self.device_type: DeviceType | None = None  # given by the child class constructor
         self._connected = False
-        self._sn: Optional[int] = None
-        self._port: Optional[str] = None
+        self._sn: int | None = None
+        self._port: str | None = None
+        # Filled by _init_get_device_info(); it swallows every error, so these
+        # need a value before the data structure is selected from them.
+        self._fw: int = 0
+        self._integration_time: int = 0
         self._ser: serial.Serial = serial.Serial()
         self._time_last_message_received = time.time()
         self._legacy_data_structure: bool = False
@@ -48,12 +64,12 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     ### Init methods
     def _init(
         self,
-        serial_number: Optional[int] = None,
-        port: Optional[str] = None,
+        serial_number: int | None = None,
+        port: str | None = None,
         verb_freq: int = 1,
-        hw_version: str = "None",
+        device_type: DeviceType | None = None,
     ) -> None:
-        self._hw_version = hw_version
+        self.device_type = device_type
         self._shutdown_partector = False
         self._init_serial(serial_number, port)
         self._init_thread()
@@ -71,7 +87,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
     def _init_print_connection_info(self) -> None:
         logger.info(f"Connected to SN{self._sn} on {self._port}")
 
-    def _init_serial(self, serial_number: Optional[int] = None, port: Optional[str] = None) -> None:
+    def _init_serial(self, serial_number: int | None = None, port: str | None = None) -> None:
         self._sn = serial_number
         self._port = port
 
@@ -81,11 +97,11 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._check_connection()
 
     def _init_serial_sn_search(self) -> None:
-        from naneos.partector.scanPartector import scan_for_serial_partector
+        from naneos.partector.scan import scan_for_serial_partector
 
         if self._sn is not None:
             for _ in range(self.SERIAL_INIT_SCAN_RETRIES):
-                self._port = scan_for_serial_partector(self._sn, self._hw_version)
+                self._port = scan_for_serial_partector(self._sn, self.device_type)
                 if self._port:
                     break
             if not self._port:
@@ -93,7 +109,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                     f"SN{self._sn} {self._port} not found! Checker is running in the background."
                 )
         elif self._port is None:
-            raise Exception("No serial number or port given!")
+            raise ValueError("No serial number or port given!")
 
     def _init_serial_connection(self) -> None:
         tries = 0
@@ -138,18 +154,40 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self.thread_event = Event()
 
     def _init_data_structures(self) -> None:
-        self.custom_info_str = "0"
-        self.custom_info_size = 0
         # will be declared in child class
-        self._data_structure: dict[str, type[Union[int, float]]] = {}
-        self._queue: deque[list[Union[int, str]]] = deque(maxlen=self.SERIAL_QUEUE_MAXSIZE)
-        self._queue_info: deque[list[Union[int, str]]] = deque(
-            maxlen=self.SERIAL_INFO_QUEUE_MAXSIZE
-        )
+        self._data_structure: dict[str, type[int | float]] = {}
+        self._queue: deque[list[int | str]] = deque(maxlen=self.SERIAL_QUEUE_MAXSIZE)
+        self._queue_info: deque[list[int | str]] = deque(maxlen=self.SERIAL_INFO_QUEUE_MAXSIZE)
 
     @abstractmethod
     def _init_serial_data_structure(self) -> None:
         pass
+
+    def _configure_diagnostics(self, gain_test: bool, pulse_diagnostics: bool) -> None:
+        """Switch the optional P2 / P2 Pro output blocks on or off.
+
+        Extends self._data_structure by the columns each block appends, so it
+        must be called after the base structure has been assigned (as a copy).
+        The gain test disturbs the measurement for a while, so data output is
+        held back until the device has settled.
+        """
+        if pulse_diagnostics:
+            self._write_line("opd01!")
+            self._data_structure.update(
+                PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE
+            )
+        else:
+            self._write_line("opd00!")
+
+        if gain_test:
+            waiting_time = max(10, self._integration_time + 5)
+            self._wait_with_data_output_until = time.time() + waiting_time
+            self._write_line("h2001!")  # activates harmonics output
+            self._write_line("e1100!")  # strength of gain test signal
+            self._data_structure.update(PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE)
+        else:
+            self._write_line("h2000!")  # deactivates harmonics output
+            self._write_line("e0000!")  # deactivates gain test signal
 
     def _init_clear_buffers(self) -> None:
         if not self._connected:
@@ -228,8 +266,8 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
     #########################################
     ### User accessible getters
-    def get_serial_number(self) -> Optional[int]:
-        """Gets the serial number via command from the device."""
+    def get_serial_number(self) -> int | None:
+        """Gets the serial number via command from the device. None if it could not be read."""
         return self._serial_wrapper(self._get_serial_number)
 
     def get_firmware_version(self) -> int:
@@ -252,29 +290,31 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
 
         Args:
             line (str): The line to write to the device.
-            number_of_elem (int, optional): The number of elements in the response. This will be checked. Defaults to 1.
+            number_of_elem (int, optional): Expected number of elements in the response.
+                Defaults to 1.
 
         Returns:
-            list: The response as a list.
+            list: The response as a list; empty if nothing (valid) came back.
         """
-        self.custom_info_str = line
-        self.custom_info_size = number_of_elem + 1
-
         if number_of_elem == 0:
             self._write_line(line)
             return []
 
-        return self._serial_wrapper(self._custom_info)  # type: ignore
+        response = self._serial_wrapper(lambda: self._custom_info(line, number_of_elem + 1))
+        return response if response is not None else []
 
     #########################################
     ### User accessible data methods
     def clear_data_cache(self) -> None:
-        """Clears the data cache."""
-        # self._queue.clear()
-        if isinstance(self._queue, deque) and len(self._queue) > 0:
+        """Drops all buffered lines except the newest one."""
+        if len(self._queue) > 0:
             self._queue = deque([self._queue.pop()], maxlen=self.SERIAL_QUEUE_MAXSIZE)
 
     def get_data(self) -> list[NaneosDeviceDataPoint]:
+        """Parses and returns the buffered lines. Not safe to call from two threads.
+
+        The newest line stays buffered and is delivered with the next call.
+        """
         points: list[NaneosDeviceDataPoint] = []
 
         serial_data = list(self._queue)[0:-1]
@@ -316,7 +356,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                 self._serial_reading_routine()
         except Exception as e:
             logger.warning(
-                f"SN{self._sn} {self._port} Exception occured during threaded serial reading: {e}"
+                f"SN{self._sn} {self._port} Exception occurred during threaded serial reading: {e}"
             )
 
     def _run_check_connection(self) -> bool:
@@ -345,7 +385,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         if not line or line == "":
             return
 
-        unix_timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+        unix_timestamp = int(time.time() * 1000)  # ms, like every other data source
         data = [unix_timestamp] + line.split("\t")
 
         self._notify_message_received()
@@ -372,7 +412,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
                 return True
 
         except Exception as e:
-            logger.error(f"Exception occured during device connection check: {e}")
+            logger.error(f"Exception occurred during device connection check: {e}")
 
         return False
 
@@ -391,10 +431,10 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             if self._ser and self._ser.is_open:
                 self._ser.close()
             self._connected = False
-            raise ConnectionAbortedError(f"Serial connection aborted: {e}")
+            raise ConnectionAbortedError(f"Serial connection aborted: {e}") from e
 
-    def _serial_wrapper(self, func: Callable[[], Any]) -> Optional[Any]:
-        """Wraps user func in try-except block. Forwards exceptions to the user."""
+    def _serial_wrapper(self, func: Callable[[], Any]) -> Any | None:
+        """Runs a device query with retries. None when not connected or every try failed."""
         if not self._connected:
             return None
 
@@ -404,11 +444,11 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             try:
                 return func()
             except Exception as e:
-                logger_msg = f"SN{self._sn} Exception occured during user function call: {e}"
+                logger_msg = f"SN{self._sn} Exception occurred during user function call: {e}"
 
         logger.warning(logger_msg)
 
-        return False
+        return None
 
     def _write_line(self, line: str) -> None:
         if not self._connected:
@@ -417,7 +457,6 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._check_serial_connection()
         if self._ser:
             self._ser.write(line.encode())
-            # time.sleep(10e-3)
 
     def _read_line(self) -> str:
         if not self._connected:
@@ -432,11 +471,11 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             if self._ser:
                 self._ser.close()
             self._connected = False
-            raise Exception(f"Was not able to read from the Serial connection: {e}")
+            raise Exception(f"Was not able to read from the Serial connection: {e}") from e
 
         return data.replace("\r", "").replace("\n", "").replace("\x00", "")
 
-    def _get_and_check_info(self, expected_length: int = 2) -> list[Union[int, str]]:
+    def _get_and_check_info(self, expected_length: int = 2) -> list[int | str]:
         """
         Get information from the queue and check its length.
 
@@ -449,7 +488,6 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         Raises:
             ValueError: If the length of the information does not match the expected length.
         """
-        # info_data = self._queue_info.get(timeout=self.SERIAL_TIMEOUT_INFO)
         info_data = []
         start_time = time.time()
         while time.time() - start_time < self.SERIAL_TIMEOUT_INFO:
@@ -460,11 +498,13 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._queue_info.clear()
 
         if len(info_data) != expected_length:
-            error_msg = f"Received data of length {len(info_data)}, expected {expected_length}. Data: {info_data}"
-            raise ValueError(error_msg)
+            raise ValueError(
+                f"Received data of length {len(info_data)}, expected {expected_length}. "
+                f"Data: {info_data}"
+            )
         return info_data
 
-    def _get_serial_number_secure(self) -> Optional[int]:
+    def _get_serial_number_secure(self) -> int | None:
         if not self._connected:
             return None
 
@@ -479,7 +519,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         self._write_line("N?")
         return int(self._get_and_check_info()[1])
 
-    def _get_firmware_version(self) -> Optional[int]:
+    def _get_firmware_version(self) -> int | None:
         self._queue_info.clear()
         self._write_line("f?")
         fw = self._get_and_check_info()[1]
@@ -490,7 +530,7 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             logger.error(f"Could not cast firmware version to int: {e}")
             return None
 
-    def _get_integration_time(self) -> Optional[int]:
+    def _get_integration_time(self) -> int | None:
         self._queue_info.clear()
         self._write_line("H?")
         it = self._get_and_check_info()[1]
@@ -499,26 +539,23 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
             it = int(2 ** (it + 1))  # convert to seconds
             return it
         except Exception as e:
-            logger.error(f"Could not cast firmware version to int: {e}")
+            logger.error(f"Could not cast integration time to int: {e}")
             return None
 
-    def _custom_info(self) -> list[Union[int, str]]:
+    def _custom_info(self, line: str, expected_length: int) -> list[int | str]:
         self._queue_info.clear()
-        self._write_line(self.custom_info_str)
-        return self._get_and_check_info(self.custom_info_size)
+        self._write_line(line)
+        return self._get_and_check_info(expected_length)
 
-    def _cast_splitted_input_string(self, line: list[Union[int, str]]) -> list[Union[int, float]]:
-        line_parsed: list[Union[int, float]] = []
+    def _cast_splitted_input_string(self, line: list[int | str]) -> list[int | float]:
+        line_parsed: list[int | float] = []
 
-        for value, data_type in zip(line, self._data_structure.values()):
-            # parsed_value = value if isinstance(value, data_type) else data_type(value)
-            parsed_value = data_type(value)
-
-            line_parsed.append(parsed_value)
+        for value, data_type in zip(line, self._data_structure.values(), strict=True):
+            line_parsed.append(data_type(value))
 
         return line_parsed
 
-    def _create_naneos_device_point(self, data: list[Union[int, float]]) -> NaneosDeviceDataPoint:
+    def _create_naneos_device_point(self, data: list[int | float]) -> NaneosDeviceDataPoint:
         """
         Creates a NaneosDeviceDataPoint from the given data.
 
@@ -531,11 +568,19 @@ class PartectorBluePrint(Thread, PartectorDefaults, ABC):
         point = NaneosDeviceDataPoint(
             device_type=self.device_type,
             serial_number=self._sn,
-            connection_type=NaneosDeviceDataPoint.CONN_TYPE_SERIAL,
+            connection_type=ConnectionType.SERIAL,
             firmware_version=self._fw,
         )
 
-        for i, name in enumerate(self._data_structure.keys()):
-            setattr(point, name, data[i])
+        # Some serial columns (e.g. "lag", "flow_from_phase_angle") are parsed
+        # only to match the line length and have no field on the data point.
+        fields = NaneosDeviceDataPoint.__dataclass_fields__
+        for name, value in zip(self._data_structure.keys(), data, strict=True):
+            if name in fields:
+                setattr(point, name, value)
 
         return point
+
+
+# Old spelling, kept for code written against naneos-devices <= 1.1.x.
+PartectorBluePrint = PartectorBlueprint

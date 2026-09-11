@@ -1,16 +1,18 @@
 import base64
 import datetime
-import pickle
+import json
+from collections.abc import Callable
 from threading import Thread
-from typing import Callable, ClassVar, Optional
+from typing import ClassVar
 
+import numpy as np
 import pandas as pd
 import requests
 
-from naneos.logger import LEVEL_WARNING, get_naneos_logger
+from naneos.logger import get_naneos_logger
 from naneos.protobuf.protobuf import create_combined_entry, create_proto_device
 
-logger = get_naneos_logger(__name__, LEVEL_WARNING)
+logger = get_naneos_logger(__name__)
 
 
 class NaneosUploadThread(Thread):
@@ -23,13 +25,13 @@ class NaneosUploadThread(Thread):
     def __init__(
         self,
         data: dict[int, pd.DataFrame],
-        callback: Optional[Callable[[bool], None]],
+        callback: Callable[[bool], None] | None,
     ) -> None:
         """Adding the data that should be uploaded to the database.
 
         Args:
-            data (dict[int, pd.DataFrame]): Data to upload, where the key is the device serial number and the value is a DataFrame.
-            callback (Optional[Callable[[bool], None]]): Callback function that is called after upload.
+            data (dict[int, pd.DataFrame]): Data to upload, keyed by device serial number.
+            callback (Callable[[bool], None] | None): Called with the upload result.
         """
         super().__init__()
         self.data = data
@@ -47,39 +49,48 @@ class NaneosUploadThread(Thread):
         except Exception as e:
             logger.exception(f"Error in upload: {e}")
             if self._callback:
-                self._callback(False)  # delete data because it was corrupted
+                self._callback(False)
 
     @staticmethod
     def get_body(upload_string: str) -> str:
-        return f"""
-            {{
+        """The JSON envelope the backend expects around the base64 protobuf."""
+        return json.dumps(
+            {
                 "gateway": "python_webhook",
-                "data": "{upload_string}",
-                "published_at": "{datetime.datetime.now().isoformat()}"
-            }}
-            """
+                "data": upload_string,
+                "published_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            }
+        )
+
+    @staticmethod
+    def to_upload_frame(df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare one device frame for the backend: index in whole seconds, no inf.
+
+        Frames are indexed by unix time in milliseconds (see naneos.frames).
+        The index is rounded, not truncated: the devices sample at ~1Hz with a
+        phase of their own, so truncating puts the two samples that straddle a
+        second boundary into the same second, where one of them wins, and
+        leaves the neighbouring second without a row at all.
+        """
+        df = df.replace([float("inf"), -float("inf")], 0)
+        df.index = pd.Index(
+            np.rint(df.index.to_numpy(dtype="float64") / 1e3).astype("int64"),
+            name=df.index.name,
+        )
+        return df
+
+    @classmethod
+    def build_combined_entry(cls, data: dict[int, pd.DataFrame], abs_time: int):
+        """The protobuf message for a snapshot, with timestamps relative to abs_time."""
+        devices = [
+            create_proto_device(sn, abs_time, cls.to_upload_frame(df)) for sn, df in data.items()
+        ]
+        return create_combined_entry(devices=devices, abs_timestamp=abs_time)
 
     @classmethod
     def upload(cls, data: dict[int, pd.DataFrame]) -> requests.Response:
         abs_time = int(datetime.datetime.now().timestamp())
-        devices = []
-
-        for sn, df in data.items():
-            # make all inf values in df_p2_pro 0
-            df = df.replace([float("inf"), -float("inf")], 0)
-
-            # detect ms timestamp and convert to s
-            if df.index[0] > 1e12:
-                # Rounded, not truncated: the devices sample at ~1Hz with a phase
-                # of their own, so truncating puts the two samples that straddle a
-                # second boundary into the same second, where one of them wins,
-                # and leaves the neighbouring second without a row at all. That is
-                # a gap in the uploaded series for data that arrived complete.
-                df.index = (df.index / 1e3).round().astype(int)
-
-            devices.append(create_proto_device(sn, abs_time, df))
-
-        combined_entry = create_combined_entry(devices=devices, abs_timestamp=abs_time)
+        combined_entry = cls.build_combined_entry(data, abs_time)
 
         proto_str = combined_entry.SerializeToString()
         proto_str_base64 = base64.b64encode(proto_str).decode()
@@ -87,19 +98,3 @@ class NaneosUploadThread(Thread):
         body = cls.get_body(proto_str_base64)
         r = requests.post(cls.URL, headers=cls.HEADERS, data=body, timeout=10)
         return r
-
-
-def read_pickle_file(file_path: str) -> dict[int, pd.DataFrame]:
-    with open(file_path, "rb") as f:
-        data = pickle.load(f)
-    return data
-
-
-if __name__ == "__main__":
-    data = read_pickle_file("partector_data.pkl")
-
-    uploader = NaneosUploadThread(
-        data, callback=lambda success: print(f"Upload success: {success}")
-    )
-    uploader.start()
-    uploader.join()

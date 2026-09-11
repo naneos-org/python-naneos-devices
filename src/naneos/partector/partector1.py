@@ -1,22 +1,17 @@
-from typing import Optional
-
-import pandas as pd
-
+from naneos.data_point import DeviceType
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR1_DATA_STRUCTURE_V_LEGACY,
-    NaneosDeviceDataPoint,
 )
-from naneos.partector.blueprints._partector_blueprint import PartectorBluePrint
+from naneos.partector.blueprints._partector_blueprint import PartectorBlueprint
 
 
-class Partector1(PartectorBluePrint):
+class Partector1(PartectorBlueprint):
     def __init__(
-        self, serial_number: Optional[int] = None, port: Optional[str] = None, verb_freq: int = 1
+        self, serial_number: int | None = None, port: str | None = None, verb_freq: int = 1
     ) -> None:
-        super().__init__(serial_number, port, verb_freq)
+        super().__init__(serial_number, port, verb_freq, DeviceType.P1)
 
     def _init_serial_data_structure(self) -> None:
-        self.device_type = NaneosDeviceDataPoint.DEV_TYPE_P1
         self._data_structure = PARTECTOR1_DATA_STRUCTURE_V_LEGACY
         self._legacy_data_structure = True
 
@@ -31,32 +26,3 @@ class Partector1(PartectorBluePrint):
             raise ValueError("Frequency must be between 0 and 3!")
 
         self._write_line(f"X000{freq}!")
-
-
-if __name__ == "__main__":
-    import time
-
-    from naneos.partector.scanPartector import scan_for_serial_partectors
-
-    partectors = scan_for_serial_partectors()
-    assert partectors["P1"], "No Partector found!"
-    serial_number, port = next(iter(partectors["P1"].items()))
-
-    data: dict[int, pd.DataFrame] = {}
-    p1 = Partector1(port=port)
-
-    for _ in range(5):
-        time.sleep(5)
-        data_points = p1.get_data()
-        for point in data_points:
-            data = NaneosDeviceDataPoint.add_data_point_to_dict(data, point)
-
-        df = next(iter(data.values()), pd.DataFrame())
-        if not df.empty:
-            print(f"Sn: {p1._sn}, Port: {p1._port}")
-            print(df)
-            break
-
-        print("No data received yet...")
-
-    p1.close(blocking=True)

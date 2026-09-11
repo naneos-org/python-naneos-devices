@@ -1,12 +1,16 @@
 import time
 import warnings
 
+import pytest
+
 from naneos.partector import PartectorSerialManager
 from naneos.partector.partector1 import Partector1
 from naneos.partector.partector2 import Partector2
 from naneos.partector.partector2_pro import Partector2Pro
-from naneos.partector.scanPartector import scan_for_serial_partectors
+from naneos.partector.scan import scan_for_serial_partectors, scan_serial_ports
 from naneos.serial_utils import list_serial_ports
+
+pytestmark = pytest.mark.hardware  # needs a Partector on USB or BLE
 
 
 def test_list_serial_ports():
@@ -38,7 +42,7 @@ def test_connection_partectors() -> None:
             p1 = Partector1(serial_number=serial_number)
             p1.close(verbose_reset=False)
     else:
-        warnings.warn("There is no P1 connected (USB).", UserWarning)
+        warnings.warn("There is no P1 connected (USB).", UserWarning, stacklevel=2)
 
     if len(p2) > 0:
         serial_number = next(iter(p2.keys()))
@@ -46,7 +50,7 @@ def test_connection_partectors() -> None:
             p2 = Partector2(serial_number=serial_number)
             p2.close(verbose_reset=False)
     else:
-        warnings.warn("There is no P2 connected (USB).", UserWarning)
+        warnings.warn("There is no P2 connected (USB).", UserWarning, stacklevel=2)
 
     if len(p2_pro) > 0:
         serial_number = next(iter(p2_pro.keys()))
@@ -54,21 +58,34 @@ def test_connection_partectors() -> None:
             p2_pro = Partector2Pro(serial_number=serial_number)
             p2_pro.close(verbose_reset=False)
     else:
-        warnings.warn("There is no P2pro connected (USB).", UserWarning)
+        warnings.warn("There is no P2pro connected (USB).", UserWarning, stacklevel=2)
 
 
 def test_serial_manager():
+    """Data must arrive from every device the scan found.
+
+    Connecting takes a few seconds and the gain test then holds the output
+    back for at least 10 s, so poll with a deadline instead of a fixed sleep.
+    """
+    expected = len(scan_for_serial_partectors_flat())
+    assert expected > 0, "There is no connected USB partector device."
+
     manager = PartectorSerialManager()
     manager.start()
 
-    time.sleep(15)  # Let the manager run for a while
-    data = manager.get_data()
-
-    manager.stop()
-    manager.join()
+    data: dict = {}
+    deadline = time.time() + 60
+    try:
+        while time.time() < deadline and len(data) < expected:
+            time.sleep(1)
+            for sn, df in manager.get_data().items():
+                data[sn] = df
+    finally:
+        manager.stop()
+        manager.join()
 
     assert isinstance(data, dict), "Data should be a dictionary."
-    assert len(data) > 0, "Data dictionary should not be empty."
+    assert len(data) == expected, f"Got data from {sorted(data)} only."
 
     print("Collected data:")
     print()
@@ -77,3 +94,7 @@ def test_serial_manager():
         print(df)
         print("-" * 40)
         print()
+
+
+def scan_for_serial_partectors_flat() -> list[int]:
+    return [device.serial_number for device in scan_serial_ports()]

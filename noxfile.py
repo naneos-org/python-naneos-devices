@@ -1,12 +1,11 @@
 import nox
 
-# Stelle sicher, dass uv als Backend verwendet wird
+# Use uv to create the session environments.
 nox.options.default_venv_backend = "uv"
 
 
-@nox.session(python=["3.10", "3.11", "3.12", "3.13"])
+@nox.session(python=["3.11", "3.12", "3.13", "3.14"])
 def tests(session):
-    session.install(".[test]")
+    """Run the hardware-free test suite. Hardware tests: `uv run pytest -m hardware`."""
+    session.install(".", "pytest", "pytest-timeout")
     session.run("pytest")
-    # session.run("coverage", "run", "-m", "pytest")
-    # session.run("coverage", "report", "-m")

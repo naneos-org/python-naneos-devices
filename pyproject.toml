@@ -1,6 +1,6 @@
 [project]
 name = "naneos-devices"
-version = "1.1.17"
+version = "1.2.0"
 description = "naneos particle solutions gmbh python backend"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
@@ -11,23 +11,25 @@ classifiers = [
     "Intended Audience :: Healthcare Industry",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
 ]
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.11,<3.15"
 dependencies = [
-    "bleak>=0.22.3",
-    "influxdb-client[ciso]>=1.48.0",
-    "pandas>=2.2.3",
-    "protobuf>=6.33.0",
+    "bleak>=3.0.2",
+    "influxdb-client[ciso]>=1.50.0",
+    "numpy>=2.2.6",
+    "pandas>=3.0.5",
+    "protobuf>=7.36.1",
     "pyserial>=3.5",
-    "requests>=2.32.3",
-    "rich>=14.0.0",
-    "typer>=0.15.2",
+    "requests>=2.34.2",
 ]
+
+[project.scripts]
+naneos-uploader = "naneos.uploader:main"
 
 [project.urls]
 Repository = "https://github.com/naneos-org/python-naneos-devices"
@@ -47,19 +49,19 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "mkdocs-api-autonav>=0.2.1",
-    "mkdocs-gen-files>=0.5.0",
-    "mkdocs-literate-nav>=0.6.2",
-    "mkdocs-material>=9.6.11",
-    "mkdocstrings[python]>=0.29.1",
-    "mypy>=1.15.0",
-    "nox>=2025.2.9",
-    "pandas-stubs>=2.2.3.250308",
-    "pytest>=8.3.5",
+    "mkdocs-gen-files>=0.6.1",
+    "mkdocs-literate-nav>=0.6.3",
+    "mkdocs-material>=9.7.7",
+    "mkdocstrings[python]>=1.0.6",
+    "mypy>=2.3.1",
+    "nox>=2026.8.17",
+    "pandas-stubs>=3.0.5.260730",
+    "pytest>=9.1.1",
     "pytest-timeout>=2.4.0",
-    "ruff>=0.11.7",
-    "types-protobuf>=6.30.2.20250506",
-    "types-pyserial>=3.5.0.20250326",
-    "types-requests>=2.32.0.20250328",
+    "ruff>=0.16.7",
+    "types-protobuf>=7.35.1.20260906",
+    "types-pyserial>=3.5.0.20260712",
+    "types-requests>=2.33.0.20260906",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -73,11 +75,30 @@ explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+testpaths = ["tests"]
+# Hardware tests need a Partector on USB or BLE and take 10-30 s each.
+# Run them with: uv run pytest -m hardware
+markers = [
+    "hardware: needs a Partector connected via USB or BLE",
+    "network: needs internet access and naneos IoT credentials",
+]
+addopts = "-m 'not hardware and not network'"
 
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["src/naneos/protobuf/protoV1_pb2.py", "src/naneos/protobuf/protoV1_pb2.pyi"]
 
-[project.optional-dependencies]
-test = [
-    "pytest",
-    "coverage",
-    "hypothesis"
-] 
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+exclude = ["protoV1_pb2\\.py$"]

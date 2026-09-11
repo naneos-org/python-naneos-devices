@@ -1,140 +1,64 @@
 # Raspberry Pi Setup
 
-## Basic Setup of the Raspberry
+A Raspberry Pi (a Zero 2 W is enough) can run as an always-on uploader: it connects
+to every Partector in reach over USB and Bluetooth and uploads the data to the naneos
+IoT service every 30 seconds.
 
-With the [Raspberry Pi Imager](https://www.raspberrypi.com/software/) install the desired Raspberry Pi Os Version on a SD-Card.
-If your system becomes headless, then you need to have SSH connection to the raspberry.
-Later on we need to use the terminal on the Raspberry Pi.
+## 1. Operating system
 
-Now put the SD-Card into the Raspberry Pi and boot for the first time.
-To bring you system up to date I would run the following 3 commands and reboot the raspberry afterweards.
+Flash **Raspberry Pi OS Bookworm or newer** (Python 3.11 or newer is required) with the
+[Raspberry Pi Imager](https://www.raspberrypi.com/software/). Headless is fine, but you
+need SSH access, because the installer runs in a terminal on the Pi. Set up WiFi in the
+imager so the Pi has internet access after the first boot.
 
-```bash
-sudo apt update
-sudo apt full-upgrade
-sudo apt autoremove
-sudo reboot now
-```
-
-## Installation of Python and Pip
-Install python and pip with the following command:
+## 2. Run the installer
 
 ```bash
-sudo apt install python3-full python3-pip
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash
 ```
 
-## Installation of the Naneos Package in an virtual environment
-Create a folder, where you want to execute the naneos Manager and go into this folder.
+The installer
+
+* installs `python3-venv` and `iw`,
+* creates a virtual environment in `~/naneos-uploader` and installs `naneos-devices` from the
+  `master` branch of the repository,
+* writes the `naneos_uploader` systemd service, which runs the `naneos-uploader` command as
+  your user and restarts it on failure and on every boot,
+* switches Bluetooth on and disables WiFi power save (on a Pi Zero 2 W the sleeping WiFi
+  link stalls uploads and costs Bluetooth airtime, the two radios share one antenna).
+
+It does not upgrade the operating system; run `sudo apt full-upgrade` yourself if you want
+that.
+
+To install a release tag or a test branch instead of `master`:
+
 ```bash
-mkdir naneos-uploader
-cd naneos-uploader
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --ref v1.2.0
 ```
 
-Now we create the virtual environment in an hidden folder called .venv:
+## 3. Check that it runs
+
 ```bash
-python -m venv .venv
+sudo systemctl status naneos_uploader.service
+journalctl -u naneos_uploader.service -f
 ```
 
-Now we activate the virtual environment and install the naneos package that we need for our uploader.
+The log shows the devices as they connect (`Starting serial manager`, `New device detected`,
+`Connected to ...`) and `Upload success: True` every interval.
+
+## 4. Upgrading
+
+Re-run the installer. It keeps the virtual environment, installs the newer package and
+restarts the service.
+
+## Running it by hand
+
+Stop the service first, then run the command with the options you need, for example to
+watch the devices without uploading anything:
+
 ```bash
-source .venv/bin/activate
-pip install naneos-devices
+sudo systemctl stop naneos_uploader.service
+~/naneos-uploader/.venv/bin/naneos-uploader --no-upload --interval 10 --log-level DEBUG
 ```
 
-After the installation we can exit the virtual environment.
-```bash
-deactivate
-```
-
-# Creation of the uploader script:
-Create a script and copy in the following content.
-```bash
-vim uploader-script.py
-```
-
-```python
-#!/home/pi/naneos-uploader/.venv/bin/python
-
-import signal
-import time
-
-from naneos.manager import NaneosDeviceManager
-
-running = True  # global flag to control the main loop
-
-
-def handle_signal(signum, frame):
-    global running
-    running = False
-
-
-# register signal handlers for SIGTERM and SIGINT
-signal.signal(signal.SIGTERM, handle_signal)
-signal.signal(signal.SIGINT, handle_signal)
-
-
-def rp_service_main() -> None:
-    manager = NaneosDeviceManager(
-        use_serial=True, use_ble=True, upload_active=True, gathering_interval_seconds=30
-    )
-    manager.start()
-
-    try:
-        while running:
-            remaining = manager.get_seconds_until_next_upload()
-
-            slept = 0
-            while running and slept < remaining + 1:
-                time.sleep(1)
-                slept += 1
-
-            if not running:
-                break
-
-    finally:
-        manager.stop()
-        manager.join()
-
-
-if __name__ == "__main__":
-    rp_service_main()
-```
-
-Now we need to make our script executable mit:
-```bash
-chmod +x uploader-script.py
-```
-
-# Creation of the service
-
-First we need to create the service-file:
-```bash
-sudo vim /etc/systemd/system/naneos_uploader.service
-```
-
-Then we can enter the following to link the python file and the service.
-```bash
-[Unit]
-Description=Naneos Uploader Service Example
-After=network.target
-
-[Service]
-ExecStart=/home/pi/naneos-uploader/uploader-script.py
-WorkingDirectory=/home/pi/naneos-uploader
-StandardOutput=inherit
-StandardError=inherit
-Restart=always
-RestartSec=5
-User=pi
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Now we need to reload the daemons and enable and start the service:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable naneos_uploader.service
-sudo systemctl start naneos_uploader.service
-```
-
+`naneos-uploader --help` lists all options.
