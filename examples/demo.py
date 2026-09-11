@@ -43,7 +43,7 @@ def queue_example() -> None:
         upload_active=True,
         gathering_interval_seconds=10,
         use_ble=True,
-        use_serial=True,
+        use_serial=False,
     )
     manager.register_output_queue(out_q)
     manager.start()

@@ -57,7 +57,7 @@ class PartectorBleConnection:
     # Do not spend a connect attempt on a device whose last advertisement was
     # weaker than this. Attempts on barely reachable devices mostly time out and
     # only push the backoff up for everyone sharing the adapter.
-    MIN_RSSI_CONNECT_DBM = -90
+    MIN_RSSI_CONNECT_DBM = -85
 
     # A device that stops advertising is invisible to the RSSI gate, so the gate
     # alone would keep it from ever being retried. After this long without a
