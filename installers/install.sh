@@ -88,8 +88,20 @@ WantedBy=multi-user.target
 UNIT
 chmod 644 "/etc/systemd/system/$SERVICE.service"
 
-# 4) Bluetooth on
-echo ">> Ensuring Bluetooth is enabled..."
+# 4) Bluetooth on, with BlueZ experimental features. Passive scanning (no scan
+# requests on the antenna the Pi shares with WiFi) is only offered by
+# bluetoothd when it runs with --experimental. Without it the uploader falls
+# back to active scanning and says so in the log.
+echo ">> Ensuring Bluetooth is enabled (bluetoothd --experimental)..."
+mkdir -p /etc/systemd/system/bluetooth.service.d
+cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<'CONF'
+# Installed by the naneos uploader installer: passive BLE scanning needs this.
+[Service]
+ExecStart=
+ExecStart=/usr/libexec/bluetooth/bluetoothd --experimental
+CONF
+systemctl daemon-reload
+systemctl restart bluetooth.service || true
 rfkill unblock bluetooth || true
 echo -e 'power on\nquit' | bluetoothctl >/dev/null 2>&1 || true
 

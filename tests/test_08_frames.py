@@ -58,7 +58,7 @@ def test_every_serial_layout_converts_with_strict_dtypes(caplog) -> None:
 
 
 def test_ble_style_point_with_none_device_type_converts(caplog) -> None:
-    point = _point(1, 1000, ConnectionType.ADVERTISEMENT)  # device_type None
+    point = _point(1, 1000, ConnectionType.CONNECTED)  # device_type None until known
 
     with caplog.at_level(logging.WARNING, logger="naneos.frames"):
         df = to_pandas_df([point])
@@ -66,28 +66,24 @@ def test_ble_style_point_with_none_device_type_converts(caplog) -> None:
     assert "Could not apply" not in caplog.text
     assert str(df["device_type"].dtype) == "Int32"
     assert df["device_type"].isna().all()
-    assert (df["connection_type"] == ConnectionType.ADVERTISEMENT).all()
-    assert (df["connection_type"] == "advertisement").all()
+    assert (df["connection_type"] == ConnectionType.CONNECTED).all()
+    assert (df["connection_type"] == "connected").all()
 
 
-def test_sort_and_clean_prefers_serial_then_connected_then_advertisement() -> None:
+def test_sort_and_clean_prefers_serial_over_connected_and_keeps_unknown_kinds() -> None:
     data = {
         1: to_pandas_df(
-            [
-                _point(1, 3000, ConnectionType.ADVERTISEMENT),
-                _point(1, 1000, ConnectionType.CONNECTED),
-                _point(1, 2000, ConnectionType.CONNECTED),
-            ]
+            [_point(1, 1000, ConnectionType.CONNECTED), _point(1, 500, ConnectionType.SERIAL)]
         ),
-        2: to_pandas_df(
-            [_point(2, 1000, ConnectionType.ADVERTISEMENT), _point(2, 500, ConnectionType.SERIAL)]
-        ),
+        2: to_pandas_df([_point(2, 1000, ConnectionType.CONNECTED)]),
+        3: to_pandas_df([_point(3, 1000, ConnectionType.ADVERTISEMENT)]),  # recorded by 1.1.x
     }
 
     cleaned = sort_and_clean_naneos_data(data)
 
-    assert list(cleaned[1].index) == [1000, 2000]
-    assert list(cleaned[2].index) == [500]
+    assert list(cleaned[1].index) == [500]
+    assert list(cleaned[2].index) == [1000]
+    assert list(cleaned[3].index) == [1000]
 
 
 def test_sort_and_clean_serial_only_drops_devices_without_serial_rows() -> None:
@@ -119,7 +115,7 @@ def test_sort_and_clean_settles_on_the_most_specific_device_type_without_droppin
 
 
 def test_device_type_of_falls_back_to_p2() -> None:
-    unknown = to_pandas_df([_point(1, 1000, ConnectionType.ADVERTISEMENT)])
+    unknown = to_pandas_df([_point(1, 1000, ConnectionType.CONNECTED)])
     assert device_type_of(unknown) == DeviceType.P2
     assert device_type_of(pd.DataFrame({"ldsa": [1.0]})) == DeviceType.P2
 

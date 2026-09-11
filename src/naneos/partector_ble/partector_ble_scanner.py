@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from collections import deque
 from statistics import median
+from typing import Any
 
 from bleak import BleakScanner
+from bleak.args.bluez import AdvertisementDataType, BlueZScannerArgs, OrPattern
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
-from bleak.exc import BleakDBusError
+from bleak.exc import BleakDBusError, BleakError
 
-from naneos.data_point import ConnectionType, NaneosDeviceDataPoint
 from naneos.logger import get_naneos_logger
-from naneos.partector_ble.decoders import PartectorBleDecoderAux, PartectorBleDecoderStd
+from naneos.partector_ble.decoders import PartectorBleDecoderStd
 from naneos.partector_ble.partector_ble_decoder import PartectorBleDecoder
 
 logger = get_naneos_logger(__name__)
@@ -20,12 +22,17 @@ logger = get_naneos_logger(__name__)
 
 class PartectorBleScanner:
     """
-    Context-managed BLE scanner for Partector devices.
+    Context-managed BLE scanner that discovers Partector devices.
 
-    This scanner runs in the provided asyncio event loop and collects advertisement data
-    from BLE devices named "P2" or "PartectorBT". Decoded advertisement payloads are
-    pushed into an asyncio.Queue for further processing. Can be used with `async with`
-    for automatic startup and cleanup.
+    The scanner exists for the links: it reports which Partector (serial number)
+    advertises at which address, keeps the recent RSSI per device for the
+    connect gate, and hands out the freshest BLEDevice for reconnects. It does
+    not deliver measurement data; that comes from the connections only.
+
+    On Linux it scans passively when BlueZ allows it (bluetoothd started with
+    --experimental), which costs no scan requests on the shared antenna of a
+    Raspberry Pi. Elsewhere, or when passive scanning is refused, it falls back
+    to the usual active scan.
     """
 
     SCAN_INTERVAL = 0.8  # seconds; backoff before retrying a failed discovery
@@ -35,30 +42,45 @@ class PartectorBleScanner:
     RSSI_MAX_AGE_SECONDS = 10.0
     RSSI_HISTORY_LEN = 5  # readings kept per device, median is used to damp outliers
 
+    # Passive scanning on BlueZ needs a filter. Partector frames put the protocol
+    # byte "X" first in the manufacturer data, and the devices name themselves
+    # "P2" (shortened name in the advertisement) or "PartectorBT".
+    PASSIVE_PATTERNS = (
+        OrPattern(0, AdvertisementDataType.MANUFACTURER_SPECIFIC_DATA, b"X"),
+        OrPattern(0, AdvertisementDataType.SHORTENED_LOCAL_NAME, b"P2"),
+        OrPattern(0, AdvertisementDataType.COMPLETE_LOCAL_NAME, b"PartectorBT"),
+    )
+
     # static methods ###############################################################################
     @staticmethod
-    def create_scanner_queue() -> asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]]:
-        """Create a queue for the scanner."""
-        # Increased maxsize to 500 to handle bursts from multiple devices
-        # Prevents message loss on systems with many concurrent BLE connections
-        queue_scanner: asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]] = asyncio.Queue(
-            maxsize=500
-        )
+    def create_scanner_queue() -> asyncio.Queue[tuple[BLEDevice, int]]:
+        """Queue of (device, serial number) pairs, one per received advertisement."""
+        # Bounded: the manager drains it once per second, and a burst from many
+        # devices must not grow without limit.
+        return asyncio.Queue(maxsize=500)
 
-        return queue_scanner
+    @classmethod
+    def scanner_kwargs(cls, passive: bool) -> dict[str, Any]:
+        """Arguments for BleakScanner: passive with the BlueZ filter, or plain active."""
+        if not passive:
+            return {}
+        return {
+            "scanning_mode": "passive",
+            "bluez": BlueZScannerArgs(or_patterns=list(cls.PASSIVE_PATTERNS)),
+        }
 
     # == Lifecycle and Context Management ==========================================================
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        queue: asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]],
+        queue: asyncio.Queue[tuple[BLEDevice, int]],
     ) -> None:
         """
         Initializes the scanner with the given event loop and queue.
 
         Args:
             loop (asyncio.AbstractEventLoop): The event loop to run the scanner in.
-            queue (asyncio.Queue): The queue to store the scanned data.
+            queue (asyncio.Queue): Receives (BLEDevice, serial number) per advertisement.
         """
         self._loop = loop
         self._queue = queue
@@ -78,6 +100,10 @@ class PartectorBleScanner:
         # instead of probing the adapter with a `bluetoothctl` subprocess: if the
         # adapter goes away, starting discovery is exactly what fails.
         self._discovery_active = False
+
+        # Passive scanning is tried first on Linux; once BlueZ refuses it, the
+        # scanner stays active for the rest of its life.
+        self._passive = sys.platform.startswith("linux")
 
         self._stop_event = asyncio.Event()
         self._stop_event.set()  # stopped by default
@@ -99,6 +125,11 @@ class PartectorBleScanner:
         logger.debug("Starting PartectorBleScanner...")
         self._stop_event.clear()
         self._task = self._loop.create_task(self.scan())
+
+    @property
+    def is_passive(self) -> bool:
+        """True while the scanner runs (or will run) in passive mode."""
+        return self._passive
 
     def get_rssi(self, address: str, max_age_seconds: float | None = None) -> int | None:
         """Returns the recent median RSSI for the given address.
@@ -133,10 +164,10 @@ class PartectorBleScanner:
     @property
     def is_discovering(self) -> bool:
         """True while BlueZ discovery is running, i.e. the adapter is usable."""
-        return self._discovery_active and self._bluez_discovery_is_alive()
+        return self._discovery_active and self._bluez_discovery_is_alive(self._passive)
 
     @staticmethod
-    def _bluez_discovery_is_alive() -> bool:
+    def _bluez_discovery_is_alive(passive: bool) -> bool:
         """False once BlueZ has stopped scanning underneath us.
 
         Two ways that happens, both silent. The D-Bus connection bleak holds can
@@ -150,6 +181,9 @@ class PartectorBleScanner:
 
         State is read out of bleak rather than requested: asking bleak for its
         manager reconnects the bus and hides the very failure this looks for.
+
+        A passive scan is an advertisement monitor, not a discovery, so the
+        adapter's Discovering flag stays False; only the bus is judged then.
         """
         try:
             from bleak.backends.bluezdbus import defs
@@ -162,6 +196,9 @@ class PartectorBleScanner:
             bus = manager._bus
             if bus is None or not bus.connected:
                 return False
+
+            if passive:
+                return True
 
             adapters = [
                 properties[defs.ADAPTER_INTERFACE]
@@ -202,41 +239,37 @@ class PartectorBleScanner:
 
     # == Internal Async Processing =================================================================
     async def _detection_callback(self, device: BLEDevice, adv: AdvertisementData) -> None:
-        """Handles the callbacks from the BleakScanner used in the scan method.
+        """Records RSSI and device for a Partector advertisement and reports its serial.
 
         Args:
             device (BLEDevice): Bleak BLEDevice object
             adv (AdvertisementData): Bleak AdvertisementData object
         """
+        # In passive mode the BlueZ filter already selects Partector frames, and
+        # the name may be missing; the protocol bytes below are the real check.
+        if device.name and device.name not in self.BLE_NAMES_NANEOS:
+            return
 
-        if not device.name or device.name not in self.BLE_NAMES_NANEOS:
+        adv_data = PartectorBleDecoder.decode_partector_advertisement(adv)
+        if not adv_data:
+            return
+
+        serial_number = PartectorBleDecoderStd.get_serial_number(adv_data[0])
+        if not serial_number:
             return
 
         history = self._rssi.setdefault(device.address, deque(maxlen=self.RSSI_HISTORY_LEN))
         history.append((time.monotonic(), adv.rssi))
         self._devices[device.address] = device
 
-        adv_data = PartectorBleDecoder.decode_partector_advertisement(adv)
-        if not adv_data:
-            return
-
-        decoded = PartectorBleDecoderStd.decode(adv_data[0], data_structure=None)
-        if not decoded.serial_number:
-            return
-        if adv_data[1]:
-            decoded = PartectorBleDecoderAux.decode(adv_data[1], data_structure=decoded)
-        decoded.unix_timestamp = int(time.time()) * 1000
-        decoded.connection_type = ConnectionType.ADVERTISEMENT
-
-        # Non-blocking put with overflow handling: drop oldest item if queue is full
-        # This prevents callbacks from being delayed by queue operations
+        # Drop the oldest entry when full: the callback must never block.
         try:
             if self._queue.full():
                 try:
-                    self._queue.get_nowait()  # Remove oldest item
+                    self._queue.get_nowait()
                 except asyncio.QueueEmpty:
                     pass
-            self._queue.put_nowait((device, decoded))
+            self._queue.put_nowait((device, serial_number))
         except asyncio.QueueFull:
             logger.debug(f"Scanner queue full, dropping advertisement from {device.address}")
 
@@ -254,19 +287,36 @@ class PartectorBleScanner:
             try:
                 # A fresh scanner per attempt: after a failure the old one may
                 # still hold discovery callbacks registered with BlueZ.
-                async with BleakScanner(self._detection_callback):
+                kwargs = self.scanner_kwargs(self._passive)
+                async with BleakScanner(self._detection_callback, **kwargs):
                     self._discovery_active = True
+                    logger.info(f"BLE scanning ({'passive' if self._passive else 'active'}).")
                     await self._stop_event.wait()
             except BleakDBusError as e:
-                # Stopping a discovery that BlueZ has already dropped, which is
-                # exactly the situation the scanner is restarted for.
                 if "No discovery started" in str(e):
+                    # Stopping a discovery that BlueZ has already dropped, which is
+                    # exactly the situation the scanner is restarted for.
                     logger.debug(f"Discovery was already stopped by BlueZ: {e}")
+                elif self._passive:
+                    self._fall_back_to_active(e)
                 else:
                     logger.exception(e)
                 await asyncio.sleep(self.SCAN_INTERVAL)  # small backoff before retry
+            except BleakError as e:
+                if self._passive:
+                    self._fall_back_to_active(e)
+                else:
+                    logger.exception(e)
+                await asyncio.sleep(self.SCAN_INTERVAL)
             except Exception as e:
                 logger.exception(e)
                 await asyncio.sleep(self.SCAN_INTERVAL)  # small backoff before retry
             finally:
                 self._discovery_active = False
+
+    def _fall_back_to_active(self, error: Exception) -> None:
+        logger.warning(
+            f"Passive BLE scanning is not available ({error}); using active scanning. "
+            "On Linux, start bluetoothd with --experimental to enable it."
+        )
+        self._passive = False

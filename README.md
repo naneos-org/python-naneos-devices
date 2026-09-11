@@ -34,6 +34,8 @@ Clean start/stop APIs make integration trivial.
 
 **Highlights**
 - ✅ Easy on/off switches for Serial and BLE (before or during runtime)
+- 🔗 BLE is connection-only: data comes from linked devices, advertisements are used for discovery only
+- 🎯 Optional BLE allow-list (`ble_serial_numbers`) and link cap (`ble_max_links`, default 7)
 - ⏱️ Configurable gathering interval (clamped to 10–600 s)
 - 📤 Optional auto-upload (enable/disable anytime)
 - 📦 Queue hand-off: receive dict[int, pandas.DataFrame] snapshots and process them in your app
@@ -53,6 +55,8 @@ manager = NaneosDeviceManager(
     use_ble=True,
     upload_active=True,
     gathering_interval_seconds=30,  # clamped to [10, 600]
+    ble_serial_numbers=None,  # or e.g. [8617, 8764] to link only to your own devices
+    ble_max_links=7,  # BlueZ handles about seven links reliably
 )
 manager.start()
 
@@ -213,7 +217,13 @@ journalctl -u naneos_uploader.service -f          # live log
 sudo systemctl status naneos_uploader.service
 sudo systemctl stop naneos_uploader.service
 ~/naneos-uploader/.venv/bin/naneos-uploader --no-upload --interval 10   # run by hand, no upload
+~/naneos-uploader/.venv/bin/naneos-uploader --ble-allow 8617,8764 --ble-max-links 2
 ```
+
+BLE on the Pi is connection-only and scans passively: the installer starts `bluetoothd` with
+`--experimental`, which BlueZ needs for passive scanning, so the shared WiFi/BLE antenna is not
+loaded with scan requests. The log line `BLE scanning (passive).` confirms it; `(active)` plus a
+warning means BlueZ refused and the uploader fell back to active scanning.
 
 # Examples
 The `examples/` folder contains runnable scripts: `demo.py` (device manager with queue hand-off),

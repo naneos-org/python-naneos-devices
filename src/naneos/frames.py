@@ -153,7 +153,7 @@ def _resolve_device_type(df: pd.DataFrame) -> pd.DataFrame:
 
     The type is a property of the device, not of the row, but it is learned
     late: a BLE link reports a P2 Pro only once the first size distribution
-    arrives, and an advertisement cannot tell the families apart at all.
+    arrives.
     """
     if "device_type" not in df.columns:
         return df
@@ -172,10 +172,10 @@ def sort_and_clean_naneos_data(
 ) -> dict[int, pd.DataFrame]:
     """Prepare gathered frames for the upload.
 
-    Per device: keep only the rows of the best connection type
-    (serial > connected > advertisement), sort by time, drop duplicate
-    timestamps (last wins) and settle on one device type. Devices listed in
-    serial_only are restricted to their serial rows even if none arrived.
+    Per device: keep only the rows of the best connection type (serial over
+    BLE link), sort by time, drop duplicate timestamps (last wins) and settle
+    on one device type. Devices listed in serial_only are restricted to their
+    serial rows even if none arrived.
     """
     if serial_only is None:
         serial_only = []
@@ -192,8 +192,6 @@ def sort_and_clean_naneos_data(
                 df = df[connection == ConnectionType.SERIAL]
             elif (connection == ConnectionType.CONNECTED).any():
                 df = df[connection == ConnectionType.CONNECTED]
-            elif (connection == ConnectionType.ADVERTISEMENT).any():
-                df = df[connection == ConnectionType.ADVERTISEMENT]
 
         df = df.sort_index()
         df = df[~df.index.duplicated(keep="last")]

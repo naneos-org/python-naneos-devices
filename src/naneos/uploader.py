@@ -17,6 +17,7 @@ from typing import Any
 from naneos import __version__
 from naneos.logger import enable_console_logging, get_naneos_logger
 from naneos.manager import NaneosDeviceManager
+from naneos.partector_ble import PartectorBleManager
 
 logger = get_naneos_logger("naneos.uploader")
 
@@ -57,6 +58,13 @@ def warn_if_wifi_power_save_on() -> None:
         logger.debug(f"Could not read WiFi power save state: {e}")
 
 
+def _serial_list(text: str) -> list[int]:
+    try:
+        return [int(part) for part in text.split(",") if part.strip()]
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("expected serial numbers like 8617,8764") from e
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="naneos-uploader",
@@ -69,6 +77,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-serial", action="store_true", help="do not use USB devices")
     parser.add_argument("--no-ble", action="store_true", help="do not use Bluetooth devices")
     parser.add_argument("--no-upload", action="store_true", help="gather only, never upload")
+    parser.add_argument(
+        "--ble-allow",
+        type=_serial_list,
+        default=None,
+        metavar="SN[,SN...]",
+        help="only link to these serial numbers over BLE (default: any Partector in reach)",
+    )
+    parser.add_argument(
+        "--ble-max-links",
+        type=int,
+        default=PartectorBleManager.DEFAULT_MAX_LINKS,
+        help="maximum number of simultaneous BLE links (default: %(default)s)",
+    )
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -97,6 +118,8 @@ def run(args: argparse.Namespace) -> None:
         use_ble=not args.no_ble,
         upload_active=not args.no_upload,
         gathering_interval_seconds=args.interval,
+        ble_serial_numbers=args.ble_allow,
+        ble_max_links=args.ble_max_links,
     )
     manager.start()
 

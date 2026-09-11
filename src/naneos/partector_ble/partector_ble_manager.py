@@ -2,6 +2,7 @@ import asyncio
 import sys
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import pandas as pd
@@ -32,7 +33,17 @@ class BleLink:
 
 
 class PartectorBleManager(threading.Thread):
-    """Scans for Partectors, connects to every one in reach and collects their data."""
+    """Connects to the Partectors in reach and collects the data they send over the link.
+
+    Only connected devices deliver data. The scanner is used to find devices,
+    to gate connects by signal strength and to refresh stale device handles.
+
+    Args:
+        serial_numbers: Only connect to these devices. None connects to every
+            Partector in reach, first come first served.
+        max_links: Upper bound of simultaneous links (including ones that are
+            still retrying). BlueZ handles about seven reliably.
+    """
 
     # How often the manager drains its queues. The queues are bounded and the
     # producers are ~1Hz per device, so polling faster only burns CPU on a
@@ -49,8 +60,16 @@ class PartectorBleManager(threading.Thread):
     # their tasks are cancelled.
     SHUTDOWN_GRACE_SECONDS = 8.0
 
-    def __init__(self) -> None:
+    DEFAULT_MAX_LINKS = 7
+
+    def __init__(
+        self, serial_numbers: Iterable[int] | None = None, max_links: int = DEFAULT_MAX_LINKS
+    ) -> None:
         super().__init__(daemon=True)
+        self._allowed_serials: frozenset[int] | None = (
+            frozenset(serial_numbers) if serial_numbers is not None else None
+        )
+        self._max_links = max(1, max_links)
         self._stop_event = threading.Event()
         # Ends the connection tasks of the current scanner session; only polled,
         # never awaited, so setting it from another thread is fine.
@@ -59,12 +78,13 @@ class PartectorBleManager(threading.Thread):
         self._queue_scanner = PartectorBleScanner.create_scanner_queue()
         self._queue_connection = PartectorBleConnection.create_connection_queue()
         self._links: dict[int, BleLink] = {}  # key: serial number
+        self._rejected_for_cap: set[int] = set()
         self._scanner: PartectorBleScanner | None = None
 
-        # Raw data points, converted to DataFrames only in get_data(). Building
-        # them here would put pandas on the event loop that also services the BLE
-        # notifications, which on a Raspberry Pi Zero 2 W is enough to stall the
-        # links themselves.
+        # Raw data points from the links, converted to DataFrames only in
+        # get_data(). Building them here would put pandas on the event loop that
+        # also services the BLE notifications, which on a Raspberry Pi Zero 2 W is
+        # enough to stall the links themselves.
         self._points: dict[int, list[NaneosDeviceDataPoint]] = {}
 
     # == Public API (any thread) ===================================================================
@@ -266,31 +286,20 @@ class PartectorBleManager(threading.Thread):
                 del buffered[:-MAX_ROWS_PER_DEVICE]
 
     async def _scanner_queue_routine(self) -> None:
-        """Drain the scanner queue, record the advertisements and connect to new devices."""
-        to_check: dict[int, BLEDevice] = {}
-        batch_data: list[NaneosDeviceDataPoint] = []
+        """Drain the scanner queue and start a link for every new device that qualifies."""
+        seen: dict[int, BLEDevice] = {}
 
         while not self._queue_scanner.empty():
             try:
-                device, decoded = self._queue_scanner.get_nowait()
+                device, serial = self._queue_scanner.get_nowait()
             except asyncio.QueueEmpty:
                 break
+            seen[serial] = device
 
-            if not decoded.serial_number:
-                continue
-
-            batch_data.append(decoded)
-            to_check[decoded.serial_number] = device
-
-        # Advertisement timestamps are truncated to whole seconds and
-        # sort_and_clean_naneos_data() keeps only the last row per timestamp, so
-        # everything but the newest advertisement per device-second is built into
-        # a DataFrame just to be thrown away again downstream.
-        deduped = {(d.serial_number, d.unix_timestamp): d for d in batch_data}
-        self._buffer_points(list(deduped.values()))
-
-        for serial, device in to_check.items():
+        for serial, device in seen.items():
             if serial in self._links:
+                continue
+            if not self._wants_link(serial):
                 continue
 
             rssi = self._get_rssi(device.address)
@@ -306,6 +315,18 @@ class PartectorBleManager(threading.Thread):
             )
             task = self._loop.create_task(self._task_connection(device, serial))
             self._links[serial] = BleLink(task=task)
+
+    def _wants_link(self, serial: int) -> bool:
+        """Allow-list and link cap. Logged once per device per decision, not per second."""
+        if self._allowed_serials is not None and serial not in self._allowed_serials:
+            return False
+        if len(self._links) >= self._max_links:
+            if serial not in self._rejected_for_cap:
+                logger.info(f"Not connecting to serial={serial}: {self._max_links} links in use.")
+                self._rejected_for_cap.add(serial)
+            return False
+        self._rejected_for_cap.discard(serial)
+        return True
 
     async def _connection_queue_routine(self) -> None:
         """Drain the connection queue and record the data points in one batch."""

@@ -2,6 +2,7 @@ import queue
 import threading
 import time
 from collections import deque
+from collections.abc import Callable, Iterable
 from typing import TypeVar
 
 import pandas as pd
@@ -32,10 +33,23 @@ class NaneosDeviceManager(threading.Thread):
         use_ble: bool = True,
         upload_active: bool = True,
         gathering_interval_seconds: int = 30,
+        ble_serial_numbers: Iterable[int] | None = None,
+        ble_max_links: int = PartectorBleManager.DEFAULT_MAX_LINKS,
     ) -> None:
+        """
+        Args:
+            use_serial: connect to Partectors on USB.
+            use_ble: connect to Partectors over Bluetooth (data comes from the links only).
+            upload_active: upload every snapshot to the naneos IoT service.
+            gathering_interval_seconds: snapshot interval, clamped to 10-600 s.
+            ble_serial_numbers: only link to these devices over BLE; None means any in reach.
+            ble_max_links: upper bound of simultaneous BLE links.
+        """
         super().__init__(daemon=True)
         self._use_serial = use_serial
         self._use_ble = use_ble
+        self._ble_serial_numbers = frozenset(ble_serial_numbers) if ble_serial_numbers else None
+        self._ble_max_links = ble_max_links
         self._upload_active = upload_active
         self._next_upload_time = time.time() + gathering_interval_seconds
         self.set_gathering_interval_seconds(gathering_interval_seconds)
@@ -144,12 +158,15 @@ class NaneosDeviceManager(threading.Thread):
             self._data = add_to_existing_naneos_data(self._data, self._manager_ble.get_data())
 
         self._manager_ble = self._sync_manager(
-            self._manager_ble, self._use_ble, PartectorBleManager, "BLE"
+            self._manager_ble,
+            self._use_ble,
+            lambda: PartectorBleManager(self._ble_serial_numbers, self._ble_max_links),
+            "BLE",
         )
 
     @staticmethod
     def _sync_manager(
-        manager: ManagerT | None, wanted: bool, factory: type[ManagerT], name: str
+        manager: ManagerT | None, wanted: bool, factory: Callable[[], ManagerT], name: str
     ) -> ManagerT | None:
         """Starts or stops a sub-manager so that it matches the wanted state."""
         if manager is None and wanted:

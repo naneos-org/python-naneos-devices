@@ -14,10 +14,12 @@ class DeviceType(IntEnum):
 
 
 class ConnectionType(StrEnum):
-    """How a data point reached us. Ordered by trust: serial > connected > advertisement."""
+    """How a data point reached us. Ordered by trust: serial > connected."""
 
     SERIAL = "serial"
     CONNECTED = "connected"
+    # No longer produced since 1.2.0 (BLE is connection-only); kept so frames
+    # recorded by older versions still load.
     ADVERTISEMENT = "advertisement"
 
 
