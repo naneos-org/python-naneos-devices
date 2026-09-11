@@ -3,7 +3,6 @@ import asyncio
 import pytest
 from bleak.backends.device import BLEDevice
 
-from naneos.data_point import NaneosDeviceDataPoint
 from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
@@ -13,13 +12,12 @@ SNS = {8617}  # serial numbers to connect to for testing
 
 
 async def _map_sn_to_device(
-    queue: asyncio.Queue[tuple[BLEDevice, NaneosDeviceDataPoint]],
+    queue: asyncio.Queue[tuple[BLEDevice, int]],
 ) -> dict[int, BLEDevice] | None:
     device_dict = {}
     while not queue.empty():
-        device, data = await queue.get()
-        if data.serial_number:
-            device_dict[data.serial_number] = device
+        device, serial_number = await queue.get()
+        device_dict[serial_number] = device
 
     if not device_dict:
         return None

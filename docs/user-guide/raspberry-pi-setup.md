@@ -24,8 +24,9 @@ The installer
   `master` branch of the repository,
 * writes the `naneos_uploader` systemd service, which runs the `naneos-uploader` command as
   your user and restarts it on failure and on every boot,
-* switches Bluetooth on and disables WiFi power save (on a Pi Zero 2 W the sleeping WiFi
-  link stalls uploads and costs Bluetooth airtime, the two radios share one antenna).
+* switches Bluetooth on, starts `bluetoothd` with `--experimental` (needed for passive BLE
+  scanning) and disables WiFi power save (on a Pi Zero 2 W the sleeping WiFi link stalls
+  uploads and costs Bluetooth airtime, the two radios share one antenna).
 
 It does not upgrade the operating system; run `sudo apt full-upgrade` yourself if you want
 that.
@@ -45,6 +46,28 @@ journalctl -u naneos_uploader.service -f
 
 The log shows the devices as they connect (`Starting serial manager`, `New device detected`,
 `Connected to ...`) and `Upload success: True` every interval.
+
+Bluetooth is connection-only: only devices with an open link deliver data, advertisements
+are used to find them. The scanner should report `BLE scanning (passive).` shortly after
+start. If it says `(active)` together with a warning, BlueZ refused passive scanning; check
+that `systemctl show bluetooth -p ExecStart` contains `--experimental` and that
+`bluetoothctl --version` is 5.56 or newer.
+
+To restrict the Pi to your own devices, or to limit the number of links, edit the service:
+
+```bash
+sudo systemctl edit naneos_uploader.service
+```
+
+and add, for example:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/home/pi/naneos-uploader/.venv/bin/naneos-uploader --ble-allow 8617,8764 --ble-max-links 2
+```
+
+followed by `sudo systemctl restart naneos_uploader.service`.
 
 ## 4. Upgrading
 

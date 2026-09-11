@@ -58,15 +58,31 @@ apt-get install -y -qq python3-venv python3-pip iw >/dev/null
 echo ">> Installing naneos-devices ($REF) into $APP_DIR/.venv ..."
 mkdir -p "$APP_DIR"
 chown "$USER_NAME":"$USER_NAME" "$APP_DIR"
+# Two pip steps: the first resolves and upgrades the dependencies, the second
+# replaces the package itself. pip keeps an installed package when the
+# version number is unchanged, even if the archive URL (the git ref) differs,
+# so switching between branches or a branch and master needs the forced,
+# dependency-free reinstall.
 sudo -u "$USER_NAME" bash -c "
   set -e
   cd '$APP_DIR'
   [ -d .venv ] || python3 -m venv .venv
   .venv/bin/pip install --quiet --upgrade pip
   .venv/bin/pip install --quiet --upgrade '$PACKAGE_URL'
+  .venv/bin/pip install --quiet --force-reinstall --no-deps '$PACKAGE_URL'
 "
 VERSION="$("$APP_DIR/.venv/bin/naneos-uploader" --version)"
-echo "   installed: $VERSION"
+INSTALLED_FROM="$("$APP_DIR/.venv/bin/python" -c "
+import json
+from importlib.metadata import distribution
+text = distribution('naneos-devices').read_text('direct_url.json') or '{}'
+print(json.loads(text).get('url', 'PyPI'))
+")"
+if [[ "$INSTALLED_FROM" != "$PACKAGE_URL" ]]; then
+  echo "!! Installed from $INSTALLED_FROM, expected $PACKAGE_URL"
+  exit 1
+fi
+echo "   installed: $VERSION from $INSTALLED_FROM"
 
 # 3) systemd service running the naneos-uploader command
 echo ">> Writing /etc/systemd/system/$SERVICE.service ..."
@@ -88,8 +104,20 @@ WantedBy=multi-user.target
 UNIT
 chmod 644 "/etc/systemd/system/$SERVICE.service"
 
-# 4) Bluetooth on
-echo ">> Ensuring Bluetooth is enabled..."
+# 4) Bluetooth on, with BlueZ experimental features. Passive scanning (no scan
+# requests on the antenna the Pi shares with WiFi) is only offered by
+# bluetoothd when it runs with --experimental. Without it the uploader falls
+# back to active scanning and says so in the log.
+echo ">> Ensuring Bluetooth is enabled (bluetoothd --experimental)..."
+mkdir -p /etc/systemd/system/bluetooth.service.d
+cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<'CONF'
+# Installed by the naneos uploader installer: passive BLE scanning needs this.
+[Service]
+ExecStart=
+ExecStart=/usr/libexec/bluetooth/bluetoothd --experimental
+CONF
+systemctl daemon-reload
+systemctl restart bluetooth.service || true
 rfkill unblock bluetooth || true
 echo -e 'power on\nquit' | bluetoothctl >/dev/null 2>&1 || true
 

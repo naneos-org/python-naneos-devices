@@ -7,16 +7,19 @@ can also be started by hand, for example to test a Pi without uploading:
 """
 
 import argparse
+import json
 import logging
 import shutil
 import signal
 import subprocess
 import time
+from importlib.metadata import PackageNotFoundError, distribution
 from typing import Any
 
 from naneos import __version__
 from naneos.logger import enable_console_logging, get_naneos_logger
 from naneos.manager import NaneosDeviceManager
+from naneos.partector_ble import PartectorBleManager
 
 logger = get_naneos_logger("naneos.uploader")
 
@@ -57,6 +60,31 @@ def warn_if_wifi_power_save_on() -> None:
         logger.debug(f"Could not read WiFi power save state: {e}")
 
 
+def _serial_list(text: str) -> list[int]:
+    try:
+        return [int(part) for part in text.split(",") if part.strip()]
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("expected serial numbers like 8617,8764") from e
+
+
+def installed_from() -> str:
+    """Where pip got the package from (a git archive URL, a path) or "PyPI".
+
+    Lets the first log line tell which branch or tag a Pi is running, since the
+    version number alone does not.
+    """
+    try:
+        text = distribution("naneos-devices").read_text("direct_url.json")
+    except PackageNotFoundError:
+        return "an uninstalled checkout"
+    if not text:
+        return "PyPI"
+    try:
+        return str(json.loads(text).get("url", "unknown source"))
+    except ValueError:
+        return "unknown source"
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="naneos-uploader",
@@ -70,6 +98,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-ble", action="store_true", help="do not use Bluetooth devices")
     parser.add_argument("--no-upload", action="store_true", help="gather only, never upload")
     parser.add_argument(
+        "--ble-allow",
+        type=_serial_list,
+        default=None,
+        metavar="SN[,SN...]",
+        help="only link to these serial numbers over BLE (default: any Partector in reach)",
+    )
+    parser.add_argument(
+        "--ble-max-links",
+        type=int,
+        default=PartectorBleManager.DEFAULT_MAX_LINKS,
+        help="maximum number of simultaneous BLE links (default: %(default)s)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -80,7 +121,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def run(args: argparse.Namespace) -> None:
     enable_console_logging(getattr(logging, args.log_level), colored=False)
-    logger.info(f"naneos-uploader {__version__} starting")
+    logger.info(f"naneos-uploader {__version__} starting (installed from {installed_from()})")
     warn_if_wifi_power_save_on()
 
     running = True
@@ -97,6 +138,8 @@ def run(args: argparse.Namespace) -> None:
         use_ble=not args.no_ble,
         upload_active=not args.no_upload,
         gathering_interval_seconds=args.interval,
+        ble_serial_numbers=args.ble_allow,
+        ble_max_links=args.ble_max_links,
     )
     manager.start()
 

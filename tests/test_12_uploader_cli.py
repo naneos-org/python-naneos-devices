@@ -21,3 +21,20 @@ def test_test_run_flags() -> None:
     assert args.no_upload and args.no_ble and not args.no_serial
     assert args.interval == 10
     assert args.log_level == "DEBUG"
+
+
+def test_ble_allow_list_and_link_cap() -> None:
+    args = parse_args([])
+    assert args.ble_allow is None
+    assert args.ble_max_links == 7
+
+    args = parse_args(["--ble-allow", "8617,8764", "--ble-max-links", "3"])
+    assert args.ble_allow == [8617, 8764]
+    assert args.ble_max_links == 3
+
+
+def test_installed_from_names_a_source() -> None:
+    from naneos.uploader import installed_from
+
+    source = installed_from()
+    assert isinstance(source, str) and source
