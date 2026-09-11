@@ -66,7 +66,7 @@ sudo -u "$USER_NAME" bash -c "
   .venv/bin/pip install --quiet --upgrade '$PACKAGE_URL'
 "
 VERSION="$("$APP_DIR/.venv/bin/naneos-uploader" --version)"
-echo "   installed: $VERSION"
+echo "   installed: $VERSION from $PACKAGE_URL"
 
 # 3) systemd service running the naneos-uploader command
 echo ">> Writing /etc/systemd/system/$SERVICE.service ..."
