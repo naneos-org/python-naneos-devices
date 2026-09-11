@@ -243,7 +243,9 @@ Changes that touch the serial or BLE code are tested on real devices before they
 2. Raspberry Pi: `curl -fsSL .../installers/install.sh | sudo bash -s -- --ref release_test` (see above), then watch `journalctl -u naneos_uploader.service -f`.
 3. Windows / macOS: in any virtual environment
    `pip install "https://github.com/naneos-org/python-naneos-devices/archive/release_test.tar.gz"`
-   and run `pytest -m hardware` from a checkout with the devices attached.
+   and run `pytest -m hardware` from a checkout with the devices attached. To switch an existing
+   environment to another branch with the same version number, add `--force-reinstall --no-deps`;
+   pip otherwise keeps what is installed.
 4. When it works, open the pull request from the feature branch to `master`, merge, tag the release.
 
 Contributions are welcome! If you encounter any issues or have suggestions for improvements, please submit an issue on the [issue tracker](https://github.com/naneos-org/python-naneos-devices/issues).
