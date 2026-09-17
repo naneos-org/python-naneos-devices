@@ -295,3 +295,128 @@ before releasing, the Windows-only branches in the connection are untested here.
 - Are the 10 Hz / 100 Hz serial modes (`verb_freq` 2 / 3) still used by anyone? If not, the
   P2 mode handling and `MAX_ROWS_PER_DEVICE` can be simplified further.
 - Is `iotweb/download` (InfluxDB) still in use? It pulls `influxdb-client[ciso]` into every install.
+
+---
+
+## 7. Next goal: one device API for serial and BLE
+
+Added 2026-09-17, after 1.2.0. Goal: a customer writes to a device and sets its reading
+frequency the same way on USB and BLE, through the managers, and the upload never exceeds 1 Hz
+whatever the reading frequency is.
+
+### 7.0 Where it stands
+
+| | Serial | BLE |
+|---|---|---|
+| Write a command | `PartectorBlueprint.write_line(line, number_of_elem)`, only on a device you construct yourself | not implemented; the `write` / `read` characteristic UUIDs are declared in `partector_ble_connection.py` but never used |
+| Set frequency | `set_verbose_freq(code)`; the value is a mode code, not Hz: 1 = 1 Hz, 2 = 10 Hz, 3 = 100 Hz, 6 = P2 Pro size distribution | fixed at the device's 1 Hz notify |
+| Via the managers | `PartectorSerialManager` builds every device with defaults and keeps them private; a customer who opens the port themselves fights the manager for it | `PartectorBleConnection` is asyncio-internal, the caller gets no device handle |
+| Threading | sync, two threads per device | asyncio inside a thread |
+| 1 Hz upload cap | not enforced | holds only because BLE is 1 Hz anyway |
+
+`NaneosDeviceManager` offers neither write nor rate. `examples/send_commands.py` opens a raw
+`serial.Serial` and bypasses the library, which shows the write API is missing.
+
+Facts from naneos (2026-09-17):
+
+- The firmware accepts the same ASCII commands on the BLE write characteristic as on serial.
+- The data rate cannot be changed over BLE; it is a serial-only feature.
+- 100 Hz is not for productive use, but may be used for testing, so it should stay available.
+
+### 7.1 P0 - Enforce the 1 Hz upload cap (done 2026-09-17)
+
+- [x] **`to_upload_frame` rounded the ms index to seconds but never de-duplicated.** A 10 Hz serial
+  device would have uploaded 10 points per second under the same timestamp. Rows of the same
+  second are now merged by `frames.aggregate_duplicate_index()`: mean for measurements, bitwise
+  OR for `device_status` (an error flagged in any sample survives), last known value for the
+  rest. The 1 Hz case takes an early return and costs nothing. Tests with 10 Hz and 100 Hz frames
+  in `test_09_upload_frames.py`.
+- [x] **Buffer cap by time instead of rows.** `MAX_ROWS_PER_DEVICE = 300` was five minutes at 1 Hz
+  but three seconds at 100 Hz. Correction to the first version of this list: it never hit
+  `NaneosDeviceManager`, which drains the serial manager every second and has no cap of its own;
+  it only hits a `PartectorSerialManager` used on its own and polled rarely. Serial frames are
+  now capped at `MAX_BUFFER_SECONDS = 300`; the 1 Hz BLE point buffer keeps the row cap.
+- [x] The output queue keeps the full-rate data for the customer; only the upload is capped.
+
+### 7.2 P1 - Common device handle
+
+- [ ] Transport-neutral `PartectorDevice` interface: `serial_number`, `device_type`, `firmware`,
+  `connection_type`, `is_connected`, `write(command)`, `query(command) -> list[str]`,
+  `set_sample_rate(hz)`, `sample_rate`.
+- [ ] The managers hand these out: `manager.devices() -> list[PartectorDevice]` and
+  `manager.device(sn)`. The customer always goes through the owner of the port or link, so
+  there is no port conflict.
+- [ ] `NaneosDeviceManager.write(sn, cmd)`, `query(sn, cmd)` and `set_sample_rate(sn, hz)` as
+  shortcuts. Route to serial if the device is plugged in, otherwise to BLE, matching the
+  existing serial-over-BLE data preference.
+- [ ] `set_sample_rate` on a device that is only reachable over BLE raises a clear
+  `NotSupportedError` ("the data rate can only be changed over USB"). `sample_rate` reports 1.
+- [ ] Replace `examples/send_commands.py` with one that uses the new API on both transports.
+
+### 7.3 P1 - Serial side
+
+- [ ] Finish the open blueprint split from 3.1 (`SerialTransport`, protocol, reader thread owned by
+  the manager). Also stops `ScanPartector` starting two threads per port just to ask `N?`.
+- [ ] Replace `write_line(line, number_of_elem)` with `write()` and `query()`. Replies are matched as
+  "any line shorter than a data line" and there is no command lock, so two callers race on
+  `_queue_info`. Add a lock.
+- [ ] Replace the `verb_freq` codes with Hz (`1`, `10`, `100`). The P2 Pro size distribution mode
+  becomes a separate `set_mode()`; today `6` silently means a different device mode.
+- [ ] Keep 100 Hz, documented as a test feature. Measured on USB (2026-09-17, SN8617 P2 FW422 and
+  SN8764 P2 Pro FW424, 25 columns per line): nominal 1 / 10 / 100 Hz deliver 1.0 / 10.1 / 100
+  rows per second, nothing lost. The port is USB CDC, so the 9600 baud setting does not limit
+  it. At 100 Hz the device queue peaks at ~100 of `SERIAL_QUEUE_MAXSIZE = 200` with the 1 s
+  drain: enough, but a single stalled second loses data, so raise it with the split.
+- [ ] Gain test and pulse diagnostics configurable through the manager. They are forced on, and
+  the gain test suppresses data for at least 10 s on every connect.
+
+### 7.4 P1 - BLE side
+
+- [ ] Implement `write` / `query` on `PartectorBleConnection` (same ASCII commands as serial).
+  Bridge to sync callers with `asyncio.run_coroutine_threadsafe` on the manager's loop.
+  Measured on both devices (2026-09-17):
+  - `write` characteristic: property `write` (with response), 20 bytes per write.
+  - `read` characteristic: property `indicate` only. A GATT read fails with "Read Not
+    Permitted", so subscribe with `start_notify` next to std / aux / size_dist.
+  - A reply is one 20 byte frame: the value, `\r\n`, padded with spaces (`b"8617\r\n   ..."`).
+    Strip after the line end. No echo of the command, so replies are matched by order: one
+    command in flight per device (lock).
+  - Latency 0.25 s to 1.0 s (`N?` 0.5, `f?` 0.25, `H?` 1.0, `name?` 0.8). The serial
+    `SERIAL_TIMEOUT_INFO` of 0.25 s is far too short here; use about 2 s.
+  - Open: replies longer than 20 bytes (several frames?) and commands longer than 20 bytes.
+- [ ] Fill in `firmware_version` on BLE points with an `f?` query after connect (existing TODO in
+  `_emit_data_point`).
+- [ ] Share the command layer (`N?`, `f?`, `H?`, `name?`, reply parsing) between both transports
+  instead of keeping it inside the serial blueprint.
+
+### 7.5 P2 - Drop or simplify (together, in a 2.0)
+
+- [ ] Compatibility shims: `scanPartector.py`, the `PartectorBluePrint` alias, `DEV_TYPE_*` /
+  `CONN_TYPE_*`, the static DataFrame methods on the dataclass.
+- [ ] `scan_for_serial_partectors()` (grouped dict, only used by one test), the string `kind`
+  argument and `DEVICE_KIND_NAMES`.
+- [ ] `serial_utils/` holds one function; fold it into `scan.py`.
+- [ ] `ConnectionType.ADVERTISEMENT` is no longer produced by anything.
+- [ ] `NaneosUploadThread` is a `Thread` subclass that is never instantiated; only the static
+  `upload()` is called. Make it a plain `upload_snapshot()` function.
+- [ ] `iotweb/download` pulls `influxdb-client[ciso]` into every install, including the Pi. Make it
+  an optional extra or drop it (still open from section 6).
+- [ ] Java-style getter / setter pairs on `NaneosDeviceManager` (`use_serial_connections`,
+  `get_serial_connection_status`, `get/set_upload_status`, ...) become properties
+  (`manager.use_ble = False`). The runtime toggling itself stays (decided 2026-09-17: unused
+  today, but wanted for a GUI), and so does `_sync_manager`, which implements it.
+- [ ] `get_connected_*_device_strings()` returns preformatted `"SN123 (P2 Pro)"` strings. Return the
+  device handles from 7.2 and let the caller format them.
+- [ ] `close(blocking, shutdown, verbose_reset)`: `shutdown=True` powers the device off as a side
+  effect of closing. Explicit `power_off()`, and `close()` takes no flags.
+- [ ] `get_data()` holds back the newest line on every call. Lines are appended whole, so this only
+  adds 1 s of latency. Drop it together with the public `clear_data_cache()`.
+- [ ] `upload_blocked_devices` is a public mutable attribute; make it private.
+
+### 7.6 Suggested order
+
+1. ~~7.1~~ done.
+2. 7.3 serial split plus the new write / rate API (needs devices on the desk).
+3. 7.2 handles through the managers.
+4. 7.4 BLE write.
+5. 7.5 drops, released as 2.0.

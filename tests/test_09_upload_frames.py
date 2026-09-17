@@ -23,6 +23,59 @@ def test_upload_frame_replaces_inf_with_zero() -> None:
     assert list(df["ldsa"]) == [0]
 
 
+def test_upload_frame_merges_a_10hz_device_into_one_row_per_second() -> None:
+    # 2 s at 10 Hz, off the half second so rounding is unambiguous
+    timestamps = [1_700_000_000_030 + i * 100 for i in range(-5, 15)]
+    df = pd.DataFrame(
+        {
+            "unix_timestamp": timestamps,
+            "ldsa": [10.0] * 10 + [20.0] * 10,
+            "device_status": [0] * 9 + [4] + [1, 2] + [0] * 8,
+            "firmware_version": [320] * 20,
+            "connection_type": ["serial"] * 20,
+        }
+    ).set_index("unix_timestamp")
+    df = df.astype({"ldsa": "Float32", "device_status": "Int32", "firmware_version": "Int32"})
+
+    out = NaneosUploadThread.to_upload_frame(df)
+
+    assert list(out.index) == [1_700_000_000, 1_700_000_001]
+    assert list(out["ldsa"]) == [10.0, 20.0]  # measurements are averaged
+    assert list(out["device_status"]) == [4, 3]  # status bits are OR-ed, none is lost
+    assert list(out["firmware_version"]) == [320, 320]
+    assert list(out["connection_type"]) == ["serial", "serial"]
+    assert out.dtypes.to_dict() == df.dtypes.to_dict()
+
+
+def test_upload_never_exceeds_1hz_whatever_the_reading_rate() -> None:
+    timestamps = [1_700_000_000_000 + i * 10 for i in range(300)]  # 3 s at 100 Hz
+    data = {8617: _ms_frame(*timestamps)}
+
+    combined = NaneosUploadThread.build_combined_entry(data, abs_time=1_700_000_010)
+
+    points = combined.devices[0].device_points
+    assert sorted(p.timestamp for p in points) == [7, 8, 9, 10]
+    assert all(p.ldsa == 100 for p in points)
+
+
+def test_upload_frame_keeps_missing_values_missing_when_merging() -> None:
+    df = pd.DataFrame(
+        {
+            "unix_timestamp": [1_700_000_000_000, 1_700_000_000_100, 1_700_000_000_200],
+            "ldsa": [None, 4.0, 6.0],
+            "particle_mass": [None, None, None],
+            "device_status": [None, None, None],
+        }
+    ).set_index("unix_timestamp")
+    df = df.astype({"ldsa": "Float32", "particle_mass": "Float32", "device_status": "Int32"})
+
+    out = NaneosUploadThread.to_upload_frame(df)
+
+    assert list(out["ldsa"]) == [5.0]
+    assert out["particle_mass"].isna().all()
+    assert out["device_status"].isna().all()
+
+
 def test_combined_entry_has_relative_timestamps_per_device() -> None:
     data = {8617: _ms_frame(1_700_000_000_000), 24: _ms_frame(1_700_000_005_000)}
 

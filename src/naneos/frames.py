@@ -4,6 +4,8 @@ Frames are indexed by unix_timestamp (ms) and keyed by serial number in the
 dict[int, pd.DataFrame] structures that flow from the managers to the upload.
 """
 
+from collections.abc import Callable
+
 import pandas as pd
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
@@ -11,10 +13,15 @@ from naneos.logger import get_naneos_logger
 
 logger = get_naneos_logger(__name__)
 
-# Rows kept per device between two get_data() calls of a manager. The managers
-# are drained every second, so this only matters for the 10 Hz / 100 Hz serial
-# modes, where older rows within that second are dropped.
+# What a manager keeps per device when nobody calls its get_data().
+# NaneosDeviceManager drains every second, so this only matters for a manager
+# that is used on its own and polled rarely.
+#
+# The BLE links deliver 1 Hz, so they are capped by rows. Serial frames are
+# capped by time instead: a row cap that holds five minutes at 1 Hz would hold
+# three seconds of a device read at 100 Hz.
 MAX_ROWS_PER_DEVICE = 300
+MAX_BUFFER_SECONDS = 300
 
 # connection_type is deliberately not listed: it stays a plain object column so
 # that comparisons never produce a nullable mask.
@@ -127,10 +134,11 @@ def add_data_points_to_dict(
         else:
             devices[serial] = pd.concat([existing, new_rows], ignore_index=False)
 
-        # Keep the newest rows by position, not by index label: advertisement
-        # timestamps are whole seconds, so duplicate labels are normal.
-        if len(devices[serial]) > MAX_ROWS_PER_DEVICE:
-            devices[serial] = devices[serial].iloc[-MAX_ROWS_PER_DEVICE:]
+        # Only look at the index once the frame could be over the limit at 1 Hz.
+        df = devices[serial]
+        if len(df) > MAX_BUFFER_SECONDS:
+            oldest_kept = int(df.index.max()) - MAX_BUFFER_SECONDS * 1000
+            devices[serial] = df[df.index > oldest_kept]
 
     return devices
 
@@ -201,6 +209,39 @@ def sort_and_clean_naneos_data(
             data_return[serial] = df
 
     return data_return
+
+
+def aggregate_duplicate_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse rows that share an index label into one row per label.
+
+    Used by the upload after the index has been rounded to whole seconds: a
+    device read at 10 Hz or 100 Hz must still reach the backend at 1 Hz.
+    Measurements are averaged, device_status is OR-ed so that an error flagged
+    in any sample survives, everything else keeps its last known value.
+    """
+    if not df.index.has_duplicates:
+        return df  # the normal 1 Hz case, nothing to do
+
+    def bitwise_or(values: pd.Series) -> object:
+        known = values.dropna()
+        if known.empty:
+            return pd.NA
+        result = 0
+        for value in known:
+            result |= int(value)
+        return result
+
+    aggregations: dict[str, str | Callable[[pd.Series], object]] = {}
+    for column in df.columns:
+        if column == "device_status":
+            aggregations[column] = bitwise_or
+        elif pd.api.types.is_float_dtype(df[column].dtype):
+            aggregations[column] = "mean"
+        else:
+            aggregations[column] = "last"
+
+    aggregated = df.groupby(level=0, sort=True).agg(aggregations)
+    return aggregated.astype(df.dtypes.to_dict())
 
 
 def device_type_of(df: pd.DataFrame, default: DeviceType = DeviceType.P2) -> DeviceType:

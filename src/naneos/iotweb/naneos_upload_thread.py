@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import requests
 
+from naneos.frames import aggregate_duplicate_index
 from naneos.logger import get_naneos_logger
 from naneos.protobuf.protobuf import create_combined_entry, create_proto_device
 
@@ -64,20 +65,23 @@ class NaneosUploadThread(Thread):
 
     @staticmethod
     def to_upload_frame(df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare one device frame for the backend: index in whole seconds, no inf.
+        """Prepare one device frame for the backend: one row per whole second, no inf.
 
         Frames are indexed by unix time in milliseconds (see naneos.frames).
         The index is rounded, not truncated: the devices sample at ~1Hz with a
         phase of their own, so truncating puts the two samples that straddle a
         second boundary into the same second, where one of them wins, and
         leaves the neighbouring second without a row at all.
+
+        The backend takes at most 1 Hz. Rows that land in the same second, as
+        they do for a device read at 10 Hz or 100 Hz, are merged into one.
         """
         df = df.replace([float("inf"), -float("inf")], 0)
         df.index = pd.Index(
             np.rint(df.index.to_numpy(dtype="float64") / 1e3).astype("int64"),
             name=df.index.name,
         )
-        return df
+        return aggregate_duplicate_index(df)
 
     @classmethod
     def build_combined_entry(cls, data: dict[int, pd.DataFrame], abs_time: int):
