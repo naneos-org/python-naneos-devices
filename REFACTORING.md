@@ -491,7 +491,20 @@ naneos/
   backend does not store them (unknown serial numbers, presumably), so `test_10`'s upload test
   only proves that the request is accepted.
 
-### 7.8 What is left
+### 7.8 README and docs split (done 2026-09-17)
+
+- `README.md` (also the PyPI page) only explains the device manager: quick start, queue hand-off,
+  runtime controls, talking to a device, logging. All links are absolute, because PyPI does not
+  resolve relative ones. Every section names the example that shows it.
+- `docs/`: `user-guide/devices.md` (handles, rate, P2 Pro modes, diagnostics),
+  `user-guide/logging.md`, `user-guide/migration-2.0.md`, `user-guide/raspberry-pi-setup.md`,
+  `development/contributing.md` (tests, hardware testing before a merge, protobuf, executables).
+- `examples/`: one script per README section (`quick_start`, `queue_handoff`, `runtime_controls`,
+  `device_commands`) replaces `demo.py`. All examples were run against SN8617 / SN8764;
+  `send_commands.py` only with a file that has no line to send, `download_iotweb.py` only up to
+  its missing-token message.
+
+### 7.9 What is left
 
 Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
 command layer, left open on purpose) and the hardware check of the Windows-only BLE branches

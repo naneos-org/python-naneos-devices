@@ -33,7 +33,9 @@ plugins:
 nav:
   - Home: index.md
   - User Guide:
+      - Devices and commands: user-guide/devices.md
       - Raspberry Pi Setup: user-guide/raspberry-pi-setup.md
-      # - Installation: user-guide/installation.md
-      # - Configuration: user-guide/configuration.md
-      # - Usage: user-guide/usage.md
+      - Logging: user-guide/logging.md
+      - Migrating from 1.x to 2.0: user-guide/migration-2.0.md
+  - Development:
+      - Development: development/contributing.md
