@@ -1,12 +1,12 @@
 """Find Partectors on the serial ports of this machine."""
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
 
 from naneos.data_point import DeviceType
 from naneos.logger import get_naneos_logger
-from naneos.partector.blueprints._partector_blueprint import PartectorBlueprint
+from naneos.partector.serial_transport import SerialTransport
 from naneos.serial_utils import list_serial_ports
 
 logger = get_naneos_logger(__name__)
@@ -23,6 +23,12 @@ _P1_MAX_SERIAL_NUMBER = 1000
 # Firmware from which a P2 answers the "name?" query that tells P2 and P2 Pro apart.
 _FW_WITH_NAME_QUERY = 310
 
+# Answers to the "name?" query.
+_DEVICE_NAMES: dict[str, DeviceType] = {"P2": DeviceType.P2, "P2pro": DeviceType.P2PRO}
+
+_ANSWER_TIMEOUT_SECONDS = 0.25
+_ASK_RETRIES = 3
+
 
 @dataclass(frozen=True)
 class FoundDevice:
@@ -30,46 +36,6 @@ class FoundDevice:
     port: str
     kind: DeviceType
     firmware: int
-
-
-class ScanPartector(PartectorBlueprint):
-    """Minimal device used to identify what is behind a port. Never streams data."""
-
-    def _init_print_connection_info(self) -> None:
-        pass
-
-    def _init_serial_data_structure(self) -> None:
-        """Not used by the scan partector, but mandatory in the partector blueprint."""
-
-    def _serial_wrapper(self, func) -> Any | None:
-        """Like the blueprint, but raises instead of logging: a port without a
-        Partector behind it must not produce warnings."""
-        if not self._connected:
-            return None
-
-        excep = "Was not able to fetch the serial number!"
-
-        for _ in range(self.SERIAL_RETRIES):
-            try:
-                return func()
-            except Exception as e:
-                excep = f"SN{self._sn} Exception occurred during user function call: {e}"
-
-        raise Exception(excep)
-
-    def _init_get_device_info(self) -> None:
-        try:
-            if self._sn is None:
-                self._sn = self._get_serial_number_secure()
-            self._fw = self.get_firmware_version()
-            logger.debug(f"Connected to SN{self._sn} on {self._port}")
-        except Exception:
-            # Every port is scanned, so most of them simply have no Partector.
-            pass
-
-    def _set_verbose_freq(self, freq: int = 0) -> None:
-        """Only ever used to silence the device while it is identified."""
-        self._write_line("X0000!")
 
 
 def scan_serial_ports(ports_exclude: list[str] | None = None) -> list[FoundDevice]:
@@ -113,30 +79,73 @@ def scan_for_serial_partector(
 
 
 def _scan_port(port: str) -> FoundDevice | None:
-    partector: ScanPartector | None = None
+    """Identify the device behind a port without starting a reader thread."""
+    transport = SerialTransport(port)
     try:
-        partector = ScanPartector(port=port)
-        if partector._sn is None:
-            return None
+        transport.open()
+        transport.write("X0000!")  # silence the device while it is identified
+        time.sleep(10e-3)
+        transport.discard_input()
 
-        kind = _classify(partector)
-        return FoundDevice(partector._sn, port, kind, partector._fw)
-    except Exception as e:
+        serial_number = _ask_serial_number(transport)
+        if serial_number is None:
+            return None  # every port is scanned, most have no Partector behind them
+
+        firmware = _ask_int(transport, "f?") or 0
+        kind = _classify(transport, serial_number, firmware)
+        return FoundDevice(serial_number, port, kind, firmware)
+    except ConnectionError as e:
         logger.debug(f"Scanning {port} failed: {e}")
         return None
     finally:
-        if partector is not None:
-            partector.close(blocking=True)
+        transport.close()
 
 
-def _classify(partector: ScanPartector) -> DeviceType:
-    assert partector._sn is not None
-    if partector._sn < _P1_MAX_SERIAL_NUMBER:
+def _classify(transport: SerialTransport, serial_number: int, firmware: int) -> DeviceType:
+    if serial_number < _P1_MAX_SERIAL_NUMBER:
         return DeviceType.P1
-    if partector._fw < _FW_WITH_NAME_QUERY:
+    if firmware < _FW_WITH_NAME_QUERY:
         return DeviceType.P2
 
-    name = partector.write_line("name?")[1]
-    if name == "P2pro":
-        return DeviceType.P2PRO
+    # Only a known name counts: a late or cut off line must not turn a P2 Pro
+    # into a P2, which would then be read with the wrong line layout.
+    for _ in range(_ASK_RETRIES):
+        name = _ask(transport, "name?")
+        if name in _DEVICE_NAMES:
+            return _DEVICE_NAMES[name]
+    logger.warning(f"SN{serial_number} did not tell its name, treating it as a P2.")
     return DeviceType.P2
+
+
+def _ask(transport: SerialTransport, command: str) -> str | None:
+    """The single field answer to a command, or None. The device must be silenced."""
+    transport.write(command)
+    deadline = time.monotonic() + _ANSWER_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        line = transport.readline()
+        # A line with tabs is a verbose line that was still on its way.
+        if line and "\t" not in line:
+            return line
+    return None
+
+
+def _ask_int(transport: SerialTransport, command: str) -> int | None:
+    for _ in range(_ASK_RETRIES):
+        answer = _ask(transport, command)
+        try:
+            if answer is not None:
+                return int(answer)
+        except ValueError:
+            pass
+    return None
+
+
+def _ask_serial_number(transport: SerialTransport) -> int | None:
+    """The serial number, once three reads in a row agree on it."""
+    for _ in range(3):
+        numbers = [_ask_int(transport, "N?") for _ in range(3)]
+        if numbers[0] is not None and numbers[0] == numbers[1] == numbers[2]:
+            return numbers[0]
+        if numbers == [None, None, None]:
+            return None
+    return None

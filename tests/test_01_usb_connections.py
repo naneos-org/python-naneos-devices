@@ -40,7 +40,7 @@ def test_connection_partectors() -> None:
         serial_number = next(iter(p1.keys()))
         for _ in range(5):
             p1 = Partector1(serial_number=serial_number)
-            p1.close(verbose_reset=False)
+            p1.close(reset_device=False)
     else:
         warnings.warn("There is no P1 connected (USB).", UserWarning, stacklevel=2)
 
@@ -48,7 +48,7 @@ def test_connection_partectors() -> None:
         serial_number = next(iter(p2.keys()))
         for _ in range(5):
             p2 = Partector2(serial_number=serial_number)
-            p2.close(verbose_reset=False)
+            p2.close(reset_device=False)
     else:
         warnings.warn("There is no P2 connected (USB).", UserWarning, stacklevel=2)
 
@@ -56,7 +56,7 @@ def test_connection_partectors() -> None:
         serial_number = next(iter(p2_pro.keys()))
         for _ in range(5):
             p2_pro = Partector2Pro(serial_number=serial_number)
-            p2_pro.close(verbose_reset=False)
+            p2_pro.close(reset_device=False)
     else:
         warnings.warn("There is no P2pro connected (USB).", UserWarning, stacklevel=2)
 

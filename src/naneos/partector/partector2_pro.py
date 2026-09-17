@@ -1,61 +1,99 @@
 from naneos.data_point import DeviceType
+from naneos.device import NotSupportedError
 from naneos.partector.blueprints._data_structure import (
     PARTECTOR2_DATA_STRUCTURE,
     PARTECTOR2_PRO_DATA_STRUCTURE_V311,
     PARTECTOR2_PRO_DATA_STRUCTURE_V336,
 )
 from naneos.partector.blueprints._partector_blueprint import PartectorBlueprint
+from naneos.partector.serial_transport import SerialTransport
 
 
 class Partector2Pro(PartectorBlueprint):
+    """The P2 Pro has two output modes.
+
+    Size distribution (default): one line with the size distribution every few
+    seconds, paced by the device; sample_rate_hz is None.
+    P2 mode: the plain P2 line at 1, 10 or 100 Hz, without size distribution.
+    """
+
+    DEVICE_TYPE = DeviceType.P2PRO
+
+    MIN_FIRMWARE_P2_MODE = 311
+
     def __init__(
         self,
         serial_number: int | None = None,
         port: str | None = None,
-        verb_freq: int = 6,
+        size_distribution: bool = True,
+        sample_rate_hz: int = 1,
         gain_test_active: bool = True,
         output_pulse_diagnostics: bool = True,
+        transport: SerialTransport | None = None,
     ) -> None:
-        self._GAIN_TEST_ACTIVE = gain_test_active
-        self._OUTPUT_PULSE_DIAGNOSTICS = output_pulse_diagnostics
-        super().__init__(serial_number, port, verb_freq, DeviceType.P2PRO)
+        """See PartectorBlueprint. sample_rate_hz only applies with size_distribution=False."""
+        self._size_distribution = size_distribution
+        self._want_gain_test = gain_test_active
+        self._want_pulse_diagnostics = output_pulse_diagnostics
+        super().__init__(serial_number, port, sample_rate_hz, transport)
 
-    def _init_serial_data_structure(self) -> None:
-        """The structure depends on the mode and is selected in _set_verbose_freq."""
+    @property
+    def size_distribution(self) -> bool:
+        return self._size_distribution
 
-    def _set_verbose_freq(self, freq: int) -> None:
-        """Selects the output mode: 0 off, 1-3 plain P2 line at that rate, 6 size distribution."""
-        if freq == 0:
-            self._write_line("X0000!")
-        elif freq in [1, 2, 3]:
-            self._enter_p2_mode(freq)
-        elif freq == 6:
+    def set_size_distribution(self, active: bool, sample_rate_hz: int = 1) -> None:
+        """Switch between the two output modes; sample_rate_hz is for the P2 mode.
+
+        With the gain test active, every switch holds the data back until the
+        device has settled again (see is_settling).
+        """
+        if active:
             self._enter_size_dist_mode()
         else:
-            raise ValueError("Frequency must be 0, 1, 2, 3 or 6!")
+            self._enter_p2_mode(sample_rate_hz)
 
-    def _enter_p2_mode(self, freq: int) -> None:
-        """Plain P2 line without size distribution."""
-        if self._fw < 311:
-            raise RuntimeError("Firmware too old for P2 pro mode. Minimum FW is 311.")
+    def set_sample_rate(self, hz: int) -> None:
+        if self._size_distribution and hz != 0:
+            raise NotSupportedError(
+                "The size distribution mode has no selectable rate. "
+                "Call set_size_distribution(False) first."
+            )
+        super().set_sample_rate(hz)
 
-        # Copy: the diagnostics columns are added per instance and must not
-        # leak into the module-level layout shared by other devices.
-        self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE)
+    def _configure(self) -> None:
+        """Nothing to do here: a mode switch resets the device settings, so they
+        are sent by _apply_settings() after every switch."""
 
-        self._write_line("M0000!")  # deactivates size dist mode
-        self._write_line("A0002!")  # activates antispikes
-        self._configure_diagnostics(self._GAIN_TEST_ACTIVE, self._OUTPUT_PULSE_DIAGNOSTICS)
-        self._write_line(f"X000{freq}!")  # set verbose freq
+    def _apply_settings(self) -> None:
+        self.write("A0002!")  # activates antispikes
+        self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
+
+    def _start_output(self, sample_rate_hz: int) -> None:
+        self.set_size_distribution(self._size_distribution, sample_rate_hz)
+
+    def _enter_p2_mode(self, hz: int) -> None:
+        if self._fw < self.MIN_FIRMWARE_P2_MODE:
+            raise NotSupportedError(
+                f"The P2 mode needs firmware {self.MIN_FIRMWARE_P2_MODE} or newer."
+            )
+        if hz not in self.SAMPLE_RATE_CODES:
+            raise ValueError(f"Sample rate must be one of {sorted(self.SAMPLE_RATE_CODES)} Hz.")
+
+        self.write("M0000!")  # deactivates size dist mode
+        self._apply_settings()
+        self._data_structure = {**PARTECTOR2_DATA_STRUCTURE, **self._diagnostic_columns()}
+        self._size_distribution = False
+        super().set_sample_rate(hz)
 
     def _enter_size_dist_mode(self) -> None:
-        """The P2 Pro line with the size distribution, at the device's own rate."""
-        if self._fw >= 336:
-            self._data_structure = dict(PARTECTOR2_PRO_DATA_STRUCTURE_V336)
-        else:
-            self._data_structure = dict(PARTECTOR2_PRO_DATA_STRUCTURE_V311)
-
-        self._write_line("X0006!")  # activates verbose mode
-        self._write_line("M0004!")  # activates size dist mode
-        self._write_line("A0002!")  # activates the antispikes
-        self._configure_diagnostics(self._GAIN_TEST_ACTIVE, self._OUTPUT_PULSE_DIAGNOSTICS)
+        base = (
+            PARTECTOR2_PRO_DATA_STRUCTURE_V336
+            if self._fw >= 336
+            else PARTECTOR2_PRO_DATA_STRUCTURE_V311
+        )
+        self.write("X0006!")  # verbose output of the size dist mode
+        self.write("M0004!")  # activates size dist mode
+        self._apply_settings()
+        self._data_structure = {**base, **self._diagnostic_columns()}
+        self._size_distribution = True
+        self._sample_rate_hz = None  # paced by the device

@@ -28,10 +28,20 @@ DEVICE_LABELS: dict[DeviceType, str] = {
 
 
 class PartectorSerialManager(threading.Thread):
-    """Connects to every Partector on USB, keeps the links alive and collects their data."""
+    """Connects to every Partector on USB, keeps the links alive and collects their data.
 
-    def __init__(self) -> None:
+    Args:
+        gain_test_active: run the electrometer gain test on P2 / P2 Pro. It holds
+            the data of a device back for at least 10 s after every connect.
+        output_pulse_diagnostics: let P2 / P2 Pro append the pulse diagnostics columns.
+    """
+
+    def __init__(
+        self, gain_test_active: bool = True, output_pulse_diagnostics: bool = True
+    ) -> None:
         super().__init__(daemon=True)
+        self._gain_test_active = gain_test_active
+        self._output_pulse_diagnostics = output_pulse_diagnostics
         self._stop_event = threading.Event()
 
         # Written by the manager thread in _fetch_data(), handed over in get_data().
@@ -64,19 +74,18 @@ class PartectorSerialManager(threading.Thread):
         devices = self._all_devices()
         strings = []
         for kind, label in DEVICE_LABELS.items():
-            strings += [f"SN{d._sn} ({label})" for d in devices if d.device_type == kind]
+            strings += [f"SN{d.serial_number} ({label})" for d in devices if d.device_type == kind]
         return strings
 
     def get_gain_test_activating_devices(self) -> list[int | None]:
         """Serial numbers of devices still warming up after a gain test was started."""
-        now = time.time()
-        return [d._sn for d in self._all_devices() if d._wait_with_data_output_until > now]
+        return [d.serial_number for d in self._all_devices() if d.is_settling]
 
     def get_connected_addresses(self) -> list[str]:
         return list(self._devices.keys())
 
     def get_connected_serial_numbers(self) -> list[int | None]:
-        return [d._sn for d in self._all_devices()]
+        return [d.serial_number for d in self._all_devices()]
 
     def _all_devices(self) -> list[PartectorBlueprint]:
         """Snapshot of all connected devices, safe to iterate from any thread."""
@@ -118,14 +127,28 @@ class PartectorSerialManager(threading.Thread):
 
     def _disconnect_unplugged_ports(self) -> None:
         for port, device in list(self._devices.items()):
-            if not device._connected:
-                logger.info(f"Disconnecting SN{device._sn} on {port}")
+            if not device.is_connected:
+                logger.info(f"Disconnecting SN{device.serial_number} on {port}")
                 device.close()
                 self._devices.pop(port, None)
 
     def _connect_to_new_ports(self, found: list[FoundDevice]) -> None:
         for device in found:
-            self._devices[device.port] = DEVICE_CLASSES[device.kind](port=device.port)
+            try:
+                self._devices[device.port] = self._connect(device)
+            except (ConnectionError, TimeoutError) as e:
+                # Found again by the next scan.
+                logger.warning(f"Could not connect to SN{device.serial_number}: {e}")
+
+    def _connect(self, found: FoundDevice) -> PartectorBlueprint:
+        if found.kind == DeviceType.P1:
+            return Partector1(port=found.port)
+        cls = Partector2Pro if found.kind == DeviceType.P2PRO else Partector2
+        return cls(
+            port=found.port,
+            gain_test_active=self._gain_test_active,
+            output_pulse_diagnostics=self._output_pulse_diagnostics,
+        )
 
     def _close_all_ports(self) -> None:
         for port, device in list(self._devices.items()):

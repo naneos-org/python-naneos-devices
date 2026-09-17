@@ -35,6 +35,8 @@ class NaneosDeviceManager(threading.Thread):
         gathering_interval_seconds: int = 30,
         ble_serial_numbers: Iterable[int] | None = None,
         ble_max_links: int = PartectorBleManager.DEFAULT_MAX_LINKS,
+        serial_gain_test: bool = True,
+        serial_pulse_diagnostics: bool = True,
     ) -> None:
         """
         Args:
@@ -44,12 +46,17 @@ class NaneosDeviceManager(threading.Thread):
             gathering_interval_seconds: snapshot interval, clamped to 10-600 s.
             ble_serial_numbers: only link to these devices over BLE; None means any in reach.
             ble_max_links: upper bound of simultaneous BLE links.
+            serial_gain_test: run the electrometer gain test on USB devices. Their data is
+                held back for at least 10 s after every connect while it settles.
+            serial_pulse_diagnostics: let USB devices report the pulse diagnostics.
         """
         super().__init__(daemon=True)
         self._use_serial = use_serial
         self._use_ble = use_ble
         self._ble_serial_numbers = frozenset(ble_serial_numbers) if ble_serial_numbers else None
         self._ble_max_links = ble_max_links
+        self._serial_gain_test = serial_gain_test
+        self._serial_pulse_diagnostics = serial_pulse_diagnostics
         self._upload_active = upload_active
         self._next_upload_time = time.time() + gathering_interval_seconds
         self.set_gathering_interval_seconds(gathering_interval_seconds)
@@ -150,7 +157,10 @@ class NaneosDeviceManager(threading.Thread):
             self._data = add_to_existing_naneos_data(self._data, self._manager_serial.get_data())
 
         self._manager_serial = self._sync_manager(
-            self._manager_serial, self._use_serial, PartectorSerialManager, "serial"
+            self._manager_serial,
+            self._use_serial,
+            lambda: PartectorSerialManager(self._serial_gain_test, self._serial_pulse_diagnostics),
+            "serial",
         )
 
     def _loop_ble_manager(self) -> None:

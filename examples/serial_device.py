@@ -36,7 +36,7 @@ def main() -> None:
                 break
             print("No data received yet...")
     finally:
-        device.close(blocking=True)
+        device.close()
 
 
 if __name__ == "__main__":

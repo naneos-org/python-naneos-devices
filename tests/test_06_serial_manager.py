@@ -11,11 +11,11 @@ class _FakeDevice:
         batches: list[list[NaneosDeviceDataPoint]],
         kind: DeviceType = DeviceType.P2,
     ) -> None:
-        self._sn = serial_number
+        self.serial_number = serial_number
         self._batches = batches
         self.device_type = kind
-        self._connected = True
-        self._wait_with_data_output_until = 0.0
+        self.is_connected = True
+        self.is_settling = False
 
     def get_data(self) -> list[NaneosDeviceDataPoint]:
         return self._batches.pop(0) if self._batches else []

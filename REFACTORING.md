@@ -111,8 +111,7 @@ Everything that exists only for the P2 Pro CS:
   two public functions become one-line filters on top of it. Rename the file to `scan.py`
   (camelCase file name is the only one in the repo).
 
-- [ ] **`PartectorBluePrint` does too much** (541 lines; the small cleanups below are done, the
-  transport / device / reader-thread split is still open and needs devices on the desk to verify): `Thread` + `PartectorDefaults` mixin + ABC;
+- [x] **`PartectorBluePrint` does too much** (done in 7.3): `Thread` + `PartectorDefaults` mixin + ABC;
   the constructor scans ports, opens serial, starts the thread, queries the device and configures
   it. Overlapping "connection check" methods: `_check_connection`, `_check_serial_connection`,
   `_check_device_connection`, `_run_check_connection`, `_checker_thread`. Suggested split:
@@ -353,22 +352,39 @@ Facts from naneos (2026-09-17):
   `NotSupportedError` ("the data rate can only be changed over USB"). `sample_rate` reports 1.
 - [ ] Replace `examples/send_commands.py` with one that uses the new API on both transports.
 
-### 7.3 P1 - Serial side
+### 7.3 P1 - Serial side (done 2026-09-17, verified on SN8617 P2 FW422 and SN8764 P2 Pro FW424)
 
-- [ ] Finish the open blueprint split from 3.1 (`SerialTransport`, protocol, reader thread owned by
-  the manager). Also stops `ScanPartector` starting two threads per port just to ask `N?`.
-- [ ] Replace `write_line(line, number_of_elem)` with `write()` and `query()`. Replies are matched as
-  "any line shorter than a data line" and there is no command lock, so two callers race on
-  `_queue_info`. Add a lock.
-- [ ] Replace the `verb_freq` codes with Hz (`1`, `10`, `100`). The P2 Pro size distribution mode
-  becomes a separate `set_mode()`; today `6` silently means a different device mode.
-- [ ] Keep 100 Hz, documented as a test feature. Measured on USB (2026-09-17, SN8617 P2 FW422 and
-  SN8764 P2 Pro FW424, 25 columns per line): nominal 1 / 10 / 100 Hz deliver 1.0 / 10.1 / 100
-  rows per second, nothing lost. The port is USB CDC, so the 9600 baud setting does not limit
-  it. At 100 Hz the device queue peaks at ~100 of `SERIAL_QUEUE_MAXSIZE = 200` with the 1 s
-  drain: enough, but a single stalled second loses data, so raise it with the split.
-- [ ] Gain test and pulse diagnostics configurable through the manager. They are forced on, and
-  the gain test suppresses data for at least 10 s on every connect.
+- [x] **Blueprint split** (also closes the open item in 3.1). `SerialTransport` (open / write /
+  readline / close, no threads), `PartectorBlueprint` (protocol and reader thread), and the scan
+  talks to the transport directly, so `ScanPartector` and its two threads per port are gone.
+  Deviations from the first plan:
+  - The reader thread stays with the device instead of moving to the manager: reads block, so
+    one thread per port is the simple correct design. The second (checker) thread is gone; the
+    reader probes a device that was silent for 10 s itself.
+  - A device no longer reconnects on its own. The old class rescanned all ports by serial number
+    while the manager also dropped and re-found it. Now `is_connected` goes False and stays
+    False; `PartectorSerialManager` re-finds the device on its next scan.
+  - The constructor raises `ConnectionError` instead of returning a half-initialised object.
+  - The transport can be injected, so the whole class is tested without hardware
+    (`tests/fake_transport.py`, `test_04`).
+- [x] `write(command)` and `query(command) -> list[str]` replace `write_line(line, number_of_elem)`.
+  One command lock per device; verified with 4 threads x 30 queries while streaming at 100 Hz
+  (40 of 40 rounds correct). Commands such as `X000n!`, `A0002!`, `opd0n!` send no
+  acknowledgement, so a query cannot pick up a stale one; answers nobody waited for are drained.
+- [x] Rates in Hz: `set_sample_rate(0 | 1 | 10 | 100)`, `sample_rate_hz`. The P2 Pro has
+  `set_size_distribution(active, sample_rate_hz)`; in size distribution mode the device paces
+  itself (one line about every 6 s), `sample_rate_hz` is None and `set_sample_rate` raises
+  `NotSupportedError`. Found on hardware: a mode switch (`M000n!`) resets the pulse
+  diagnostics output, so the settings must follow every switch, which also restarts the gain
+  test settling time.
+- [x] 100 Hz: nominal 1 / 10 / 100 Hz deliver 1.0 / 10.1 / 100 rows per second, nothing lost. The
+  port is USB CDC, so the baudrate does not limit it. Lines are parsed in the reader thread and
+  the point queue holds 1000 (ten seconds at 100 Hz).
+- [x] Gain test and pulse diagnostics are arguments of `PartectorSerialManager` and
+  `NaneosDeviceManager` (`serial_gain_test`, `serial_pulse_diagnostics`).
+- [x] Done on the way, from 7.5: `close(reset_device=True)` plus an explicit `power_off()`;
+  `get_data()` no longer holds the newest line back; `clear_data_cache()` and the
+  `PartectorBluePrint` alias are gone.
 
 ### 7.4 P1 - BLE side
 
