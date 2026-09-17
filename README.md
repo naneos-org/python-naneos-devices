@@ -24,6 +24,8 @@ You can install the `naneos-devices` package using pip. Python 3.11 to 3.14 is s
 ```bash
 pip install naneos-devices
 ```
+Reading your data back from the naneos IoT service (`naneos.iotweb.download`) needs the InfluxDB
+client, which is an optional extra: `pip install "naneos-devices[download]"`.
 
 # Usage
 
@@ -62,12 +64,12 @@ manager.start()
 
 try:
     while True:
-        remaining = manager.get_seconds_until_next_upload()
-        print(f"Next upload in: {remaining:.0f}s")
+        remaining = manager.seconds_until_next_snapshot
+        print(f"Next snapshot in: {remaining:.0f}s")
         time.sleep(remaining + 1)
 
-        print("Serial:", manager.get_connected_serial_devices())
-        print("BLE   :", manager.get_connected_ble_devices())
+        for device in manager.get_devices():
+            print(f"SN{device.serial_number}: {device.device_type}, {device.connection_type}")
         print()
 except KeyboardInterrupt:
     pass
@@ -80,20 +82,20 @@ print("Stopped.")
 ### Runtime Controls (toggle anytime during execution)
 ```python
 # Turn Serial on/off during runtime
-manager.use_serial_connections(True)  # or False
-print("Serial enabled:", manager.get_serial_connection_status())
+manager.use_serial = True  # or False
+print("Serial enabled:", manager.use_serial)
 
 # Turn BLE on/off during runtime
-manager.use_ble_connections(False)  # or True
-print("BLE enabled:", manager.get_ble_connection_status())
+manager.use_ble = False  # or True
+print("BLE enabled:", manager.use_ble)
 
 # Enable/disable uploads on the fly
-manager.set_upload_status(False)  # keep gathering, but don't upload
-print("Upload active:", manager.get_upload_status())
+manager.upload_active = False  # keep gathering, but don't upload
+print("Upload active:", manager.upload_active)
 
 # Update the gathering interval at runtime (10–600 s)
-manager.set_gathering_interval_seconds(45)
-print("Interval (s):", manager.get_gathering_interval_seconds())
+manager.gathering_interval_seconds = 45
+print("Interval (s):", manager.gathering_interval_seconds)
 ```
 
 ### Queue-Based Data Handoff (use your own processing)
@@ -116,7 +118,7 @@ manager.start()
 try:
     while True:
         # Wait until a snapshot is ready, then pull all pending ones
-        time.sleep(manager.get_seconds_until_next_upload() + 1)
+        time.sleep(manager.seconds_until_next_snapshot + 1)
 
         while not out_q.empty():
             snapshot = out_q.get()
@@ -172,6 +174,37 @@ manager.set_sample_rate(8617, 100)
   P2 line at a selectable rate.
 
 Make sure to modify the code according to your specific requirements. Refer to the documentation and comments within the code for detailed explanations and usage instructions.
+
+# Migrating from 1.x to 2.0
+2.0 gives USB and BLE devices one API (see "Talking to a device") and removes what 1.x only
+kept for compatibility. The snapshot format, the upload and the `naneos-uploader` command are
+unchanged.
+
+| 1.x | 2.0 |
+|---|---|
+| `manager.use_serial_connections(x)` / `get_serial_connection_status()` | `manager.use_serial = x` / `manager.use_serial` |
+| `manager.use_ble_connections(x)` / `get_ble_connection_status()` | `manager.use_ble = x` / `manager.use_ble` |
+| `manager.set_upload_status(x)` / `get_upload_status()` | `manager.upload_active = x` / `manager.upload_active` |
+| `manager.set_gathering_interval_seconds(n)` / `get_...()` | `manager.gathering_interval_seconds = n` / `manager.gathering_interval_seconds` |
+| `manager.get_seconds_until_next_upload()` | `manager.seconds_until_next_snapshot` |
+| `manager.get_pending_upload_count()` | `manager.pending_upload_count` |
+| `manager.get_connected_serial_devices()`, `get_connected_ble_devices()` (strings) | `manager.get_devices()` (device handles) |
+| `manager.upload_blocked_devices` | removed (internal) |
+| `NaneosUploadThread.upload(data)` | `naneos.upload_snapshot(data)` |
+| `from naneos.iotweb import download_from_iotweb` | `from naneos.iotweb.download import download_from_iotweb`, with the `download` extra |
+| `device.write_line(cmd, n)` | `device.query(cmd)` (answer fields only, no timestamp) or `device.write(cmd)` |
+| `Partector2(verb_freq=2)`, `set_verbose_freq(2)` (mode codes) | `Partector2(sample_rate_hz=10)`, `set_sample_rate(10)` (Hz) |
+| `Partector2Pro(verb_freq=6)` | `Partector2Pro(size_distribution=True)` (default), `set_size_distribution()` |
+| `device.close(blocking, shutdown, verbose_reset)` | `device.close(reset_device=True)`, `device.power_off()` |
+| `device.clear_data_cache()` | removed; `get_data()` returns everything received |
+| `naneos.partector.scanPartector`, `scan_for_serial_partectors()` | `naneos.partector.scan.scan_serial_ports()` |
+| `naneos.serial_utils.list_serial_ports` | `naneos.partector.scan.list_serial_ports` |
+| `NaneosDeviceDataPoint.DEV_TYPE_*` / `CONN_TYPE_*`, its DataFrame static methods | `naneos.DeviceType` / `naneos.ConnectionType`, `naneos.frames` |
+| `PartectorBluePrint` | `PartectorBlueprint` |
+
+A serial device no longer reconnects on its own: when `is_connected` turns False, close it and
+create a new one (the managers do this for you). Its constructor raises `ConnectionError`
+instead of returning an unconnected object.
 
 # Logging
 The package follows the usual library convention: it logs to loggers below `naneos` and prints

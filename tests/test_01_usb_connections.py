@@ -4,11 +4,8 @@ import warnings
 import pytest
 
 from naneos.partector import PartectorSerialManager
-from naneos.partector.partector1 import Partector1
-from naneos.partector.partector2 import Partector2
-from naneos.partector.partector2_pro import Partector2Pro
-from naneos.partector.scan import scan_for_serial_partectors, scan_serial_ports
-from naneos.serial_utils import list_serial_ports
+from naneos.partector.partector_serial_manager import DEVICE_CLASSES
+from naneos.partector.scan import list_serial_ports, scan_serial_ports
 
 pytestmark = pytest.mark.hardware  # needs a Partector on USB or BLE
 
@@ -27,38 +24,20 @@ def test_list_serial_ports():
 
 
 def test_connection_partectors() -> None:
-    """Test if the serial connection is working 10 times."""
-    partectors = scan_for_serial_partectors()
-    assert isinstance(partectors, dict), "The result should be a list."
-    assert len(partectors) > 0, "There is no connected USB partector device."
+    """Every device found must connect by serial number five times in a row."""
+    found = scan_serial_ports()
+    assert len(found) > 0, "There is no connected USB partector device."
 
-    p1 = partectors["P1"]
-    p2 = partectors["P2"]
-    p2_pro = partectors["P2pro"]
-
-    if len(p1) > 0:
-        serial_number = next(iter(p1.keys()))
+    for device in found:
         for _ in range(5):
-            p1 = Partector1(serial_number=serial_number)
-            p1.close(reset_device=False)
-    else:
-        warnings.warn("There is no P1 connected (USB).", UserWarning, stacklevel=2)
+            partector = DEVICE_CLASSES[device.kind](serial_number=device.serial_number)
+            assert partector.firmware_version == device.firmware, (
+                f"scan found {device}, the connected device says FW{partector.firmware_version}"
+            )
+            partector.close(reset_device=False)
 
-    if len(p2) > 0:
-        serial_number = next(iter(p2.keys()))
-        for _ in range(5):
-            p2 = Partector2(serial_number=serial_number)
-            p2.close(reset_device=False)
-    else:
-        warnings.warn("There is no P2 connected (USB).", UserWarning, stacklevel=2)
-
-    if len(p2_pro) > 0:
-        serial_number = next(iter(p2_pro.keys()))
-        for _ in range(5):
-            p2_pro = Partector2Pro(serial_number=serial_number)
-            p2_pro.close(reset_device=False)
-    else:
-        warnings.warn("There is no P2pro connected (USB).", UserWarning, stacklevel=2)
+    for kind in set(DEVICE_CLASSES) - {device.kind for device in found}:
+        warnings.warn(f"There is no {kind.name} connected (USB).", UserWarning, stacklevel=2)
 
 
 def test_serial_manager():

@@ -56,6 +56,6 @@ def test_fetch_collects_from_every_device_and_reports_them() -> None:
     manager._fetch_data()
 
     assert sorted(manager.get_data()) == [1, 2, 3]
-    assert manager.get_connected_device_strings() == ["SN1 (P1)", "SN2 (P2)", "SN3 (P2 Pro)"]
-    assert manager.get_connected_addresses() == ["/dev/c", "/dev/a", "/dev/b"]
     assert manager.get_connected_serial_numbers() == [3, 1, 2]
+    assert [device.serial_number for device in manager.get_devices()] == [3, 1, 2]
+    assert manager.get_settling_serial_numbers() == []

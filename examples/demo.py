@@ -19,12 +19,12 @@ def minimal_example() -> None:
     try:
         while True:
             # Sleep exactly until the next publish window
-            remaining = manager.get_seconds_until_next_upload()
-            print(f"Next upload in: {remaining:.0f}s")
+            remaining = manager.seconds_until_next_snapshot
+            print(f"Next snapshot in: {remaining:.0f}s")
             time.sleep(remaining + 1)
 
-            print("Serial:", manager.get_connected_serial_devices())
-            print("BLE   :", manager.get_connected_ble_devices())
+            for device in manager.get_devices():
+                print(f"SN{device.serial_number}: {device.device_type}, {device.connection_type}")
             print()
     except KeyboardInterrupt:
         pass
@@ -50,7 +50,7 @@ def queue_example() -> None:
 
     try:
         while True:
-            time.sleep(manager.get_seconds_until_next_upload() + 1)
+            time.sleep(manager.seconds_until_next_snapshot + 1)
 
             while not out_q.empty():
                 snapshot = out_q.get()

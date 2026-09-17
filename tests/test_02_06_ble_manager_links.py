@@ -20,11 +20,11 @@ def _manager_with_links() -> PartectorBleManager:
     loop = asyncio.new_event_loop()
     try:
         manager._links = {
-            1: BleLink(loop.create_task(_idle()), _FakeConnection(True), DeviceType.P2),  # type: ignore[arg-type]
-            2: BleLink(loop.create_task(_idle()), _FakeConnection(True), DeviceType.P2PRO),  # type: ignore[arg-type]
-            3: BleLink(loop.create_task(_idle()), _FakeConnection(False), DeviceType.P2PRO),  # type: ignore[arg-type]
-            4: BleLink(loop.create_task(_idle()), None, None),  # type: ignore[arg-type]
-            5: BleLink(loop.create_task(_idle()), _FakeConnection(True), None),  # type: ignore[arg-type]
+            1: BleLink(loop.create_task(_idle()), _FakeConnection(True)),  # type: ignore[arg-type]
+            2: BleLink(loop.create_task(_idle()), _FakeConnection(True)),  # type: ignore[arg-type]
+            3: BleLink(loop.create_task(_idle()), _FakeConnection(False)),  # type: ignore[arg-type]
+            4: BleLink(loop.create_task(_idle()), None),  # type: ignore[arg-type]
+            5: BleLink(loop.create_task(_idle()), _FakeConnection(True)),  # type: ignore[arg-type]
         }
         loop.run_until_complete(asyncio.gather(*(link.task for link in manager._links.values())))
     finally:
@@ -32,16 +32,17 @@ def _manager_with_links() -> PartectorBleManager:
     return manager
 
 
-def test_only_live_links_are_reported_and_pro_comes_first() -> None:
+def test_only_live_links_are_reported() -> None:
     manager = _manager_with_links()
+    manager._links[1].device = "handle-1"  # type: ignore[assignment]
+    manager._links[3].device = "handle-3"  # type: ignore[assignment]
 
     assert manager.get_connected_serial_numbers() == [1, 2, 5]
-    assert manager.get_connected_device_strings() == ["SN2 (P2 Pro)", "SN1 (P2)", "SN5 (P2)"]
+    assert manager.get_devices() == ["handle-1"]  # 3 is retrying, 2 and 5 have no handle yet
 
 
-def test_device_type_is_learned_from_connection_points() -> None:
+def test_points_from_the_links_are_buffered_per_device() -> None:
     manager = _manager_with_links()
-    manager._links[5].device_type = None
 
     point = NaneosDeviceDataPoint(
         unix_timestamp=1000,
@@ -53,8 +54,8 @@ def test_device_type_is_learned_from_connection_points() -> None:
     manager._queue_connection.put_nowait(point)
     asyncio.run(manager._connection_queue_routine())
 
-    assert manager._links[5].device_type == DeviceType.P2PRO
     assert list(manager.get_data()[5]["ldsa"]) == [1.0]
+    assert manager.get_data() == {}
 
 
 def test_finished_tasks_are_forgotten() -> None:

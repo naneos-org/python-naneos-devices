@@ -5,13 +5,6 @@ the type used to parse them. Keys that are fields of NaneosDeviceDataPoint
 end up on the data point; the others are parsed only to match the line length.
 """
 
-# Re-exported for code written against naneos-devices <= 1.1.x.
-from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint  # noqa: F401
-from naneos.frames import (  # noqa: F401
-    add_to_existing_naneos_data,
-    sort_and_clean_naneos_data,
-)
-
 SerialLayout = dict[str, type[int] | type[float]]
 
 PARTECTOR1_DATA_STRUCTURE_V_LEGACY: SerialLayout = {

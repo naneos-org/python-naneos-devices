@@ -1,7 +1,5 @@
-from naneos.iotweb.download.downloader import download_from_iotweb
-from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
+"""The naneos IoT service: upload here, download in naneos.iotweb.download (optional extra)."""
 
-__all__ = [
-    "download_from_iotweb",
-    "NaneosUploadThread",
-]
+from naneos.iotweb.upload import upload_snapshot
+
+__all__ = ["upload_snapshot"]

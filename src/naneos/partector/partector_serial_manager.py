@@ -21,12 +21,6 @@ DEVICE_CLASSES: dict[DeviceType, type[PartectorBlueprint]] = {
     DeviceType.P2PRO: Partector2Pro,
 }
 
-DEVICE_LABELS: dict[DeviceType, str] = {
-    DeviceType.P1: "P1",
-    DeviceType.P2: "P2",
-    DeviceType.P2PRO: "P2 Pro",
-}
-
 
 class PartectorSerialManager(threading.Thread):
     """Connects to every Partector on USB, keeps the links alive and collects their data.
@@ -70,20 +64,9 @@ class PartectorSerialManager(threading.Thread):
         except RuntimeError as e:
             logger.exception(f"SerialManager loop exited with: {e}")
 
-    def get_connected_device_strings(self) -> list[str]:
-        """Human readable list of connected devices, grouped P1, P2, P2 Pro."""
-        devices = self._all_devices()
-        strings = []
-        for kind, label in DEVICE_LABELS.items():
-            strings += [f"SN{d.serial_number} ({label})" for d in devices if d.device_type == kind]
-        return strings
-
-    def get_gain_test_activating_devices(self) -> list[int | None]:
+    def get_settling_serial_numbers(self) -> list[int | None]:
         """Serial numbers of devices still warming up after a gain test was started."""
         return [d.serial_number for d in self._all_devices() if d.is_settling]
-
-    def get_connected_addresses(self) -> list[str]:
-        return list(self._devices.keys())
 
     def get_connected_serial_numbers(self) -> list[int | None]:
         return [d.serial_number for d in self._all_devices()]
@@ -99,7 +82,7 @@ class PartectorSerialManager(threading.Thread):
     def _manager_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
-                found = scan_serial_ports(ports_exclude=self.get_connected_addresses())
+                found = scan_serial_ports(ports_exclude=list(self._devices))
 
                 self._disconnect_unplugged_ports()
                 self._connect_to_new_ports(found)

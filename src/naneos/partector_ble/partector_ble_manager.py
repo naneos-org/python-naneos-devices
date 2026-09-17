@@ -9,7 +9,7 @@ import pandas as pd
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 
-from naneos.data_point import DeviceType, NaneosDeviceDataPoint
+from naneos.data_point import NaneosDeviceDataPoint
 from naneos.device import PartectorDevice
 from naneos.frames import MAX_ROWS_PER_DEVICE, to_pandas_df
 from naneos.logger import get_naneos_logger
@@ -26,7 +26,6 @@ class BleLink:
 
     task: asyncio.Task
     connection: PartectorBleConnection | None = None  # set while the task runs
-    device_type: DeviceType | None = None  # learned from the points the device sends
     device: BlePartector | None = None  # the handle given to users, set with the connection
 
     @property
@@ -111,14 +110,6 @@ class PartectorBleManager(threading.Thread):
             asyncio.run(self._async_run())
         except RuntimeError as e:
             logger.exception(f"BLEManager loop exited with: {e}")
-
-    def get_connected_device_strings(self) -> list[str]:
-        """Devices with a live BLE link, P2 Pro first. A link whose family is not
-        known yet is listed as P2. Devices that are only being retried are not listed."""
-        live = [(sn, link.device_type) for sn, link in self._live_links()]
-        pro = [f"SN{sn} (P2 Pro)" for sn, kind in live if kind == DeviceType.P2PRO]
-        other = [f"SN{sn} (P2)" for sn, kind in live if kind != DeviceType.P2PRO]
-        return pro + other
 
     def get_connected_serial_numbers(self) -> list[int]:
         """Serial numbers of the devices with a live BLE link."""
@@ -346,15 +337,6 @@ class PartectorBleManager(threading.Thread):
                 batch_data.append(self._queue_connection.get_nowait())
             except asyncio.QueueEmpty:
                 break
-
-        # A connected device reveals whether it is a P2 or a P2 Pro through the
-        # points it sends.
-        for data in batch_data:
-            if data.serial_number is None or data.device_type is None:
-                continue
-            link = self._links.get(data.serial_number)
-            if link is not None:
-                link.device_type = data.device_type
 
         self._buffer_points(batch_data)
 

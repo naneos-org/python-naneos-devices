@@ -70,20 +70,18 @@ def test_ble_style_point_with_none_device_type_converts(caplog) -> None:
     assert (df["connection_type"] == "connected").all()
 
 
-def test_sort_and_clean_prefers_serial_over_connected_and_keeps_unknown_kinds() -> None:
+def test_sort_and_clean_prefers_serial_over_connected() -> None:
     data = {
         1: to_pandas_df(
             [_point(1, 1000, ConnectionType.CONNECTED), _point(1, 500, ConnectionType.SERIAL)]
         ),
         2: to_pandas_df([_point(2, 1000, ConnectionType.CONNECTED)]),
-        3: to_pandas_df([_point(3, 1000, ConnectionType.ADVERTISEMENT)]),  # recorded by 1.1.x
     }
 
     cleaned = sort_and_clean_naneos_data(data)
 
     assert list(cleaned[1].index) == [500]
     assert list(cleaned[2].index) == [1000]
-    assert list(cleaned[3].index) == [1000]
 
 
 def test_sort_and_clean_serial_only_drops_devices_without_serial_rows() -> None:

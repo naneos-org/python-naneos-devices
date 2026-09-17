@@ -1,9 +1,15 @@
 import datetime as dt
 
 import pandas as pd
-from influxdb_client.client.influxdb_client import InfluxDBClient
 
 from naneos.logger import get_naneos_logger
+
+try:
+    from influxdb_client.client.influxdb_client import InfluxDBClient
+except ImportError as e:  # the InfluxDB client is not part of the default install
+    raise ImportError(
+        'The download needs the InfluxDB client: pip install "naneos-devices[download]"'
+    ) from e
 
 URL_INFLUX = "https://influxdb.naneos.ch"
 ORG_INFLUX = "naneos"

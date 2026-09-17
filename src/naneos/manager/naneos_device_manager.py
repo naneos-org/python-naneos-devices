@@ -9,7 +9,7 @@ import pandas as pd
 
 from naneos.device import PartectorDevice
 from naneos.frames import add_to_existing_naneos_data, sort_and_clean_naneos_data
-from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
+from naneos.iotweb.upload import upload_snapshot
 from naneos.logger import get_naneos_logger
 from naneos.partector.partector_serial_manager import PartectorSerialManager
 from naneos.partector_ble.partector_ble_manager import PartectorBleManager
@@ -60,7 +60,7 @@ class NaneosDeviceManager(threading.Thread):
         self._serial_pulse_diagnostics = serial_pulse_diagnostics
         self._upload_active = upload_active
         self._next_upload_time = time.time() + gathering_interval_seconds
-        self.set_gathering_interval_seconds(gathering_interval_seconds)
+        self.gathering_interval_seconds = gathering_interval_seconds
 
         self._out_queue: queue.Queue | None = None
 
@@ -74,36 +74,60 @@ class NaneosDeviceManager(threading.Thread):
             maxlen=self.MAX_PENDING_UPLOADS
         )
 
-        self.upload_blocked_devices: list[int | None] = []
+        self._upload_blocked_devices: list[int | None] = []
 
-    def use_serial_connections(self, use: bool) -> None:
-        self._use_serial = use
-
-    def use_ble_connections(self, use: bool) -> None:
-        self._use_ble = use
-
-    def get_serial_connection_status(self) -> bool:
+    # == Runtime controls ==========================================================================
+    @property
+    def use_serial(self) -> bool:
+        """USB devices on / off. Takes effect within a second, also while running."""
         return self._use_serial
 
-    def get_ble_connection_status(self) -> bool:
+    @use_serial.setter
+    def use_serial(self, use: bool) -> None:
+        self._use_serial = use
+
+    @property
+    def use_ble(self) -> bool:
+        """BLE devices on / off. Takes effect within a second, also while running;
+        switching off waits for the links to disconnect."""
         return self._use_ble
 
-    def get_upload_status(self) -> bool:
+    @use_ble.setter
+    def use_ble(self, use: bool) -> None:
+        self._use_ble = use
+
+    @property
+    def upload_active(self) -> bool:
+        """Upload of the snapshots to the naneos IoT service on / off."""
         return self._upload_active
 
-    def set_upload_status(self, active: bool) -> None:
+    @upload_active.setter
+    def upload_active(self, active: bool) -> None:
         self._upload_active = active
 
-    def get_gathering_interval_seconds(self) -> int:
+    @property
+    def gathering_interval_seconds(self) -> int:
+        """Snapshot interval; values are clamped to 10-600 s."""
         return self._gathering_interval_seconds
 
-    def set_gathering_interval_seconds(self, interval: int) -> None:
+    @gathering_interval_seconds.setter
+    def gathering_interval_seconds(self, interval: int) -> None:
         interval = max(10, min(600, interval))
         logger.info(f"Setting gathering interval to {interval} seconds.")
         self._gathering_interval_seconds = interval
 
         tmp_next_upload_time = time.time() + self._gathering_interval_seconds
         self._next_upload_time = min(self._next_upload_time, tmp_next_upload_time)
+
+    @property
+    def pending_upload_count(self) -> int:
+        """Number of snapshots waiting to be uploaded, including retries."""
+        return len(self._pending_uploads)
+
+    @property
+    def seconds_until_next_snapshot(self) -> float:
+        """Time until the next snapshot is put on the output queue and uploaded."""
+        return max(0, self._next_upload_time - time.time())
 
     def register_output_queue(self, out_queue: queue.Queue) -> None:
         self._out_queue = out_queue
@@ -122,24 +146,6 @@ class NaneosDeviceManager(threading.Thread):
 
     def stop(self) -> None:
         self._stop_event.set()
-
-    def get_connected_serial_devices(self) -> list[str]:
-        """
-        Returns a list of connected serial devices.
-        """
-        if self._manager_serial is None:
-            return []
-
-        return self._manager_serial.get_connected_device_strings()
-
-    def get_connected_ble_devices(self) -> list[str]:
-        """
-        Returns a list of connected BLE devices.
-        """
-        if self._manager_ble is None:
-            return []
-
-        return self._manager_ble.get_connected_device_strings()
 
     def get_devices(self) -> list[PartectorDevice]:
         """One handle per connected device, to write to it, query it and set its rate.
@@ -179,20 +185,9 @@ class NaneosDeviceManager(threading.Thread):
         """
         self.get_device(serial_number).set_sample_rate(hz)
 
-    def get_pending_upload_count(self) -> int:
-        """Number of snapshots waiting to be uploaded, including retries."""
-        return len(self._pending_uploads)
-
-    def get_seconds_until_next_upload(self) -> float:
-        """
-        Returns the number of seconds until the next upload.
-        This is used to determine when to upload data.
-        """
-        return max(0, self._next_upload_time - time.time())
-
     def _loop_serial_manager(self) -> None:
         if self._manager_serial is not None and self._manager_serial.is_alive():
-            self.upload_blocked_devices = self._manager_serial.get_gain_test_activating_devices()
+            self._upload_blocked_devices = self._manager_serial.get_settling_serial_numbers()
             self._data = add_to_existing_naneos_data(self._data, self._manager_serial.get_data())
 
         self._manager_serial = self._sync_manager(
@@ -239,8 +234,8 @@ class NaneosDeviceManager(threading.Thread):
                 self._loop_serial_manager()
                 self._loop_ble_manager()
 
-                # remove entries from _data that is in upload_blocked_devices
-                for blocked_sn in self.upload_blocked_devices:
+                # a device that is settling after a gain test start delivers no valid data
+                for blocked_sn in self._upload_blocked_devices:
                     if blocked_sn in self._data:
                         del self._data[blocked_sn]
 
@@ -290,7 +285,7 @@ class NaneosDeviceManager(threading.Thread):
     def _try_upload(snapshot: dict[int, pd.DataFrame]) -> str:
         """Returns "ok", "retry" (network / server problem) or "drop" (rejected)."""
         try:
-            response = NaneosUploadThread.upload(snapshot)
+            response = upload_snapshot(snapshot)
         except Exception as e:
             logger.warning(f"Upload failed: {e}")
             return "retry"

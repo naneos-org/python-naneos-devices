@@ -18,22 +18,11 @@ class ConnectionType(StrEnum):
 
     SERIAL = "serial"
     CONNECTED = "connected"
-    # No longer produced since 1.2.0 (BLE is connection-only); kept so frames
-    # recorded by older versions still load.
-    ADVERTISEMENT = "advertisement"
 
 
 @dataclass
 class NaneosDeviceDataPoint:
     """One measurement of one device. Every field is optional; None means "not reported"."""
-
-    # Compatibility aliases for code written against naneos-devices <= 1.1.x.
-    DEV_TYPE_P2 = DeviceType.P2
-    DEV_TYPE_P1 = DeviceType.P1
-    DEV_TYPE_P2PRO = DeviceType.P2PRO
-    CONN_TYPE_SERIAL = ConnectionType.SERIAL
-    CONN_TYPE_CONNECTED = ConnectionType.CONNECTED
-    CONN_TYPE_ADVERTISEMENT = ConnectionType.ADVERTISEMENT
 
     # mandatory
     unix_timestamp: int | None = None  # ms since epoch
@@ -103,22 +92,3 @@ class NaneosDeviceDataPoint:
         if remove_nan:
             return {name: value for name, value in values.items() if value is not None}
         return values
-
-    # -- DataFrame helpers, kept for compatibility. Prefer naneos.frames. ----------------------
-    @staticmethod
-    def to_pandas_df(points: list["NaneosDeviceDataPoint"]):
-        from naneos.frames import to_pandas_df
-
-        return to_pandas_df(points)
-
-    @staticmethod
-    def add_data_points_to_dict(devices: dict, points: list["NaneosDeviceDataPoint"]):
-        from naneos.frames import add_data_points_to_dict
-
-        return add_data_points_to_dict(devices, points)
-
-    @staticmethod
-    def add_data_point_to_dict(devices: dict, data: "NaneosDeviceDataPoint"):
-        from naneos.frames import add_data_points_to_dict
-
-        return add_data_points_to_dict(devices, [data])

@@ -8,7 +8,7 @@ import datetime as dt
 import os
 import sys
 
-from naneos.iotweb import download_from_iotweb
+from naneos.iotweb.download import download_from_iotweb
 
 
 def main() -> None:

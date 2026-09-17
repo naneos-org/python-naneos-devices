@@ -293,7 +293,7 @@ before releasing, the Windows-only branches in the connection are untested here.
 - Keep `DEV_TYPE` numeric values as an `IntEnum` with `3` reserved, or just drop 3?
 - Are the 10 Hz / 100 Hz serial modes (`verb_freq` 2 / 3) still used by anyone? If not, the
   P2 mode handling and `MAX_ROWS_PER_DEVICE` can be simplified further.
-- Is `iotweb/download` (InfluxDB) still in use? It pulls `influxdb-client[ciso]` into every install.
+- ~~Is `iotweb/download` (InfluxDB) still in use?~~ Now the optional extra `download`, see 7.5.
 
 ---
 
@@ -411,28 +411,32 @@ uploaded rows, never more than one per second.
   is the interface; the only duplicated knowledge is the `name?` -> device type table (scan and
   BLE connection). Not worth a module yet.
 
-### 7.5 P2 - Drop or simplify (together, in a 2.0)
+### 7.5 P2 - Drop or simplify (done 2026-09-17, released as 2.0.0)
 
-- [ ] Compatibility shims: `scanPartector.py`, (~~the `PartectorBluePrint` alias~~ gone with 7.3), `DEV_TYPE_*` /
-  `CONN_TYPE_*`, the static DataFrame methods on the dataclass.
-- [ ] `scan_for_serial_partectors()` (grouped dict, only used by one test), the string `kind`
-  argument and `DEVICE_KIND_NAMES`.
-- [ ] `serial_utils/` holds one function; fold it into `scan.py`.
-- [ ] `ConnectionType.ADVERTISEMENT` is no longer produced by anything.
-- [ ] `NaneosUploadThread` is a `Thread` subclass that is never instantiated; only the static
-  `upload()` is called. Make it a plain `upload_snapshot()` function.
-- [ ] `iotweb/download` pulls `influxdb-client[ciso]` into every install, including the Pi. Make it
-  an optional extra or drop it (still open from section 6).
-- [ ] Java-style getter / setter pairs on `NaneosDeviceManager` (`use_serial_connections`,
-  `get_serial_connection_status`, `get/set_upload_status`, ...) become properties
-  (`manager.use_ble = False`). The runtime toggling itself stays (decided 2026-09-17: unused
-  today, but wanted for a GUI), and so does `_sync_manager`, which implements it.
-- [ ] `get_connected_*_device_strings()` returns preformatted `"SN123 (P2 Pro)"` strings. Return the
-  device handles from 7.2 and let the caller format them.
-- [ ] `upload_blocked_devices` is a public mutable attribute; make it private.
+The migration table is in the README ("Migrating from 1.x to 2.0").
+
+- [x] Compatibility shims removed: `scanPartector.py`, the `PartectorBluePrint` alias, `DEV_TYPE_*` /
+  `CONN_TYPE_*`, the static DataFrame methods on the dataclass, the re-exports in
+  `_data_structure.py`.
+- [x] `scan_for_serial_partectors()`, the string `kind` argument and `DEVICE_KIND_NAMES` removed.
+- [x] `serial_utils/` folded into `scan.py` (`list_serial_ports`).
+- [x] `ConnectionType.ADVERTISEMENT` removed.
+- [x] `NaneosUploadThread` is gone; `naneos/iotweb/upload.py` has plain functions
+  (`upload_snapshot`, `to_upload_frame`, `build_combined_entry`, `build_body`).
+- [x] `iotweb/download` is the optional extra `naneos-devices[download]`; a default install (the
+  Pi) no longer pulls in `influxdb-client`. Importing it without the extra says what to install.
+- [x] `NaneosDeviceManager` getter / setter pairs are properties: `use_serial`, `use_ble`,
+  `upload_active`, `gathering_interval_seconds`, `pending_upload_count`,
+  `seconds_until_next_snapshot`. The runtime toggling and `_sync_manager` stay (decided
+  2026-09-17: unused today, but wanted for a GUI).
+- [x] `get_connected_*_device_strings()` removed from all managers in favour of `get_devices()`;
+  `BleLink.device_type` went with it (the connection knows its type).
+- [x] `close(reset_device)` / `power_off()`, `get_data()` without the held back line: done in 7.3.
+- [x] `upload_blocked_devices` is private; the serial manager's
+  `get_gain_test_activating_devices()` is now `get_settling_serial_numbers()`.
 
 ### 7.6 What is left
 
-Only 7.5, to be released together as 2.0. 7.1 to 7.4 already change the API of the serial device
-classes (`write_line`, `verb_freq`, `close(...)` arguments); `NaneosDeviceManager`, the managers'
-data API and the uploader CLI are unchanged.
+Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
+command layer, left open on purpose) and the hardware check of the Windows-only BLE branches
+(3.3).

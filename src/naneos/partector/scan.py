@@ -4,19 +4,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+import serial
+from serial.tools import list_ports
+
 from naneos.data_point import DeviceType
 from naneos.logger import get_naneos_logger
 from naneos.partector.serial_transport import SerialTransport
-from naneos.serial_utils import list_serial_ports
 
 logger = get_naneos_logger(__name__)
-
-# Key used for each family in the dict returned by scan_for_serial_partectors().
-DEVICE_KIND_NAMES: dict[DeviceType, str] = {
-    DeviceType.P1: "P1",
-    DeviceType.P2: "P2",
-    DeviceType.P2PRO: "P2pro",
-}
 
 # Serial numbers below this belong to the Partector 1 family.
 _P1_MAX_SERIAL_NUMBER = 1000
@@ -25,6 +20,13 @@ _FW_WITH_NAME_QUERY = 310
 
 # Answers to the "name?" query.
 _DEVICE_NAMES: dict[str, DeviceType] = {"P2": DeviceType.P2, "P2pro": DeviceType.P2PRO}
+
+# USB identifiers of the Partector serial interface.
+_PARTECTOR_VID = 65535
+_PARTECTOR_PID = 5
+# A P2 streaming at 100 Hz can make the open() on Windows fail transiently,
+# so a port is only given up after this many immediate retries.
+_PORT_OPEN_RETRIES = 100
 
 _ANSWER_TIMEOUT_SECONDS = 0.25
 _ASK_RETRIES = 3
@@ -51,31 +53,42 @@ def scan_serial_ports(ports_exclude: list[str] | None = None) -> list[FoundDevic
     return found
 
 
-def scan_for_serial_partectors(ports_exclude: list[str] | None = None) -> dict[str, dict[int, str]]:
-    """Found devices grouped by family: {"P1": {sn: port}, "P2": {...}, "P2pro": {...}}."""
-    grouped: dict[str, dict[int, str]] = {name: {} for name in DEVICE_KIND_NAMES.values()}
-    for device in scan_serial_ports(ports_exclude):
-        grouped[DEVICE_KIND_NAMES[device.kind]][device.serial_number] = device.port
-    return grouped
-
-
-def scan_for_serial_partector(
-    serial_number: int, kind: DeviceType | str | None = None
-) -> str | None:
+def scan_for_serial_partector(serial_number: int, kind: DeviceType | None = None) -> str | None:
     """Port of the device with this serial number, or None if it is not plugged in.
 
-    kind restricts the search to one family; it accepts a DeviceType or one of
-    the names "P1", "P2", "P2pro".
+    kind restricts the search to one device family.
     """
-    if isinstance(kind, str):
-        by_name = {name: device_type for device_type, name in DEVICE_KIND_NAMES.items()}
-        kind = by_name.get(kind)
-
     for device in scan_serial_ports():
         if device.serial_number == serial_number and (kind is None or device.kind == kind):
             return device.port
 
     return None
+
+
+def list_serial_ports(ports_exclude: list[str] | None = None) -> list[str]:
+    """Serial ports that look like a Partector and can be opened, excluding ports_exclude."""
+    exclude = ports_exclude or []
+    candidates = [
+        port.device
+        for port in list_ports.comports()
+        if port.device not in exclude
+        and (
+            (port.pid == _PARTECTOR_PID and port.vid == _PARTECTOR_VID)
+            or (port.serial_number and "dosemet" in port.serial_number.lower())
+        )
+    ]
+    return [port for port in candidates if _can_open(port)]
+
+
+def _can_open(port: str) -> bool:
+    for _ in range(_PORT_OPEN_RETRIES):
+        try:
+            with serial.Serial(port) as ser:
+                ser.write(b"X0000!")
+            return True
+        except (OSError, serial.SerialException):
+            pass
+    return False
 
 
 def _scan_port(port: str) -> FoundDevice | None:
