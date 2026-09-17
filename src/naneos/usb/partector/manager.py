@@ -3,7 +3,7 @@ import time
 
 import pandas as pd
 
-from naneos.data_point import DeviceType, NaneosDeviceDataPoint
+from naneos.data_point import DeviceType, NaneosDeviceDataPoint, PointListener
 from naneos.device import PartectorDevice
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import get_naneos_logger
@@ -26,12 +26,18 @@ class PartectorSerialManager(threading.Thread):
         gain_test_active: run the electrometer gain test on P2 / P2 Pro. It holds
             the data of a device back for at least 10 s after every connect.
         output_pulse_diagnostics: let P2 / P2 Pro append the pulse diagnostics columns.
+        point_listener: called with every data point as it arrives, in addition to
+            get_data(). Runs on the reader threads: must be quick and must not block.
     """
 
     def __init__(
-        self, gain_test_active: bool = True, output_pulse_diagnostics: bool = True
+        self,
+        gain_test_active: bool = True,
+        output_pulse_diagnostics: bool = True,
+        point_listener: PointListener | None = None,
     ) -> None:
         super().__init__(daemon=True)
+        self._point_listener = point_listener
         self._gain_test_active = gain_test_active
         self._output_pulse_diagnostics = output_pulse_diagnostics
         self._stop_event = threading.Event()
@@ -127,12 +133,13 @@ class PartectorSerialManager(threading.Thread):
 
     def _connect(self, found: FoundDevice) -> UsbPartector:
         if found.kind == DeviceType.P1:
-            return Partector1(port=found.port)
+            return Partector1(port=found.port, point_listener=self._point_listener)
         cls = Partector2Pro if found.kind == DeviceType.P2PRO else Partector2
         return cls(
             port=found.port,
             gain_test_active=self._gain_test_active,
             output_pulse_diagnostics=self._output_pulse_diagnostics,
+            point_listener=self._point_listener,
         )
 
     def _close_all_ports(self) -> None:

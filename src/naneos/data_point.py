@@ -1,5 +1,6 @@
 """The measurement data point shared by the serial, BLE, upload and manager code."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 
@@ -92,3 +93,9 @@ class NaneosDeviceDataPoint:
         if remove_nan:
             return {name: value for name, value in values.items() if value is not None}
         return values
+
+
+# Called with every data point the moment it is complete, on the thread that
+# received it (a serial reader thread or the BLE event loop): it must be quick
+# and must not block.
+PointListener = Callable[[NaneosDeviceDataPoint], None]

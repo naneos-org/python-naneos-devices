@@ -17,7 +17,7 @@ from naneos.ble.partector.characteristics import (
     PartectorBleDecoderSize,
     PartectorBleDecoderStd,
 )
-from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
+from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint, PointListener
 from naneos.logger import get_naneos_logger
 
 logger = get_naneos_logger(__name__)
@@ -100,6 +100,7 @@ class PartectorBleConnection:
         queue: asyncio.Queue[NaneosDeviceDataPoint],
         rssi_provider: Callable[[], int | None] | None = None,
         device_provider: Callable[[], BLEDevice | None] | None = None,
+        point_listener: PointListener | None = None,
     ) -> None:
         """
         Initializes the BLE connection with the given device, event loop, and queue.
@@ -116,6 +117,8 @@ class PartectorBleConnection:
                 recently advertised BLEDevice for this device. Used to refresh a
                 stale BLEDevice before reconnecting. When omitted, the device given
                 at construction time is reused for every attempt.
+            point_listener (Callable | None): Called with every data point as it is
+                published, on the event loop. Must be quick and must not block.
         """
         self.SERIAL_NUMBER = serial_number
         # Unknown until the device reveals it: a size distribution frame means P2 Pro.
@@ -138,6 +141,7 @@ class PartectorBleConnection:
         self._gatt_error_count = 0  # Track consecutive GATT errors
         self._rssi_provider = rssi_provider
         self._device_provider = device_provider
+        self._point_listener = point_listener
 
         # Last time the RSSI gate let a connect attempt through, used to bound
         # how long the gate may keep a device locked out.
@@ -514,6 +518,13 @@ class PartectorBleConnection:
             self._queue.put_nowait(point)
         except asyncio.QueueFull:
             logger.warning(f"SN{self.SERIAL_NUMBER}: Connection queue full, dropping data point.")
+
+        # The point that was in progress when the link came up has no serial number yet.
+        if self._point_listener is not None and point.serial_number is not None:
+            try:
+                self._point_listener(point)
+            except Exception as e:
+                logger.warning(f"SN{self.SERIAL_NUMBER}: point listener failed: {e}")
 
     async def _decode_routine(self) -> None:
         """Asynchronously decodes BLE data from the decode queue.

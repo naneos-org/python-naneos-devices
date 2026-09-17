@@ -8,7 +8,7 @@ from collections.abc import Callable
 from threading import Event, Lock, Thread, current_thread
 from typing import ClassVar, TypeVar
 
-from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
+from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint, PointListener
 from naneos.device import NotSupportedError, PartectorDevice
 from naneos.logger import get_naneos_logger
 from naneos.usb.partector.layouts import (
@@ -58,6 +58,7 @@ class UsbPartector(PartectorDevice, ABC):
         port: str | None = None,
         sample_rate_hz: int = 1,
         transport: SerialTransport | None = None,
+        point_listener: PointListener | None = None,
     ) -> None:
         """Opens the port, identifies the device, configures it and starts the output.
 
@@ -66,12 +67,15 @@ class UsbPartector(PartectorDevice, ABC):
             port: use this port instead of searching for the serial number.
             sample_rate_hz: 0 (no output), 1, 10 or 100.
             transport: an already constructed transport; replaces serial_number / port lookup.
+            point_listener: called with every data point as it arrives, on the reader
+                thread, in addition to get_data(). Must be quick and must not block.
 
         Raises:
             ValueError: neither serial_number nor port given.
             ConnectionError: the device was not found, did not answer, or is not
                 the one with the requested serial number.
         """
+        self._point_listener = point_listener
         self._sn: int | None = None
         self._fw: int = 0
         self._integration_time: int = 0
@@ -352,9 +356,14 @@ class UsbPartector(PartectorDevice, ABC):
 
         try:
             values: list[int | str] = [unix_timestamp, *fields[: len(layout) - 1]]
-            self._points.append(self._create_naneos_device_point(layout, values))
+            point = self._create_naneos_device_point(layout, values)
         except ValueError as e:
             logger.warning(f"SN{self._sn}: could not parse {line!r}: {e}")
+            return
+
+        self._points.append(point)
+        if self._point_listener is not None:
+            self._point_listener(point)  # an exception is logged by the reader loop
 
     def _probe(self) -> None:
         """Ask a silent device for its serial number. Raises ConnectionError if it is gone.
@@ -438,11 +447,12 @@ class Partector2(UsbPartector):
         gain_test_active: bool = True,
         output_pulse_diagnostics: bool = True,
         transport: SerialTransport | None = None,
+        point_listener: PointListener | None = None,
     ) -> None:
         """See UsbPartector. The two diagnostics need firmware 320 or newer."""
         self._want_gain_test = gain_test_active
         self._want_pulse_diagnostics = output_pulse_diagnostics
-        super().__init__(serial_number, port, sample_rate_hz, transport)
+        super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
 
     def _configure(self) -> None:
         if self._fw in [265, 275]:
@@ -487,12 +497,13 @@ class Partector2Pro(UsbPartector):
         gain_test_active: bool = True,
         output_pulse_diagnostics: bool = True,
         transport: SerialTransport | None = None,
+        point_listener: PointListener | None = None,
     ) -> None:
         """See UsbPartector. sample_rate_hz only applies with size_distribution=False."""
         self._size_distribution = size_distribution
         self._want_gain_test = gain_test_active
         self._want_pulse_diagnostics = output_pulse_diagnostics
-        super().__init__(serial_number, port, sample_rate_hz, transport)
+        super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
 
     @property
     def size_distribution(self) -> bool:

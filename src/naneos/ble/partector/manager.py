@@ -12,7 +12,7 @@ from bleak.backends.device import BLEDevice
 from naneos.ble.partector.connection import PartectorBleConnection
 from naneos.ble.partector.device import BlePartector
 from naneos.ble.partector.scanner import PartectorBleScanner
-from naneos.data_point import NaneosDeviceDataPoint
+from naneos.data_point import NaneosDeviceDataPoint, PointListener
 from naneos.device import PartectorDevice
 from naneos.frames import MAX_ROWS_PER_DEVICE, to_pandas_df
 from naneos.logger import get_naneos_logger
@@ -45,6 +45,8 @@ class PartectorBleManager(threading.Thread):
             Partector in reach, first come first served.
         max_links: Upper bound of simultaneous links (including ones that are
             still retrying). BlueZ handles about seven reliably.
+        point_listener: Called with every data point as it arrives, in addition to
+            get_data(). Runs on the BLE event loop: must be quick and must not block.
     """
 
     # How often the manager drains its queues. The queues are bounded and the
@@ -65,9 +67,13 @@ class PartectorBleManager(threading.Thread):
     DEFAULT_MAX_LINKS = 7
 
     def __init__(
-        self, serial_numbers: Iterable[int] | None = None, max_links: int = DEFAULT_MAX_LINKS
+        self,
+        serial_numbers: Iterable[int] | None = None,
+        max_links: int = DEFAULT_MAX_LINKS,
+        point_listener: PointListener | None = None,
     ) -> None:
         super().__init__(daemon=True)
+        self._point_listener = point_listener
         self._allowed_serials: frozenset[int] | None = (
             frozenset(serial_numbers) if serial_numbers is not None else None
         )
@@ -207,6 +213,7 @@ class PartectorBleManager(threading.Thread):
             queue=self._queue_connection,
             rssi_provider=lambda: self._get_rssi(device.address),
             device_provider=lambda: self._get_device(device.address),
+            point_listener=self._point_listener,
         )
         link = self._links.get(serial)
         if link is not None:

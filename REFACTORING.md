@@ -504,7 +504,24 @@ naneos/
   `send_commands.py` only with a file that has no line to send, `download_iotweb.py` only up to
   its missing-token message.
 
-### 7.9 What is left
+### 7.9 Live data stream (done 2026-09-17)
+
+- Before: data only left `NaneosDeviceManager` as snapshots, every 10 s at best; internally it was
+  polled once per second through two layers.
+- `register_live_queue(queue)` delivers every `NaneosDeviceDataPoint` as it arrives. The points are
+  pushed, not polled: `UsbPartector`, `PartectorSerialManager`, `PartectorBleConnection` and
+  `PartectorBleManager` take an optional `point_listener`; the device manager passes its
+  `_on_live_point`. The pull API (`get_data()`), the snapshots and the upload are unchanged.
+- Rules: BLE points of a device that is also connected over USB are skipped (same preference as the
+  snapshots); a full queue drops its oldest point and counts it (`live_points_dropped`); a
+  listener that raises is logged and does not stop a reader thread or a BLE link.
+- Points are dataclasses, not DataFrames: a DataFrame per point is the most expensive thing this
+  library does on a Pi.
+- Measured: SN8617 at 100 Hz gave 501 live points in 5 s with both BLE links up (no BLE
+  duplicates), about 1 ms after the line was read, 0 dropped, while the 10 s snapshot still had
+  its 1003 rows. With USB switched off at runtime both devices continued at 1 Hz over BLE.
+
+### 7.10 What is left
 
 Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
 command layer, left open on purpose) and the hardware check of the Windows-only BLE branches

@@ -33,6 +33,24 @@ OR-ed. 100 Hz is meant for tests, not for productive use.
 The rate belongs to the connection: when a device is unplugged or reconnects, the manager
 creates a new connection at 1 Hz and `set_sample_rate()` has to be called again.
 
+## Snapshots and live data
+
+| | Snapshots (`register_output_queue`) | Live data (`register_live_queue`) |
+|---|---|---|
+| Item | `dict[int, pandas.DataFrame]`, one frame per device | one `NaneosDeviceDataPoint` |
+| When | every gathering interval (10 to 600 s) | the moment the point arrives (about 1 ms after it was read) |
+| USB and BLE at once | USB rows only | USB points only |
+| Cleaning | sorted, duplicate timestamps removed | none, points as received |
+| Used for the upload | yes | no |
+
+Both can be registered at the same time. The live points are pushed from the threads that
+receive them (the serial reader threads and the BLE event loop), so the manager never blocks on
+the live queue: give it a `maxsize`, and when it is full the oldest point is dropped to make
+room. `manager.live_points_dropped` counts them. An unbounded queue that nobody reads grows
+without limit, at 100 Hz by about 200 kB per second and device.
+
+A P2 Pro in size distribution mode delivers a point about every 6 s, also on the live queue.
+
 ## Partector 2 Pro modes (USB)
 
 A P2 Pro on USB starts in **size distribution mode**: one line with the size distribution about

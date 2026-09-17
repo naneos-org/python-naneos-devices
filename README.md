@@ -36,6 +36,7 @@ want, uploads them to the naneos IoT service.
 - ⏱️ Gathering interval of 10 to 600 s
 - 📤 Optional upload to the naneos IoT service (always at 1 Hz)
 - 📦 Snapshots as `dict[int, pandas.DataFrame]` on a queue, for your own processing
+- ⚡ Live data: every data point on a queue the moment it arrives
 - 💬 Send commands to a device, read its answers and set its data rate, the same way on USB and BLE
 
 ## Quick start: upload everything in reach
@@ -102,6 +103,29 @@ The frames are indexed by the unix timestamp in milliseconds; the columns are th
 [`NaneosDeviceDataPoint`](https://naneos-org.github.io/python-naneos-devices/reference/naneos/data_point/) (`ldsa`, `particle_number_concentration`,
 `average_particle_diameter`, `device_status`, ...).
 
+## Live data
+Example: [`examples/live_data.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_data.py)
+
+Snapshots arrive every 10 s at best. For a live view, register a live queue: it receives every
+data point the moment it arrives, as a `NaneosDeviceDataPoint`, next to the snapshots and the upload.
+```python
+import queue
+
+from naneos import NaneosDeviceManager
+
+live: queue.Queue = queue.Queue(maxsize=10_000)  # bounded: a full queue drops its oldest point
+
+manager = NaneosDeviceManager(upload_active=False)
+manager.register_live_queue(live)
+manager.start()
+
+while True:
+    point = live.get()
+    print(point.serial_number, point.connection_type, point.unix_timestamp, point.ldsa)
+```
+The points come at the rate of the device (1 Hz, or what you set over USB). A device that is
+connected over USB and BLE delivers its USB points only.
+
 ## Change it while it runs
 Example: [`examples/runtime_controls.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/runtime_controls.py)
 ```python
@@ -159,6 +183,7 @@ enable_file_logging("logs/", LEVEL_INFO)  # appends to logs/naneos-devices.log
 |---|---|
 | [`quick_start.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/quick_start.py) | upload everything in reach |
 | [`queue_handoff.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/queue_handoff.py) | process the snapshots yourself |
+| [`live_data.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_data.py) | every data point the moment it arrives |
 | [`runtime_controls.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/runtime_controls.py) | switch transports, upload and interval while running |
 | [`device_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/device_commands.py) | commands, answers and the data rate |
 | [`send_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/send_commands.py) | send a file of commands to one device |

@@ -9,6 +9,7 @@ import pandas as pd
 
 from naneos.ble.partector.manager import PartectorBleManager
 from naneos.cloud.upload import upload_snapshot
+from naneos.data_point import ConnectionType, NaneosDeviceDataPoint
 from naneos.device import PartectorDevice
 from naneos.frames import add_to_existing_naneos_data, sort_and_clean_naneos_data
 from naneos.logger import get_naneos_logger
@@ -63,6 +64,8 @@ class NaneosDeviceManager(threading.Thread):
         self.gathering_interval_seconds = gathering_interval_seconds
 
         self._out_queue: queue.Queue | None = None
+        self._live_queue: queue.Queue | None = None
+        self._live_points_dropped = 0
 
         self._stop_event = threading.Event()
 
@@ -130,10 +133,62 @@ class NaneosDeviceManager(threading.Thread):
         return max(0, self._next_upload_time - time.time())
 
     def register_output_queue(self, out_queue: queue.Queue) -> None:
+        """Every snapshot (dict[int, pandas.DataFrame]) is put on this queue."""
         self._out_queue = out_queue
 
     def unregister_output_queue(self) -> None:
         self._out_queue = None
+
+    def register_live_queue(self, live_queue: queue.Queue) -> None:
+        """Every NaneosDeviceDataPoint is put on this queue the moment it arrives.
+
+        Independent of the snapshots and the upload, at the rate of the device
+        (see set_sample_rate). A device that is connected over USB and BLE
+        delivers its USB points only.
+
+        Give the queue a maxsize: when it is full the oldest point is dropped
+        to make room (see live_points_dropped), so a consumer that falls
+        behind loses old data instead of stalling the devices. An unbounded
+        queue grows without limit when nobody reads it.
+        """
+        self._live_queue = live_queue
+
+    def unregister_live_queue(self) -> None:
+        self._live_queue = None
+
+    @property
+    def live_points_dropped(self) -> int:
+        """Points dropped from the live queue because it was full."""
+        return self._live_points_dropped
+
+    def _on_live_point(self, point: NaneosDeviceDataPoint) -> None:
+        """Runs on the serial reader threads and the BLE event loop: never blocks."""
+        live_queue = self._live_queue
+        if live_queue is None:
+            return
+
+        if point.connection_type == ConnectionType.CONNECTED:
+            serial_manager = self._manager_serial
+            if (
+                serial_manager is not None
+                and point.serial_number in serial_manager.get_connected_serial_numbers()
+            ):
+                return  # the USB connection of this device delivers the same measurement
+
+        try:
+            live_queue.put_nowait(point)
+            return
+        except queue.Full:
+            pass
+
+        # Drop the oldest point. Another producer may win the freed slot, then this
+        # point is the one that is lost; either way nothing blocks.
+        self._live_points_dropped += 1
+        try:
+            live_queue.get_nowait()
+            live_queue.put_nowait(point)
+        except (queue.Empty, queue.Full):
+            pass
 
     def run(self) -> None:
         self._loop()
@@ -193,7 +248,9 @@ class NaneosDeviceManager(threading.Thread):
         self._manager_serial = self._sync_manager(
             self._manager_serial,
             self._use_serial,
-            lambda: PartectorSerialManager(self._serial_gain_test, self._serial_pulse_diagnostics),
+            lambda: PartectorSerialManager(
+                self._serial_gain_test, self._serial_pulse_diagnostics, self._on_live_point
+            ),
             "serial",
         )
 
@@ -204,7 +261,9 @@ class NaneosDeviceManager(threading.Thread):
         self._manager_ble = self._sync_manager(
             self._manager_ble,
             self._use_ble,
-            lambda: PartectorBleManager(self._ble_serial_numbers, self._ble_max_links),
+            lambda: PartectorBleManager(
+                self._ble_serial_numbers, self._ble_max_links, self._on_live_point
+            ),
             "BLE",
         )
 
