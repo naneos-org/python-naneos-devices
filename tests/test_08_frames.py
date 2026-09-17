@@ -12,7 +12,7 @@ from naneos.frames import (
     sort_and_clean_naneos_data,
     to_pandas_df,
 )
-from naneos.usb import layouts as serial_layouts
+from naneos.usb.partector import layouts as serial_layouts
 
 # Complete line layouts, plus the V320 layout extended by the two optional blocks.
 SERIAL_LAYOUTS = [

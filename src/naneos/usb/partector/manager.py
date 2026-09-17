@@ -7,8 +7,8 @@ from naneos.data_point import DeviceType, NaneosDeviceDataPoint
 from naneos.device import PartectorDevice
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import get_naneos_logger
-from naneos.usb.device import Partector1, Partector2, Partector2Pro, UsbPartector
-from naneos.usb.scan import FoundDevice, scan_serial_ports
+from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro, UsbPartector
+from naneos.usb.partector.scan import FoundDevice, scan_serial_ports
 
 logger = get_naneos_logger(__name__)
 

@@ -11,7 +11,7 @@ from typing import ClassVar, TypeVar
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
 from naneos.device import NotSupportedError, PartectorDevice
 from naneos.logger import get_naneos_logger
-from naneos.usb.layouts import (
+from naneos.usb.partector.layouts import (
     PARTECTOR1_DATA_STRUCTURE_V_LEGACY,
     PARTECTOR2_DATA_STRUCTURE,
     PARTECTOR2_DATA_STRUCTURE_V265_V275,
@@ -256,7 +256,7 @@ class UsbPartector(PartectorDevice, ABC):
         if serial_number is None:
             raise ValueError("No serial number or port given!")
 
-        from naneos.usb.scan import scan_for_serial_partector
+        from naneos.usb.partector.scan import scan_for_serial_partector
 
         for _ in range(self.PORT_SCAN_RETRIES):
             found = scan_for_serial_partector(serial_number, self.DEVICE_TYPE)

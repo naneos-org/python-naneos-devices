@@ -91,7 +91,7 @@ addopts = "-m 'not hardware and not network'"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["src/naneos/cloud/protoV1_pb2.py", "src/naneos/cloud/protoV1_pb2.pyi"]
+extend-exclude = ["src/naneos/protobuf/protoV1_pb2.py", "src/naneos/protobuf/protoV1_pb2.pyi"]
 
 [tool.ruff.lint]
 select = [

@@ -8,8 +8,8 @@ from fake_transport import FakeTransport
 
 from naneos.data_point import ConnectionType, DeviceType
 from naneos.device import NotSupportedError, PartectorDevice
-from naneos.usb import layouts as ds
-from naneos.usb.device import Partector1, Partector2, Partector2Pro
+from naneos.usb.partector import layouts as ds
+from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro
 
 
 def _wait_for(condition, timeout: float = 2.0) -> bool:

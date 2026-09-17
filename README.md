@@ -197,25 +197,26 @@ unchanged.
 | `Partector2Pro(verb_freq=6)` | `Partector2Pro(size_distribution=True)` (default), `set_size_distribution()` |
 | `device.close(blocking, shutdown, verbose_reset)` | `device.close(reset_device=True)`, `device.power_off()` |
 | `device.clear_data_cache()` | removed; `get_data()` returns everything received |
-| `naneos.partector.scanPartector`, `scan_for_serial_partectors()` | `naneos.usb.scan.scan_serial_ports()` |
-| `naneos.serial_utils.list_serial_ports` | `naneos.usb.scan.list_serial_ports` |
+| `naneos.partector.scanPartector`, `scan_for_serial_partectors()` | `naneos.usb.partector.scan.scan_serial_ports()` |
+| `naneos.serial_utils.list_serial_ports` | `naneos.usb.partector.scan.list_serial_ports` |
 | `NaneosDeviceDataPoint.DEV_TYPE_*` / `CONN_TYPE_*`, its DataFrame static methods | `naneos.DeviceType` / `naneos.ConnectionType`, `naneos.frames` |
-| `PartectorBluePrint` | `naneos.usb.device.UsbPartector` |
+| `PartectorBluePrint` | `naneos.usb.partector.device.UsbPartector` |
 
-The modules were regrouped by transport. `from naneos import ...` is unchanged; deep imports move:
+The modules were regrouped by transport, with one subpackage per device family (today: `partector`). `from naneos import ...` is unchanged; deep imports move:
 
 | 1.x module | 2.0 module |
 |---|---|
-| `naneos.partector.partector1` / `partector2` / `partector2_pro` | `naneos.usb.device` |
-| `naneos.partector.partector_serial_manager`, `naneos.partector` | `naneos.usb.manager`, `naneos.usb` |
-| `naneos.partector.scan` | `naneos.usb.scan` |
-| `naneos.partector.blueprints._data_structure` | `naneos.usb.layouts` |
-| `naneos.partector_ble.partector_ble_manager`, `naneos.partector_ble` | `naneos.ble.manager`, `naneos.ble` |
-| `naneos.partector_ble.partector_ble_connection` / `..._scanner` | `naneos.ble.connection` / `naneos.ble.scanner` |
-| `naneos.partector_ble.decoders` / `partector_ble_decoder` | `naneos.ble.characteristics` / `naneos.ble.advertisement` |
+| `naneos.partector.partector1` / `partector2` / `partector2_pro` | `naneos.usb.partector.device` |
+| `naneos.partector.partector_serial_manager`, `naneos.partector` | `naneos.usb.partector.manager`, `naneos.usb` |
+| `naneos.partector.scan` | `naneos.usb.partector.scan` |
+| `naneos.partector.blueprints._data_structure` | `naneos.usb.partector.layouts` |
+| `naneos.partector_ble.partector_ble_manager`, `naneos.partector_ble` | `naneos.ble.partector.manager`, `naneos.ble` |
+| `naneos.partector_ble.partector_ble_connection` / `..._scanner` | `naneos.ble.partector.connection` / `naneos.ble.partector.scanner` |
+| `naneos.partector_ble.decoders` / `partector_ble_decoder` | `naneos.ble.partector.characteristics` / `naneos.ble.partector.advertisement` |
 | `naneos.manager.naneos_device_manager` | `naneos.manager` |
 | `naneos.iotweb` | `naneos.cloud` (`upload`, `download`) |
-| `naneos.protobuf` | `naneos.cloud.protobuf`, `naneos.cloud.protoV1_pb2` |
+| `naneos.protobuf` | unchanged |
+| (new) | `naneos.usb.transport`: the serial transport shared by every USB device family |
 | `naneos.uploader` (the `naneos-uploader` command) | `naneos.cli` |
 | `naneos.logger` | unchanged |
 
@@ -240,7 +241,7 @@ to the root logger like any other library.
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
 # Protobuf
-The upload format is defined in `src/naneos/cloud/protoV1.proto` (shared with the backend, never
+The upload format is defined in `src/naneos/protobuf/protoV1.proto` (shared with the backend, never
 renumber fields). Regenerate the Python module and the stub in that directory with:
 ```bash
 protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto

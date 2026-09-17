@@ -6,7 +6,7 @@ fixed payloads, so these tests pin the byte layout, not just the code.
 
 import pytest
 
-from naneos.ble.characteristics import (
+from naneos.ble.partector.characteristics import (
     PartectorBleDecoderAux,
     PartectorBleDecoderAuxError,
     PartectorBleDecoderSize,

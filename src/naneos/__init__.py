@@ -2,13 +2,13 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from naneos.ble.manager import PartectorBleManager
+from naneos.ble.partector.manager import PartectorBleManager
 from naneos.cloud.upload import upload_snapshot
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
 from naneos.device import NotSupportedError, PartectorDevice
 from naneos.logger import enable_console_logging, enable_file_logging
 from naneos.manager import NaneosDeviceManager
-from naneos.usb.manager import PartectorSerialManager
+from naneos.usb.partector.manager import PartectorSerialManager
 
 try:
     __version__ = version("naneos-devices")

@@ -4,7 +4,7 @@ import warnings
 import pytest
 from bleak.backends.device import BLEDevice
 
-from naneos.ble.scanner import PartectorBleScanner
+from naneos.ble.partector.scanner import PartectorBleScanner
 
 pytestmark = pytest.mark.hardware  # needs a Partector on USB or BLE
 

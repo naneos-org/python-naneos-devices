@@ -443,16 +443,26 @@ transport so that `usb/` and `ble/` mirror each other:
 ```
 naneos/
   __init__.py   device.py   data_point.py   frames.py   manager.py   logger.py   cli.py
-  usb/     transport.py  device.py  layouts.py  scan.py  manager.py
-  ble/     connection.py  device.py  characteristics.py  advertisement.py  scanner.py  manager.py
-  cloud/   upload.py  protobuf.py  protoV1.proto  protoV1_pb2.py  download.py (optional extra)
+  usb/
+    transport.py            shared by every USB device family
+    partector/              device.py  layouts.py  scan.py  manager.py
+  ble/
+    partector/              connection.py  device.py  characteristics.py  advertisement.py
+                            scanner.py  manager.py
+  cloud/                    upload.py  download.py (optional extra)
+  protobuf/                 protobuf.py  protoV1.proto  protoV1_pb2.py
 ```
 
-- `usb/device.py` holds the base class (`PartectorBlueprint` is now `UsbPartector`, next to
+- One subpackage per device family below each transport, because other devices will follow. What
+  a new family can share goes one level up, like `usb/transport.py`. Everything in
+  `ble/partector/` is Partector specific today (UUIDs, advertisement format, name filter); pull
+  the generic parts up when the second BLE family arrives, not before.
+- `usb/partector/device.py` holds the base class (`PartectorBlueprint` is now `UsbPartector`, next to
   `BlePartector`) and `Partector1` / `Partector2` / `Partector2Pro`.
 - The one-file packages `manager/` and `logger/` are plain modules; `naneos.logger` and
   `from naneos.manager import NaneosDeviceManager` still import as before.
-- `uploader.py` (the `naneos-uploader` command) is `cli.py`; `iotweb/` and `protobuf/` are `cloud/`.
+- `uploader.py` (the `naneos-uploader` command) is `cli.py`; `iotweb/` is `cloud/`; `protobuf/` stays
+  its own package.
 - `connection_type` stays `"serial"` in the data: the value is in stored frames and on the backend.
 - The old -> new module table is in the README ("Migrating from 1.x to 2.0").
 

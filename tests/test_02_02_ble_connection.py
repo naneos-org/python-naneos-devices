@@ -3,8 +3,8 @@ import asyncio
 import pytest
 from bleak.backends.device import BLEDevice
 
-from naneos.ble.connection import PartectorBleConnection
-from naneos.ble.scanner import PartectorBleScanner
+from naneos.ble.partector.connection import PartectorBleConnection
+from naneos.ble.partector.scanner import PartectorBleScanner
 
 pytestmark = pytest.mark.hardware  # needs a Partector on USB or BLE
 

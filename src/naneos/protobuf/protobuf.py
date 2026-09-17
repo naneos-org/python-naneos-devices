@@ -2,9 +2,9 @@
 
 import pandas as pd
 
-from naneos.cloud import protoV1_pb2 as pbScheme
 from naneos.frames import device_type_of
 from naneos.logger import get_naneos_logger
+from naneos.protobuf import protoV1_pb2 as pbScheme
 
 logger = get_naneos_logger(__name__)
 

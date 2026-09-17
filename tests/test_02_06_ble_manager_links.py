@@ -2,7 +2,7 @@
 
 import asyncio
 
-from naneos.ble.manager import BleLink, PartectorBleManager
+from naneos.ble.partector.manager import BleLink, PartectorBleManager
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
 
 

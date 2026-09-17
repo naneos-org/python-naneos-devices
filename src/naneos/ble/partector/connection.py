@@ -11,7 +11,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDeviceNotFoundError, BleakError
 
-from naneos.ble.characteristics import (
+from naneos.ble.partector.characteristics import (
     PartectorBleDecoderAux,
     PartectorBleDecoderAuxError,
     PartectorBleDecoderSize,
