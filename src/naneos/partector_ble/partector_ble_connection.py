@@ -9,7 +9,7 @@ from contextlib import nullcontext
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakDeviceNotFoundError
+from bleak.exc import BleakDeviceNotFoundError, BleakError
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
 from naneos.logger import get_naneos_logger
@@ -63,6 +63,14 @@ class PartectorBleConnection:
     # alone would keep it from ever being retried. After this long without a
     # usable advertisement, spend one attempt anyway.
     RSSI_GATE_MAX_SILENCE_SECONDS = 120
+
+    # Commands: the same ASCII protocol as on USB. A command is written to the
+    # "write" characteristic; the answer arrives as an indication on "read" (it
+    # cannot be read), in 20 byte frames: the text, "\r\n", padded with spaces.
+    # Measured answer times are 0.25 s to 1 s.
+    DEVICE_NAMES = {"P2": DeviceType.P2, "P2pro": DeviceType.P2PRO}  # answers to "name?"
+    COMMAND_MAX_BYTES = 20
+    QUERY_TIMEOUT_SECONDS = 2.0
 
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
     CHAR_UUIDS = {
@@ -139,6 +147,15 @@ class PartectorBleConnection:
         # This prevents blocking the event loop when decoding heavy data
         self._decode_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
+        # One command in flight per device: answers carry no reference to
+        # their command, so they are matched by order.
+        self._command_lock = asyncio.Lock()
+        self._replies: asyncio.Queue[list[str]] = asyncio.Queue()
+        self._reply_buffer = b""
+        self._commands_available = False
+        self._firmware_version: int | None = None
+        self._info_task: asyncio.Task | None = None
+
         self._device = device
         self._loop = loop
         self._task: asyncio.Task | None = None
@@ -171,6 +188,61 @@ class PartectorBleConnection:
             return bool(self._client.is_connected)
         except Exception:
             return False
+
+    @property
+    def device_type(self) -> DeviceType | None:
+        """None until the device revealed it (a size distribution frame means P2 Pro)."""
+        return self._device_type
+
+    @property
+    def firmware_version(self) -> int | None:
+        """None until the device answered the query that follows every connect."""
+        return self._firmware_version
+
+    async def write(self, command: str) -> None:
+        """Send a command that has no answer. Must run on the connection's loop.
+
+        Raises:
+            ConnectionError: there is no link, or the device has no command characteristic.
+            ValueError: the command does not fit into one write.
+        """
+        async with self._command_lock:
+            await self._write(command)
+
+    async def query(self, command: str, timeout: float | None = None) -> list[str]:
+        """Send a command and return the tab separated fields of its answer.
+
+        Raises:
+            ConnectionError, ValueError: see write().
+            TimeoutError: no answer within timeout.
+        """
+        async with self._command_lock:
+            self._reply_buffer = b""
+            while not self._replies.empty():
+                self._replies.get_nowait()
+
+            await self._write(command)
+            try:
+                return await asyncio.wait_for(
+                    self._replies.get(), timeout or self.QUERY_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                raise TimeoutError(f"SN{self.SERIAL_NUMBER}: no answer to {command!r}.") from None
+
+    async def _write(self, command: str) -> None:
+        """Caller holds the command lock."""
+        data = command.encode()
+        if len(data) > self.COMMAND_MAX_BYTES:
+            raise ValueError(f"A BLE command is limited to {self.COMMAND_MAX_BYTES} bytes.")
+        if not self.is_connected:
+            raise ConnectionError(f"SN{self.SERIAL_NUMBER} is not connected.")
+        if not self._commands_available:
+            raise ConnectionError(f"SN{self.SERIAL_NUMBER} does not accept commands over BLE.")
+
+        try:
+            await self._client.write_gatt_char(self.CHAR_UUIDS["write"], data, response=True)
+        except (BleakError, OSError) as e:
+            raise ConnectionError(f"SN{self.SERIAL_NUMBER}: write failed: {e}") from e
 
     async def stop(self) -> None:
         """Stops the connection task and waits for it to disconnect."""
@@ -326,6 +398,33 @@ class PartectorBleConnection:
         await self._client.start_notify(self.CHAR_UUIDS["aux"], self._callback_aux)
         await self._client.start_notify(self.CHAR_UUIDS["size_dist"], self._callback_size_dist)
 
+        # Data flows without it, so a device without the command characteristics
+        # is still worth the link.
+        try:
+            await self._client.start_notify(self.CHAR_UUIDS["read"], self._callback_reply)
+            self._commands_available = True
+        except Exception as e:
+            self._commands_available = False
+            logger.info(f"SN{self.SERIAL_NUMBER}: no commands over BLE: {e}")
+            return
+
+        if self._firmware_version is None and (self._info_task is None or self._info_task.done()):
+            self._info_task = self._loop.create_task(self._read_device_info())
+
+    async def _read_device_info(self) -> None:
+        """Ask for what the data frames do not tell: the firmware and the device family.
+
+        Without the name a P2 Pro is only recognised by its first size
+        distribution frame, which can take a while.
+        """
+        try:
+            self._firmware_version = int((await self.query("f?"))[0])
+            name = (await self.query("name?"))[0]
+            if self._device_type is None:
+                self._device_type = self.DEVICE_NAMES.get(name)
+        except (ConnectionError, TimeoutError, ValueError, IndexError) as e:
+            logger.debug(f"SN{self.SERIAL_NUMBER}: could not read the device info: {e}")
+
     async def _handle_connect_error(self, error: Exception) -> None:
         """Classifies a failed attempt, cleans up and starts the backoff."""
         error_str = str(error).lower()
@@ -399,7 +498,7 @@ class PartectorBleConnection:
             device_type=self._device_type,
             serial_number=self.SERIAL_NUMBER,
             connection_type=ConnectionType.CONNECTED,
-            # TODO: add firmware version from device here
+            firmware_version=self._firmware_version,
         )
 
         # A P2 Pro reports number concentration and diameter only together with
@@ -464,7 +563,8 @@ class PartectorBleConnection:
             return
 
         try:
-            for name in ("std", "aux", "size_dist"):
+            names = ["std", "aux", "size_dist"] + (["read"] if self._commands_available else [])
+            for name in names:
                 await asyncio.wait_for(self._client.stop_notify(self.CHAR_UUIDS[name]), timeout=1)
                 await self._settle()
         except Exception as e:
@@ -636,6 +736,19 @@ class PartectorBleConnection:
         """
         logger.info(f"SN{self.SERIAL_NUMBER}: Disconnect callback called")
         self._disconnected_flag = True
+
+    def _callback_reply(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
+        """Callback on an answer frame (read characteristic).
+
+        An answer ends with a line end; what follows in that frame is padding.
+        """
+        self._reply_buffer += bytes(data)
+        if b"\n" not in self._reply_buffer:
+            return  # a longer answer continues in the next frame
+
+        line = self._reply_buffer.split(b"\n", 1)[0].decode(errors="replace").strip("\r ")
+        self._reply_buffer = b""
+        self._replies.put_nowait(line.split("\t"))
 
     def _callback_std(self, characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
         """Callback on data received (std characteristic).

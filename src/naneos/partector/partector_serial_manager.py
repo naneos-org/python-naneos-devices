@@ -4,6 +4,7 @@ import time
 import pandas as pd
 
 from naneos.data_point import DeviceType, NaneosDeviceDataPoint
+from naneos.device import PartectorDevice
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import get_naneos_logger
 from naneos.partector.blueprints._partector_blueprint import PartectorBlueprint
@@ -86,6 +87,10 @@ class PartectorSerialManager(threading.Thread):
 
     def get_connected_serial_numbers(self) -> list[int | None]:
         return [d.serial_number for d in self._all_devices()]
+
+    def get_devices(self) -> list[PartectorDevice]:
+        """Handles to write to and query the connected devices and to set their rate."""
+        return list(self._all_devices())
 
     def _all_devices(self) -> list[PartectorBlueprint]:
         """Snapshot of all connected devices, safe to iterate from any thread."""

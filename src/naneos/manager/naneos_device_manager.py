@@ -7,6 +7,7 @@ from typing import TypeVar
 
 import pandas as pd
 
+from naneos.device import PartectorDevice
 from naneos.frames import add_to_existing_naneos_data, sort_and_clean_naneos_data
 from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
 from naneos.logger import get_naneos_logger
@@ -139,6 +140,44 @@ class NaneosDeviceManager(threading.Thread):
             return []
 
         return self._manager_ble.get_connected_device_strings()
+
+    def get_devices(self) -> list[PartectorDevice]:
+        """One handle per connected device, to write to it, query it and set its rate.
+
+        A device that is reachable both ways is listed with its USB connection,
+        like its data: USB is faster and the only way to change the data rate.
+        """
+        devices: dict[int | None, PartectorDevice] = {}
+        for manager in (self._manager_ble, self._manager_serial):  # serial wins
+            if manager is not None:
+                devices.update({device.serial_number: device for device in manager.get_devices()})
+        return list(devices.values())
+
+    def get_device(self, serial_number: int) -> PartectorDevice:
+        """The handle of one connected device.
+
+        Raises:
+            KeyError: no device with this serial number is connected.
+        """
+        for device in self.get_devices():
+            if device.serial_number == serial_number:
+                return device
+        raise KeyError(f"SN{serial_number} is not connected.")
+
+    def write(self, serial_number: int, command: str) -> None:
+        """Send a command without an answer to a device, see PartectorDevice.write()."""
+        self.get_device(serial_number).write(command)
+
+    def query(self, serial_number: int, command: str, timeout: float | None = None) -> list[str]:
+        """Send a command to a device and return its answer, see PartectorDevice.query()."""
+        return self.get_device(serial_number).query(command, timeout)
+
+    def set_sample_rate(self, serial_number: int, hz: int) -> None:
+        """Set the data rate of a device on USB, see PartectorDevice.set_sample_rate().
+
+        The output queue gets the data at this rate; the upload stays at 1 Hz.
+        """
+        self.get_device(serial_number).set_sample_rate(hz)
 
     def get_pending_upload_count(self) -> int:
         """Number of snapshots waiting to be uploaded, including retries."""

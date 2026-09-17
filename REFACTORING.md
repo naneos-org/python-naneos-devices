@@ -337,20 +337,24 @@ Facts from naneos (2026-09-17):
   now capped at `MAX_BUFFER_SECONDS = 300`; the 1 Hz BLE point buffer keeps the row cap.
 - [x] The output queue keeps the full-rate data for the customer; only the upload is capped.
 
-### 7.2 P1 - Common device handle
+### 7.2 P1 - Common device handle (done 2026-09-17)
 
-- [ ] Transport-neutral `PartectorDevice` interface: `serial_number`, `device_type`, `firmware`,
-  `connection_type`, `is_connected`, `write(command)`, `query(command) -> list[str]`,
-  `set_sample_rate(hz)`, `sample_rate`.
-- [ ] The managers hand these out: `manager.devices() -> list[PartectorDevice]` and
-  `manager.device(sn)`. The customer always goes through the owner of the port or link, so
-  there is no port conflict.
-- [ ] `NaneosDeviceManager.write(sn, cmd)`, `query(sn, cmd)` and `set_sample_rate(sn, hz)` as
-  shortcuts. Route to serial if the device is plugged in, otherwise to BLE, matching the
-  existing serial-over-BLE data preference.
-- [ ] `set_sample_rate` on a device that is only reachable over BLE raises a clear
-  `NotSupportedError` ("the data rate can only be changed over USB"). `sample_rate` reports 1.
-- [ ] Replace `examples/send_commands.py` with one that uses the new API on both transports.
+- [x] `naneos.device.PartectorDevice`: `serial_number`, `device_type`, `firmware_version`,
+  `connection_type`, `is_connected`, `sample_rate_hz`, `write(command)`,
+  `query(command, timeout) -> list[str]`, `set_sample_rate(hz)`. Implemented by the serial
+  classes and by `BlePartector`, the thread-safe handle of a BLE link. Exported from `naneos`.
+- [x] All three managers have `get_devices()`. `NaneosDeviceManager` also has `get_device(sn)`
+  (KeyError if not connected) and the shortcuts `write(sn, cmd)`, `query(sn, cmd)`,
+  `set_sample_rate(sn, hz)`. A device reachable both ways is handed out with its USB connection.
+- [x] `set_sample_rate` over BLE raises `NotSupportedError`; `sample_rate_hz` is 1.
+- [x] `examples/send_commands.py` uses the manager and works on USB and BLE. Not run against a
+  device here (it needs a command file); the old script sent each line with its line end, the
+  new one strips it.
+- [x] README section "Talking to a device".
+
+Verified end to end on both devices: queries over BLE and USB through `NaneosDeviceManager`, two
+threads querying one BLE device at once, 10 Hz on USB giving 104 rows per 10 s snapshot and 11
+uploaded rows, never more than one per second.
 
 ### 7.3 P1 - Serial side (done 2026-09-17, verified on SN8617 P2 FW422 and SN8764 P2 Pro FW424)
 
@@ -386,28 +390,30 @@ Facts from naneos (2026-09-17):
   `get_data()` no longer holds the newest line back; `clear_data_cache()` and the
   `PartectorBluePrint` alias are gone.
 
-### 7.4 P1 - BLE side
+### 7.4 P1 - BLE side (done 2026-09-17)
 
-- [ ] Implement `write` / `query` on `PartectorBleConnection` (same ASCII commands as serial).
-  Bridge to sync callers with `asyncio.run_coroutine_threadsafe` on the manager's loop.
-  Measured on both devices (2026-09-17):
-  - `write` characteristic: property `write` (with response), 20 bytes per write.
+- [x] `PartectorBleConnection.write()` / `query()`, same ASCII commands as serial, one command in
+  flight per device (asyncio lock). `BlePartector` hands calls from other threads to the
+  manager's loop with `asyncio.run_coroutine_threadsafe`. What was measured on both devices:
+  - `write` characteristic: property `write` (with response), 20 bytes per write. Longer
+    commands raise `ValueError`; splitting them is untested.
   - `read` characteristic: property `indicate` only. A GATT read fails with "Read Not
-    Permitted", so subscribe with `start_notify` next to std / aux / size_dist.
-  - A reply is one 20 byte frame: the value, `\r\n`, padded with spaces (`b"8617\r\n   ..."`).
-    Strip after the line end. No echo of the command, so replies are matched by order: one
-    command in flight per device (lock).
-  - Latency 0.25 s to 1.0 s (`N?` 0.5, `f?` 0.25, `H?` 1.0, `name?` 0.8). The serial
-    `SERIAL_TIMEOUT_INFO` of 0.25 s is far too short here; use about 2 s.
-  - Open: replies longer than 20 bytes (several frames?) and commands longer than 20 bytes.
-- [ ] Fill in `firmware_version` on BLE points with an `f?` query after connect (existing TODO in
-  `_emit_data_point`).
-- [ ] Share the command layer (`N?`, `f?`, `H?`, `name?`, reply parsing) between both transports
-  instead of keeping it inside the serial blueprint.
+    Permitted", so it is subscribed next to std / aux / size_dist. A device without it still
+    gets its data link, commands then raise `ConnectionError`.
+  - An answer is a 20 byte frame: the text, `\r\n`, padded with spaces. Frames are collected
+    until the line end, so longer answers should work, but no command with one was found to
+    verify it.
+  - Latency 0.25 s to 1.0 s, so the query timeout is 2 s (serial: 0.25 s).
+- [x] After every connect the link asks `f?` and `name?`: BLE points now carry
+  `firmware_version`, and a P2 Pro is known as one right away instead of only after its first
+  size distribution frame.
+- [ ] Share the command layer between both transports. Left open on purpose: what is shared today
+  is the interface; the only duplicated knowledge is the `name?` -> device type table (scan and
+  BLE connection). Not worth a module yet.
 
 ### 7.5 P2 - Drop or simplify (together, in a 2.0)
 
-- [ ] Compatibility shims: `scanPartector.py`, the `PartectorBluePrint` alias, `DEV_TYPE_*` /
+- [ ] Compatibility shims: `scanPartector.py`, (~~the `PartectorBluePrint` alias~~ gone with 7.3), `DEV_TYPE_*` /
   `CONN_TYPE_*`, the static DataFrame methods on the dataclass.
 - [ ] `scan_for_serial_partectors()` (grouped dict, only used by one test), the string `kind`
   argument and `DEVICE_KIND_NAMES`.
@@ -423,16 +429,10 @@ Facts from naneos (2026-09-17):
   today, but wanted for a GUI), and so does `_sync_manager`, which implements it.
 - [ ] `get_connected_*_device_strings()` returns preformatted `"SN123 (P2 Pro)"` strings. Return the
   device handles from 7.2 and let the caller format them.
-- [ ] `close(blocking, shutdown, verbose_reset)`: `shutdown=True` powers the device off as a side
-  effect of closing. Explicit `power_off()`, and `close()` takes no flags.
-- [ ] `get_data()` holds back the newest line on every call. Lines are appended whole, so this only
-  adds 1 s of latency. Drop it together with the public `clear_data_cache()`.
 - [ ] `upload_blocked_devices` is a public mutable attribute; make it private.
 
-### 7.6 Suggested order
+### 7.6 What is left
 
-1. ~~7.1~~ done.
-2. 7.3 serial split plus the new write / rate API (needs devices on the desk).
-3. 7.2 handles through the managers.
-4. 7.4 BLE write.
-5. 7.5 drops, released as 2.0.
+Only 7.5, to be released together as 2.0. 7.1 to 7.4 already change the API of the serial device
+classes (`write_line`, `verb_freq`, `close(...)` arguments); `NaneosDeviceManager`, the managers'
+data API and the uploader CLI are unchanged.

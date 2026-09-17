@@ -10,8 +10,10 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 
 from naneos.data_point import DeviceType, NaneosDeviceDataPoint
+from naneos.device import PartectorDevice
 from naneos.frames import MAX_ROWS_PER_DEVICE, to_pandas_df
 from naneos.logger import get_naneos_logger
+from naneos.partector_ble.ble_partector import BlePartector
 from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
 from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
@@ -25,6 +27,7 @@ class BleLink:
     task: asyncio.Task
     connection: PartectorBleConnection | None = None  # set while the task runs
     device_type: DeviceType | None = None  # learned from the points the device sends
+    device: BlePartector | None = None  # the handle given to users, set with the connection
 
     @property
     def is_connected(self) -> bool:
@@ -121,6 +124,10 @@ class PartectorBleManager(threading.Thread):
         """Serial numbers of the devices with a live BLE link."""
         return [sn for sn, _ in self._live_links()]
 
+    def get_devices(self) -> list[PartectorDevice]:
+        """Handles to write to and query the devices with a live BLE link."""
+        return [link.device for _, link in self._live_links() if link.device is not None]
+
     def _live_links(self) -> list[tuple[int, BleLink]]:
         # Copy first: the event loop thread changes the dict while we iterate.
         return [(sn, link) for sn, link in list(self._links.items()) if link.is_connected]
@@ -213,6 +220,7 @@ class PartectorBleManager(threading.Thread):
         link = self._links.get(serial)
         if link is not None:
             link.connection = connection
+            link.device = BlePartector(connection, self._loop)
 
         try:
             async with connection:
@@ -226,6 +234,7 @@ class PartectorBleManager(threading.Thread):
         finally:
             if link is not None:
                 link.connection = None
+                link.device = None
             logger.info(f"{serial}: Connection task finished.")
 
     def _forget_finished_links(self) -> None:

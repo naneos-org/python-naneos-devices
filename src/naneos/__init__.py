@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
+from naneos.device import NotSupportedError, PartectorDevice
 from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
 from naneos.logger import enable_console_logging, enable_file_logging
 from naneos.manager.naneos_device_manager import NaneosDeviceManager
@@ -21,7 +22,9 @@ __all__ = [
     "NaneosDeviceDataPoint",
     "NaneosDeviceManager",
     "NaneosUploadThread",
+    "NotSupportedError",
     "PartectorBleManager",
+    "PartectorDevice",
     "PartectorSerialManager",
     "enable_console_logging",
     "enable_file_logging",

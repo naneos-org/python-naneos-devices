@@ -132,6 +132,45 @@ manager.stop()
 manager.join()
 ```
 
+### Talking to a device (commands and data rate)
+Every connected device is available as a `PartectorDevice` handle. The API is the same
+whether the device is reached over USB or BLE; a device reachable both ways is handed out
+with its USB connection.
+```python
+import time
+
+from naneos import NaneosDeviceManager, NotSupportedError
+
+manager = NaneosDeviceManager(upload_active=False)
+manager.start()
+time.sleep(15)  # give the manager time to find and connect the devices
+
+for device in manager.get_devices():
+    print(device.serial_number, device.device_type, device.connection_type, device.is_connected)
+
+    print(device.query("f?"))  # command with an answer -> ["422"]
+    device.write("A0002!")  # command without an answer
+
+    try:
+        device.set_sample_rate(10)  # 0 (off), 1, 10 or 100 Hz
+    except NotSupportedError:
+        pass  # over BLE the rate is fixed at 1 Hz; it can only be changed over USB
+
+# or address a device by its serial number
+manager.query(8617, "name?")
+manager.set_sample_rate(8617, 100)
+```
+- `query()` raises `TimeoutError` if no answer arrives (default: 0.25 s on USB, 2 s on BLE), and
+  both raise `ConnectionError` if the device is gone. One command is in flight per device;
+  calls from several threads queue up.
+- Over BLE a command is limited to 20 bytes.
+- The output queue receives the data at the rate you set. **The upload to naneos is always
+  limited to 1 Hz**: samples of the same second are averaged (status bits are OR-ed).
+- 100 Hz is meant for tests, not for productive use.
+- A P2 Pro on USB starts in size distribution mode, where it paces itself (one line about every
+  6 s). `Partector2Pro.set_size_distribution(False, sample_rate_hz=10)` switches it to the plain
+  P2 line at a selectable rate.
+
 Make sure to modify the code according to your specific requirements. Refer to the documentation and comments within the code for detailed explanations and usage instructions.
 
 # Logging
@@ -227,11 +266,11 @@ warning means BlueZ refused and the uploader fell back to active scanning.
 
 # Examples
 The `examples/` folder contains runnable scripts: `demo.py` (device manager with queue hand-off),
-`serial_device.py` (connect to one USB device), `send_commands.py` and `download_iotweb.py`.
+`serial_device.py` (connect to one USB device), `send_commands.py` (send a command file to a device on
+USB or BLE) and `download_iotweb.py`.
 The Raspberry Pi service runs the `naneos-uploader` command, implemented in `src/naneos/uploader.py`.
 
 # Ideas for future development
-* P2 bidirectional BLE implementation that allows to send commands to the P2
 * Automatically activate Bluetooth or ask when BLE is used
 
 # Contributing
