@@ -10,7 +10,7 @@
 #     | sudo bash -s -- [--ref <branch-or-tag>] [--user <name>]
 #
 #   --ref   git branch or tag to install, default: master
-#           e.g. --ref release_test for hardware testing, --ref v1.2.0 for a release
+#           e.g. --ref release_test for hardware testing, --ref v2.0.0 for a release
 #   --user  unprivileged user that runs the service, default: the sudo user
 set -euo pipefail
 
