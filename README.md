@@ -123,6 +123,8 @@ while True:
     point = live.get()
     print(point.serial_number, point.connection_type, point.unix_timestamp, point.ldsa)
 ```
+[`examples/live_plot.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_plot.py) uses this to plot the diffusion current of a device on USB.
+
 The points come at the rate of the device (1 Hz, or what you set over USB). A device that is
 connected over USB and BLE delivers its USB points only.
 
@@ -184,6 +186,7 @@ enable_file_logging("logs/", LEVEL_INFO)  # appends to logs/naneos-devices.log
 | [`quick_start.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/quick_start.py) | upload everything in reach |
 | [`queue_handoff.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/queue_handoff.py) | process the snapshots yourself |
 | [`live_data.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_data.py) | every data point the moment it arrives |
+| [`live_plot.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_plot.py) | live plot of the diffusion current of a device on USB (needs `pip install matplotlib`) |
 | [`runtime_controls.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/runtime_controls.py) | switch transports, upload and interval while running |
 | [`device_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/device_commands.py) | commands, answers and the data rate |
 | [`send_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/send_commands.py) | send a file of commands to one device |
