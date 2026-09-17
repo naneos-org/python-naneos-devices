@@ -435,7 +435,28 @@ The migration table is in the README ("Migrating from 1.x to 2.0").
 - [x] `upload_blocked_devices` is private; the serial manager's
   `get_gain_test_activating_devices()` is now `get_settling_serial_numbers()`.
 
-### 7.6 What is left
+### 7.6 Module layout (done 2026-09-17, part of 2.0.0)
+
+Sections 0 to 7.5 use the module paths of their time. The layout since 2.0.0, grouped by
+transport so that `usb/` and `ble/` mirror each other:
+
+```
+naneos/
+  __init__.py   device.py   data_point.py   frames.py   manager.py   logger.py   cli.py
+  usb/     transport.py  device.py  layouts.py  scan.py  manager.py
+  ble/     connection.py  device.py  characteristics.py  advertisement.py  scanner.py  manager.py
+  cloud/   upload.py  protobuf.py  protoV1.proto  protoV1_pb2.py  download.py (optional extra)
+```
+
+- `usb/device.py` holds the base class (`PartectorBlueprint` is now `UsbPartector`, next to
+  `BlePartector`) and `Partector1` / `Partector2` / `Partector2Pro`.
+- The one-file packages `manager/` and `logger/` are plain modules; `naneos.logger` and
+  `from naneos.manager import NaneosDeviceManager` still import as before.
+- `uploader.py` (the `naneos-uploader` command) is `cli.py`; `iotweb/` and `protobuf/` are `cloud/`.
+- `connection_type` stays `"serial"` in the data: the value is in stored frames and on the backend.
+- The old -> new module table is in the README ("Migrating from 1.x to 2.0").
+
+### 7.7 What is left
 
 Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
 command layer, left open on purpose) and the hardware check of the Windows-only BLE branches

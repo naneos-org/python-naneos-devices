@@ -8,9 +8,9 @@ import numpy as np
 import pandas as pd
 import requests
 
+from naneos.cloud import protoV1_pb2 as pbScheme
+from naneos.cloud.protobuf import create_combined_entry, create_proto_device
 from naneos.frames import aggregate_duplicate_index
-from naneos.protobuf import protoV1_pb2 as pbScheme
-from naneos.protobuf.protobuf import create_combined_entry, create_proto_device
 
 URL = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
 HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}

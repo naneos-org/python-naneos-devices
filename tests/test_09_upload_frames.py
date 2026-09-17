@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from naneos.iotweb.upload import build_body, build_combined_entry, to_upload_frame
+from naneos.cloud.upload import build_body, build_combined_entry, to_upload_frame
 
 
 def _ms_frame(*timestamps_ms: int, ldsa: float = 1.0) -> pd.DataFrame:

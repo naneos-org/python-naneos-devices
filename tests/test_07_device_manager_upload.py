@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from naneos.manager import naneos_device_manager as module
-from naneos.manager.naneos_device_manager import NaneosDeviceManager
+from naneos import manager as module
+from naneos.manager import NaneosDeviceManager
 
 
 def _snapshot(serial: int, ts: int) -> dict[int, pd.DataFrame]:

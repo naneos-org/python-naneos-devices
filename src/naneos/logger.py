@@ -7,7 +7,24 @@ common cases one call: enable_console_logging() and enable_file_logging().
 """
 
 import logging
+from logging import CRITICAL as LEVEL_CRITICAL
+from logging import DEBUG as LEVEL_DEBUG
+from logging import ERROR as LEVEL_ERROR
+from logging import INFO as LEVEL_INFO
+from logging import WARNING as LEVEL_WARNING
 from pathlib import Path
+
+__all__ = [
+    "get_naneos_logger",
+    "enable_console_logging",
+    "enable_file_logging",
+    "set_naneos_logger_save_path",
+    "LEVEL_DEBUG",
+    "LEVEL_INFO",
+    "LEVEL_WARNING",
+    "LEVEL_ERROR",
+    "LEVEL_CRITICAL",
+]
 
 ROOT_LOGGER_NAME = "naneos"
 DEFAULT_LOG_FILE_NAME = "naneos-devices.log"

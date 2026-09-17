@@ -9,8 +9,8 @@ import pandas as pd
 
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import LEVEL_INFO, enable_console_logging
-from naneos.partector.partector_serial_manager import DEVICE_CLASSES
-from naneos.partector.scan import scan_serial_ports
+from naneos.usb.manager import DEVICE_CLASSES
+from naneos.usb.scan import scan_serial_ports
 
 
 def main() -> None:

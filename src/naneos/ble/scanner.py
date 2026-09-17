@@ -13,9 +13,9 @@ from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from bleak.exc import BleakDBusError, BleakError
 
+from naneos.ble.advertisement import PartectorBleDecoder
+from naneos.ble.characteristics import PartectorBleDecoderStd
 from naneos.logger import get_naneos_logger
-from naneos.partector_ble.decoders import PartectorBleDecoderStd
-from naneos.partector_ble.partector_ble_decoder import PartectorBleDecoder
 
 logger = get_naneos_logger(__name__)
 

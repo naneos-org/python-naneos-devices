@@ -1,7 +1,7 @@
 """Hardware-free tests for PartectorSerialManager's data hand-over."""
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
-from naneos.partector.partector_serial_manager import PartectorSerialManager
+from naneos.usb.manager import PartectorSerialManager
 
 
 class _FakeDevice:

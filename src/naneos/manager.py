@@ -7,12 +7,12 @@ from typing import TypeVar
 
 import pandas as pd
 
+from naneos.ble.manager import PartectorBleManager
+from naneos.cloud.upload import upload_snapshot
 from naneos.device import PartectorDevice
 from naneos.frames import add_to_existing_naneos_data, sort_and_clean_naneos_data
-from naneos.iotweb.upload import upload_snapshot
 from naneos.logger import get_naneos_logger
-from naneos.partector.partector_serial_manager import PartectorSerialManager
-from naneos.partector_ble.partector_ble_manager import PartectorBleManager
+from naneos.usb.manager import PartectorSerialManager
 
 logger = get_naneos_logger(__name__)
 

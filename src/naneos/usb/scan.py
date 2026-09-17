@@ -9,7 +9,7 @@ from serial.tools import list_ports
 
 from naneos.data_point import DeviceType
 from naneos.logger import get_naneos_logger
-from naneos.partector.serial_transport import SerialTransport
+from naneos.usb.transport import SerialTransport
 
 logger = get_naneos_logger(__name__)
 

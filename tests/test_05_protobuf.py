@@ -2,8 +2,8 @@
 
 import pandas as pd
 
+from naneos.cloud.protobuf import create_proto_device
 from naneos.data_point import DeviceType
-from naneos.protobuf.protobuf import create_proto_device
 
 
 def _frame(**columns) -> pd.DataFrame:
@@ -48,9 +48,9 @@ def test_missing_columns_leave_optional_fields_unset() -> None:
 
 def test_field_table_only_names_existing_columns_and_proto_fields() -> None:
     """Guards against typos like the leading space that once hid usb_cc_voltage."""
+    from naneos.cloud import protoV1_pb2
+    from naneos.cloud.protobuf import DEVICE_POINT_FIELDS, NON_NEGATIVE_COLUMNS
     from naneos.data_point import NaneosDeviceDataPoint
-    from naneos.protobuf import protoV1_pb2
-    from naneos.protobuf.protobuf import DEVICE_POINT_FIELDS, NON_NEGATIVE_COLUMNS
 
     columns = set(NaneosDeviceDataPoint.__dataclass_fields__)
     proto_fields = set(protoV1_pb2.DevicePoint.DESCRIPTOR.fields_by_name)

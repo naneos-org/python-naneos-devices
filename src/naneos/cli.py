@@ -17,11 +17,11 @@ from importlib.metadata import PackageNotFoundError, distribution
 from typing import Any
 
 from naneos import __version__
+from naneos.ble import PartectorBleManager
 from naneos.logger import enable_console_logging, get_naneos_logger
 from naneos.manager import NaneosDeviceManager
-from naneos.partector_ble import PartectorBleManager
 
-logger = get_naneos_logger("naneos.uploader")
+logger = get_naneos_logger("naneos.cli")
 
 
 def warn_if_wifi_power_save_on() -> None:

@@ -5,9 +5,9 @@ import threading
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
+from naneos.ble.connection import PartectorBleConnection
 from naneos.data_point import ConnectionType, DeviceType
 from naneos.device import NotSupportedError, PartectorDevice
-from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
 
 T = TypeVar("T")
 

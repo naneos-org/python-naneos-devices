@@ -1,3 +1,5 @@
+"""The Partectors on USB: the shared base class and one class per device family."""
+
 import queue
 import time
 from abc import ABC, abstractmethod
@@ -7,21 +9,26 @@ from threading import Event, Lock, Thread, current_thread
 from typing import ClassVar, TypeVar
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
-from naneos.device import PartectorDevice
+from naneos.device import NotSupportedError, PartectorDevice
 from naneos.logger import get_naneos_logger
-from naneos.partector.blueprints._data_structure import (
+from naneos.usb.layouts import (
+    PARTECTOR1_DATA_STRUCTURE_V_LEGACY,
+    PARTECTOR2_DATA_STRUCTURE,
+    PARTECTOR2_DATA_STRUCTURE_V265_V275,
     PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE,
     PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE,
+    PARTECTOR2_PRO_DATA_STRUCTURE_V311,
+    PARTECTOR2_PRO_DATA_STRUCTURE_V336,
     SerialLayout,
 )
-from naneos.partector.serial_transport import SerialTransport
+from naneos.usb.transport import SerialTransport
 
 logger = get_naneos_logger(__name__)
 
 T = TypeVar("T")
 
 
-class PartectorBlueprint(PartectorDevice, ABC):
+class UsbPartector(PartectorDevice, ABC):
     """A Partector on USB. The device specific parts live in the child classes.
 
     A reader thread owns the input of the port: it turns the verbose lines into
@@ -249,7 +256,7 @@ class PartectorBlueprint(PartectorDevice, ABC):
         if serial_number is None:
             raise ValueError("No serial number or port given!")
 
-        from naneos.partector.scan import scan_for_serial_partector
+        from naneos.usb.scan import scan_for_serial_partector
 
         for _ in range(self.PORT_SCAN_RETRIES):
             found = scan_for_serial_partector(serial_number, self.DEVICE_TYPE)
@@ -410,3 +417,140 @@ class PartectorBlueprint(PartectorDevice, ABC):
                 setattr(point, name, data_type(value))
 
         return point
+
+
+class Partector1(UsbPartector):
+    DEVICE_TYPE = DeviceType.P1
+
+    def _configure(self) -> None:
+        self._data_structure = dict(PARTECTOR1_DATA_STRUCTURE_V_LEGACY)
+        self._legacy_data_structure = True
+
+
+class Partector2(UsbPartector):
+    DEVICE_TYPE = DeviceType.P2
+
+    def __init__(
+        self,
+        serial_number: int | None = None,
+        port: str | None = None,
+        sample_rate_hz: int = 1,
+        gain_test_active: bool = True,
+        output_pulse_diagnostics: bool = True,
+        transport: SerialTransport | None = None,
+    ) -> None:
+        """See UsbPartector. The two diagnostics need firmware 320 or newer."""
+        self._want_gain_test = gain_test_active
+        self._want_pulse_diagnostics = output_pulse_diagnostics
+        super().__init__(serial_number, port, sample_rate_hz, transport)
+
+    def _configure(self) -> None:
+        if self._fw in [265, 275]:
+            self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE_V265_V275)
+            self._log_old_firmware("V265/275")
+        elif self._fw in [295, 297, 298]:
+            self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE)
+            self._log_old_firmware("V295/297/298")
+        elif self._fw >= 320:
+            self.write("A0002!")  # activates antispikes
+            self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
+            self._data_structure = {**PARTECTOR2_DATA_STRUCTURE, **self._diagnostic_columns()}
+        else:
+            self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE)
+            self._legacy_data_structure = True
+            logger.warning(f"SN{self._sn} has FW{self._fw}. -> Unofficial firmware version.")
+            logger.warning("Using legacy data structure. Contact naneos for a FW update.")
+
+    def _log_old_firmware(self, layout: str) -> None:
+        logger.info(f"SN{self._sn} has FW{self._fw}. -> Using {layout} data structure.")
+        logger.info("Contact naneos for a firmware update to get the latest features.")
+
+
+class Partector2Pro(UsbPartector):
+    """The P2 Pro has two output modes.
+
+    Size distribution (default): one line with the size distribution every few
+    seconds, paced by the device; sample_rate_hz is None.
+    P2 mode: the plain P2 line at 1, 10 or 100 Hz, without size distribution.
+    """
+
+    DEVICE_TYPE = DeviceType.P2PRO
+
+    MIN_FIRMWARE_P2_MODE = 311
+
+    def __init__(
+        self,
+        serial_number: int | None = None,
+        port: str | None = None,
+        size_distribution: bool = True,
+        sample_rate_hz: int = 1,
+        gain_test_active: bool = True,
+        output_pulse_diagnostics: bool = True,
+        transport: SerialTransport | None = None,
+    ) -> None:
+        """See UsbPartector. sample_rate_hz only applies with size_distribution=False."""
+        self._size_distribution = size_distribution
+        self._want_gain_test = gain_test_active
+        self._want_pulse_diagnostics = output_pulse_diagnostics
+        super().__init__(serial_number, port, sample_rate_hz, transport)
+
+    @property
+    def size_distribution(self) -> bool:
+        return self._size_distribution
+
+    def set_size_distribution(self, active: bool, sample_rate_hz: int = 1) -> None:
+        """Switch between the two output modes; sample_rate_hz is for the P2 mode.
+
+        With the gain test active, every switch holds the data back until the
+        device has settled again (see is_settling).
+        """
+        if active:
+            self._enter_size_dist_mode()
+        else:
+            self._enter_p2_mode(sample_rate_hz)
+
+    def set_sample_rate(self, hz: int) -> None:
+        if self._size_distribution and hz != 0:
+            raise NotSupportedError(
+                "The size distribution mode has no selectable rate. "
+                "Call set_size_distribution(False) first."
+            )
+        super().set_sample_rate(hz)
+
+    def _configure(self) -> None:
+        """Nothing to do here: a mode switch resets the device settings, so they
+        are sent by _apply_settings() after every switch."""
+
+    def _apply_settings(self) -> None:
+        self.write("A0002!")  # activates antispikes
+        self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
+
+    def _start_output(self, sample_rate_hz: int) -> None:
+        self.set_size_distribution(self._size_distribution, sample_rate_hz)
+
+    def _enter_p2_mode(self, hz: int) -> None:
+        if self._fw < self.MIN_FIRMWARE_P2_MODE:
+            raise NotSupportedError(
+                f"The P2 mode needs firmware {self.MIN_FIRMWARE_P2_MODE} or newer."
+            )
+        if hz not in self.SAMPLE_RATE_CODES:
+            raise ValueError(f"Sample rate must be one of {sorted(self.SAMPLE_RATE_CODES)} Hz.")
+
+        self.write("M0000!")  # deactivates size dist mode
+        self._apply_settings()
+        self._data_structure = {**PARTECTOR2_DATA_STRUCTURE, **self._diagnostic_columns()}
+        self._size_distribution = False
+        super().set_sample_rate(hz)
+
+    def _enter_size_dist_mode(self) -> None:
+        base = (
+            PARTECTOR2_PRO_DATA_STRUCTURE_V336
+            if self._fw >= 336
+            else PARTECTOR2_PRO_DATA_STRUCTURE_V311
+        )
+        self.write("X0006!")  # verbose output of the size dist mode
+        self.write("M0004!")  # activates size dist mode
+        self._apply_settings()
+        self._data_structure = {**base, **self._diagnostic_columns()}
+        self._size_distribution = True
+        self._sample_rate_hz = None  # paced by the device

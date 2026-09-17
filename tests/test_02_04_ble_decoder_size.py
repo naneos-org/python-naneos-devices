@@ -1,5 +1,5 @@
+from naneos.ble.characteristics import PartectorBleDecoderSize
 from naneos.data_point import NaneosDeviceDataPoint
-from naneos.partector_ble.decoders import PartectorBleDecoderSize
 
 # The size_dist characteristic packs 8 channels as 20-bit little-endian values into 20 bytes.
 CHANNELS = ["10", "16", "26", "43", "70", "114", "185", "300"]

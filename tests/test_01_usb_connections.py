@@ -3,9 +3,9 @@ import warnings
 
 import pytest
 
-from naneos.partector import PartectorSerialManager
-from naneos.partector.partector_serial_manager import DEVICE_CLASSES
-from naneos.partector.scan import list_serial_ports, scan_serial_ports
+from naneos.usb import PartectorSerialManager
+from naneos.usb.manager import DEVICE_CLASSES
+from naneos.usb.scan import list_serial_ports, scan_serial_ports
 
 pytestmark = pytest.mark.hardware  # needs a Partector on USB or BLE
 

@@ -7,15 +7,12 @@ from naneos.data_point import DeviceType, NaneosDeviceDataPoint
 from naneos.device import PartectorDevice
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import get_naneos_logger
-from naneos.partector.blueprints._partector_blueprint import PartectorBlueprint
-from naneos.partector.partector1 import Partector1
-from naneos.partector.partector2 import Partector2
-from naneos.partector.partector2_pro import Partector2Pro
-from naneos.partector.scan import FoundDevice, scan_serial_ports
+from naneos.usb.device import Partector1, Partector2, Partector2Pro, UsbPartector
+from naneos.usb.scan import FoundDevice, scan_serial_ports
 
 logger = get_naneos_logger(__name__)
 
-DEVICE_CLASSES: dict[DeviceType, type[PartectorBlueprint]] = {
+DEVICE_CLASSES: dict[DeviceType, type[UsbPartector]] = {
     DeviceType.P1: Partector1,
     DeviceType.P2: Partector2,
     DeviceType.P2PRO: Partector2Pro,
@@ -43,7 +40,7 @@ class PartectorSerialManager(threading.Thread):
         self._data: dict[int, pd.DataFrame] = {}
         self._data_lock = threading.Lock()
 
-        self._devices: dict[str, PartectorBlueprint] = {}  # key: port
+        self._devices: dict[str, UsbPartector] = {}  # key: port
 
     def get_data(self) -> dict[int, pd.DataFrame]:
         """Returns the data the manager loop collected since the last call.
@@ -75,7 +72,7 @@ class PartectorSerialManager(threading.Thread):
         """Handles to write to and query the connected devices and to set their rate."""
         return list(self._all_devices())
 
-    def _all_devices(self) -> list[PartectorBlueprint]:
+    def _all_devices(self) -> list[UsbPartector]:
         """Snapshot of all connected devices, safe to iterate from any thread."""
         return list(self._devices.values())
 
@@ -100,7 +97,7 @@ class PartectorSerialManager(threading.Thread):
     def _fetch_data(self) -> None:
         """Reads every connected device once. Called from the manager thread only.
 
-        PartectorBlueprint.get_data() is not safe to call concurrently, so
+        UsbPartector.get_data() is not safe to call concurrently, so
         this must stay the single consumer of the device queues.
         """
         points: list[NaneosDeviceDataPoint] = []
@@ -128,7 +125,7 @@ class PartectorSerialManager(threading.Thread):
                 # Found again by the next scan.
                 logger.warning(f"Could not connect to SN{device.serial_number}: {e}")
 
-    def _connect(self, found: FoundDevice) -> PartectorBlueprint:
+    def _connect(self, found: FoundDevice) -> UsbPartector:
         if found.kind == DeviceType.P1:
             return Partector1(port=found.port)
         cls = Partector2Pro if found.kind == DeviceType.P2PRO else Partector2

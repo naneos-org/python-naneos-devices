@@ -3,7 +3,7 @@
 from fake_transport import FakeTransport
 
 from naneos.data_point import DeviceType
-from naneos.partector import scan
+from naneos.usb import scan
 
 
 def _scan(monkeypatch, transport: FakeTransport) -> scan.FoundDevice | None:

@@ -9,13 +9,13 @@ import pandas as pd
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 
+from naneos.ble.connection import PartectorBleConnection
+from naneos.ble.device import BlePartector
+from naneos.ble.scanner import PartectorBleScanner
 from naneos.data_point import NaneosDeviceDataPoint
 from naneos.device import PartectorDevice
 from naneos.frames import MAX_ROWS_PER_DEVICE, to_pandas_df
 from naneos.logger import get_naneos_logger
-from naneos.partector_ble.ble_partector import BlePartector
-from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
-from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
 
 logger = get_naneos_logger(__name__)
 

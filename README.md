@@ -24,7 +24,7 @@ You can install the `naneos-devices` package using pip. Python 3.11 to 3.14 is s
 ```bash
 pip install naneos-devices
 ```
-Reading your data back from the naneos IoT service (`naneos.iotweb.download`) needs the InfluxDB
+Reading your data back from the naneos IoT service (`naneos.cloud.download`) needs the InfluxDB
 client, which is an optional extra: `pip install "naneos-devices[download]"`.
 
 # Usage
@@ -191,16 +191,33 @@ unchanged.
 | `manager.get_connected_serial_devices()`, `get_connected_ble_devices()` (strings) | `manager.get_devices()` (device handles) |
 | `manager.upload_blocked_devices` | removed (internal) |
 | `NaneosUploadThread.upload(data)` | `naneos.upload_snapshot(data)` |
-| `from naneos.iotweb import download_from_iotweb` | `from naneos.iotweb.download import download_from_iotweb`, with the `download` extra |
+| `from naneos.iotweb import download_from_iotweb` | `from naneos.cloud.download import download_from_iotweb`, with the `download` extra |
 | `device.write_line(cmd, n)` | `device.query(cmd)` (answer fields only, no timestamp) or `device.write(cmd)` |
 | `Partector2(verb_freq=2)`, `set_verbose_freq(2)` (mode codes) | `Partector2(sample_rate_hz=10)`, `set_sample_rate(10)` (Hz) |
 | `Partector2Pro(verb_freq=6)` | `Partector2Pro(size_distribution=True)` (default), `set_size_distribution()` |
 | `device.close(blocking, shutdown, verbose_reset)` | `device.close(reset_device=True)`, `device.power_off()` |
 | `device.clear_data_cache()` | removed; `get_data()` returns everything received |
-| `naneos.partector.scanPartector`, `scan_for_serial_partectors()` | `naneos.partector.scan.scan_serial_ports()` |
-| `naneos.serial_utils.list_serial_ports` | `naneos.partector.scan.list_serial_ports` |
+| `naneos.partector.scanPartector`, `scan_for_serial_partectors()` | `naneos.usb.scan.scan_serial_ports()` |
+| `naneos.serial_utils.list_serial_ports` | `naneos.usb.scan.list_serial_ports` |
 | `NaneosDeviceDataPoint.DEV_TYPE_*` / `CONN_TYPE_*`, its DataFrame static methods | `naneos.DeviceType` / `naneos.ConnectionType`, `naneos.frames` |
-| `PartectorBluePrint` | `PartectorBlueprint` |
+| `PartectorBluePrint` | `naneos.usb.device.UsbPartector` |
+
+The modules were regrouped by transport. `from naneos import ...` is unchanged; deep imports move:
+
+| 1.x module | 2.0 module |
+|---|---|
+| `naneos.partector.partector1` / `partector2` / `partector2_pro` | `naneos.usb.device` |
+| `naneos.partector.partector_serial_manager`, `naneos.partector` | `naneos.usb.manager`, `naneos.usb` |
+| `naneos.partector.scan` | `naneos.usb.scan` |
+| `naneos.partector.blueprints._data_structure` | `naneos.usb.layouts` |
+| `naneos.partector_ble.partector_ble_manager`, `naneos.partector_ble` | `naneos.ble.manager`, `naneos.ble` |
+| `naneos.partector_ble.partector_ble_connection` / `..._scanner` | `naneos.ble.connection` / `naneos.ble.scanner` |
+| `naneos.partector_ble.decoders` / `partector_ble_decoder` | `naneos.ble.characteristics` / `naneos.ble.advertisement` |
+| `naneos.manager.naneos_device_manager` | `naneos.manager` |
+| `naneos.iotweb` | `naneos.cloud` (`upload`, `download`) |
+| `naneos.protobuf` | `naneos.cloud.protobuf`, `naneos.cloud.protoV1_pb2` |
+| `naneos.uploader` (the `naneos-uploader` command) | `naneos.cli` |
+| `naneos.logger` | unchanged |
 
 A serial device no longer reconnects on its own: when `is_connected` turns False, close it and
 create a new one (the managers do this for you). Its constructor raises `ConnectionError`
@@ -223,7 +240,7 @@ to the root logger like any other library.
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
 # Protobuf
-The upload format is defined in `src/naneos/protobuf/protoV1.proto` (shared with the backend, never
+The upload format is defined in `src/naneos/cloud/protoV1.proto` (shared with the backend, never
 renumber fields). Regenerate the Python module and the stub in that directory with:
 ```bash
 protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto
@@ -301,7 +318,7 @@ warning means BlueZ refused and the uploader fell back to active scanning.
 The `examples/` folder contains runnable scripts: `demo.py` (device manager with queue hand-off),
 `serial_device.py` (connect to one USB device), `send_commands.py` (send a command file to a device on
 USB or BLE) and `download_iotweb.py`.
-The Raspberry Pi service runs the `naneos-uploader` command, implemented in `src/naneos/uploader.py`.
+The Raspberry Pi service runs the `naneos-uploader` command, implemented in `src/naneos/cli.py`.
 
 # Ideas for future development
 * Automatically activate Bluetooth or ask when BLE is used

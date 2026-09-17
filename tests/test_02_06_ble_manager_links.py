@@ -2,8 +2,8 @@
 
 import asyncio
 
+from naneos.ble.manager import BleLink, PartectorBleManager
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
-from naneos.partector_ble.partector_ble_manager import BleLink, PartectorBleManager
 
 
 class _FakeConnection:

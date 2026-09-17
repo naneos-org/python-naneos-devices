@@ -10,8 +10,8 @@ import time
 import pytest
 from bleak.backends.device import BLEDevice
 
-from naneos.partector_ble import partector_ble_connection as module
-from naneos.partector_ble.partector_ble_connection import PartectorBleConnection
+from naneos.ble import connection as module
+from naneos.ble.connection import PartectorBleConnection
 
 
 class _FakeServices:

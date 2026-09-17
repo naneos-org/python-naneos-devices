@@ -28,11 +28,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# naneos.iotweb.download: read your data back from the naneos IoT service.
+# naneos.cloud.download: read your data back from the naneos IoT service.
 download = ["influxdb-client[ciso]>=1.50.0"]
 
 [project.scripts]
-naneos-uploader = "naneos.uploader:main"
+naneos-uploader = "naneos.cli:main"
 
 [project.urls]
 Repository = "https://github.com/naneos-org/python-naneos-devices"
@@ -91,7 +91,7 @@ addopts = "-m 'not hardware and not network'"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["src/naneos/protobuf/protoV1_pb2.py", "src/naneos/protobuf/protoV1_pb2.pyi"]
+extend-exclude = ["src/naneos/cloud/protoV1_pb2.py", "src/naneos/cloud/protoV1_pb2.pyi"]
 
 [tool.ruff.lint]
 select = [

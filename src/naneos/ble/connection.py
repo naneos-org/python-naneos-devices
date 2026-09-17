@@ -11,14 +11,14 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDeviceNotFoundError, BleakError
 
-from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
-from naneos.logger import get_naneos_logger
-from naneos.partector_ble.decoders import (
+from naneos.ble.characteristics import (
     PartectorBleDecoderAux,
     PartectorBleDecoderAuxError,
     PartectorBleDecoderSize,
     PartectorBleDecoderStd,
 )
+from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
+from naneos.logger import get_naneos_logger
 
 logger = get_naneos_logger(__name__)
 

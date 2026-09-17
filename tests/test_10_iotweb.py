@@ -8,8 +8,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from naneos.iotweb import upload_snapshot
-from naneos.iotweb.download import download_from_iotweb
+from naneos.cloud import upload_snapshot
+from naneos.cloud.download import download_from_iotweb
 
 pytestmark = pytest.mark.network
 
