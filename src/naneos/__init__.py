@@ -2,12 +2,13 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from naneos.ble.partector.manager import PartectorBleManager
+from naneos.cloud.upload import upload_snapshot
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
-from naneos.iotweb.naneos_upload_thread import NaneosUploadThread
+from naneos.device import NotSupportedError, PartectorDevice
 from naneos.logger import enable_console_logging, enable_file_logging
-from naneos.manager.naneos_device_manager import NaneosDeviceManager
-from naneos.partector.partector_serial_manager import PartectorSerialManager
-from naneos.partector_ble.partector_ble_manager import PartectorBleManager
+from naneos.manager import NaneosDeviceManager
+from naneos.usb.partector.manager import PartectorSerialManager
 
 try:
     __version__ = version("naneos-devices")
@@ -20,9 +21,11 @@ __all__ = [
     "DeviceType",
     "NaneosDeviceDataPoint",
     "NaneosDeviceManager",
-    "NaneosUploadThread",
+    "NotSupportedError",
     "PartectorBleManager",
+    "PartectorDevice",
     "PartectorSerialManager",
     "enable_console_logging",
     "enable_file_logging",
+    "upload_snapshot",
 ]

@@ -8,7 +8,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from naneos.iotweb import NaneosUploadThread, download_from_iotweb
+from naneos.cloud import upload_snapshot
+from naneos.cloud.download import download_from_iotweb
 
 pytestmark = pytest.mark.network
 
@@ -34,6 +35,6 @@ def test_upload_recorded_frames() -> None:
     }
     assert all(not df.empty for df in data.values())
 
-    response = NaneosUploadThread.upload(data)
+    response = upload_snapshot(data)
 
     assert response.status_code == 200

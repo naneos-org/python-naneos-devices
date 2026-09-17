@@ -2,12 +2,12 @@
 
 from importlib.metadata import entry_points
 
-from naneos.uploader import parse_args
+from naneos.cli import parse_args
 
 
 def test_console_script_is_registered() -> None:
     scripts = {ep.name: ep.value for ep in entry_points(group="console_scripts")}
-    assert scripts.get("naneos-uploader") == "naneos.uploader:main"
+    assert scripts.get("naneos-uploader") == "naneos.cli:main"
 
 
 def test_defaults_match_the_service_configuration() -> None:
@@ -34,7 +34,7 @@ def test_ble_allow_list_and_link_cap() -> None:
 
 
 def test_installed_from_names_a_source() -> None:
-    from naneos.uploader import installed_from
+    from naneos.cli import installed_from
 
     source = installed_from()
     assert isinstance(source, str) and source

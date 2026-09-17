@@ -6,13 +6,13 @@ import pandas as pd
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
 from naneos.frames import (
-    MAX_ROWS_PER_DEVICE,
+    MAX_BUFFER_SECONDS,
     add_data_points_to_dict,
     device_type_of,
     sort_and_clean_naneos_data,
     to_pandas_df,
 )
-from naneos.partector.blueprints import _data_structure as serial_layouts
+from naneos.usb.partector import layouts as serial_layouts
 
 # Complete line layouts, plus the V320 layout extended by the two optional blocks.
 SERIAL_LAYOUTS = [
@@ -70,20 +70,18 @@ def test_ble_style_point_with_none_device_type_converts(caplog) -> None:
     assert (df["connection_type"] == "connected").all()
 
 
-def test_sort_and_clean_prefers_serial_over_connected_and_keeps_unknown_kinds() -> None:
+def test_sort_and_clean_prefers_serial_over_connected() -> None:
     data = {
         1: to_pandas_df(
             [_point(1, 1000, ConnectionType.CONNECTED), _point(1, 500, ConnectionType.SERIAL)]
         ),
         2: to_pandas_df([_point(2, 1000, ConnectionType.CONNECTED)]),
-        3: to_pandas_df([_point(3, 1000, ConnectionType.ADVERTISEMENT)]),  # recorded by 1.1.x
     }
 
     cleaned = sort_and_clean_naneos_data(data)
 
     assert list(cleaned[1].index) == [500]
     assert list(cleaned[2].index) == [1000]
-    assert list(cleaned[3].index) == [1000]
 
 
 def test_sort_and_clean_serial_only_drops_devices_without_serial_rows() -> None:
@@ -120,12 +118,26 @@ def test_device_type_of_falls_back_to_p2() -> None:
     assert device_type_of(pd.DataFrame({"ldsa": [1.0]})) == DeviceType.P2
 
 
-def test_add_data_points_skips_unknown_serials_and_caps_rows() -> None:
-    points = [_point(1, ts, ConnectionType.SERIAL) for ts in range(MAX_ROWS_PER_DEVICE + 10)]
+def test_add_data_points_skips_unknown_serials() -> None:
+    points = [_point(1, 1000, ConnectionType.SERIAL)]
     points.append(NaneosDeviceDataPoint(unix_timestamp=1, serial_number=None))
 
     devices = add_data_points_to_dict({}, points)
 
     assert list(devices) == [1]
-    assert len(devices[1]) == MAX_ROWS_PER_DEVICE
-    assert devices[1].index[0] == 10
+    assert len(devices[1]) == 1
+
+
+def test_add_data_points_caps_the_buffer_by_time_not_by_rows() -> None:
+    window_ms = MAX_BUFFER_SECONDS * 1000
+
+    # 1 Hz, ten seconds more than the window: the oldest ten seconds go.
+    slow = [_point(1, ts, ConnectionType.SERIAL) for ts in range(0, window_ms + 10_000, 1000)]
+    devices = add_data_points_to_dict({}, slow)
+    assert len(devices[1]) == MAX_BUFFER_SECONDS
+    assert devices[1].index[0] == 10_000
+
+    # 100 Hz for ten seconds is far more rows, but well inside the window.
+    fast = [_point(2, ts, ConnectionType.SERIAL) for ts in range(0, 10_000, 10)]
+    devices = add_data_points_to_dict({}, fast)
+    assert len(devices[2]) == 1000

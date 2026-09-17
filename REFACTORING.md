@@ -111,8 +111,7 @@ Everything that exists only for the P2 Pro CS:
   two public functions become one-line filters on top of it. Rename the file to `scan.py`
   (camelCase file name is the only one in the repo).
 
-- [ ] **`PartectorBluePrint` does too much** (541 lines; the small cleanups below are done, the
-  transport / device / reader-thread split is still open and needs devices on the desk to verify): `Thread` + `PartectorDefaults` mixin + ABC;
+- [x] **`PartectorBluePrint` does too much** (done in 7.3): `Thread` + `PartectorDefaults` mixin + ABC;
   the constructor scans ports, opens serial, starts the thread, queries the device and configures
   it. Overlapping "connection check" methods: `_check_connection`, `_check_serial_connection`,
   `_check_device_connection`, `_run_check_connection`, `_checker_thread`. Suggested split:
@@ -294,4 +293,236 @@ before releasing, the Windows-only branches in the connection are untested here.
 - Keep `DEV_TYPE` numeric values as an `IntEnum` with `3` reserved, or just drop 3?
 - Are the 10 Hz / 100 Hz serial modes (`verb_freq` 2 / 3) still used by anyone? If not, the
   P2 mode handling and `MAX_ROWS_PER_DEVICE` can be simplified further.
-- Is `iotweb/download` (InfluxDB) still in use? It pulls `influxdb-client[ciso]` into every install.
+- ~~Is `iotweb/download` (InfluxDB) still in use?~~ Now the optional extra `download`, see 7.5.
+
+---
+
+## 7. Next goal: one device API for serial and BLE
+
+Added 2026-09-17, after 1.2.0. Goal: a customer writes to a device and sets its reading
+frequency the same way on USB and BLE, through the managers, and the upload never exceeds 1 Hz
+whatever the reading frequency is.
+
+### 7.0 Where it stands
+
+| | Serial | BLE |
+|---|---|---|
+| Write a command | `PartectorBlueprint.write_line(line, number_of_elem)`, only on a device you construct yourself | not implemented; the `write` / `read` characteristic UUIDs are declared in `partector_ble_connection.py` but never used |
+| Set frequency | `set_verbose_freq(code)`; the value is a mode code, not Hz: 1 = 1 Hz, 2 = 10 Hz, 3 = 100 Hz, 6 = P2 Pro size distribution | fixed at the device's 1 Hz notify |
+| Via the managers | `PartectorSerialManager` builds every device with defaults and keeps them private; a customer who opens the port themselves fights the manager for it | `PartectorBleConnection` is asyncio-internal, the caller gets no device handle |
+| Threading | sync, two threads per device | asyncio inside a thread |
+| 1 Hz upload cap | not enforced | holds only because BLE is 1 Hz anyway |
+
+`NaneosDeviceManager` offers neither write nor rate. `examples/send_commands.py` opens a raw
+`serial.Serial` and bypasses the library, which shows the write API is missing.
+
+Facts from naneos (2026-09-17):
+
+- The firmware accepts the same ASCII commands on the BLE write characteristic as on serial.
+- The data rate cannot be changed over BLE; it is a serial-only feature.
+- 100 Hz is not for productive use, but may be used for testing, so it should stay available.
+
+### 7.1 P0 - Enforce the 1 Hz upload cap (done 2026-09-17)
+
+- [x] **`to_upload_frame` rounded the ms index to seconds but never de-duplicated.** A 10 Hz serial
+  device would have uploaded 10 points per second under the same timestamp. Rows of the same
+  second are now merged by `frames.aggregate_duplicate_index()`: mean for measurements, bitwise
+  OR for `device_status` (an error flagged in any sample survives), last known value for the
+  rest. The 1 Hz case takes an early return and costs nothing. Tests with 10 Hz and 100 Hz frames
+  in `test_09_upload_frames.py`.
+- [x] **Buffer cap by time instead of rows.** `MAX_ROWS_PER_DEVICE = 300` was five minutes at 1 Hz
+  but three seconds at 100 Hz. Correction to the first version of this list: it never hit
+  `NaneosDeviceManager`, which drains the serial manager every second and has no cap of its own;
+  it only hits a `PartectorSerialManager` used on its own and polled rarely. Serial frames are
+  now capped at `MAX_BUFFER_SECONDS = 300`; the 1 Hz BLE point buffer keeps the row cap.
+- [x] The output queue keeps the full-rate data for the customer; only the upload is capped.
+
+### 7.2 P1 - Common device handle (done 2026-09-17)
+
+- [x] `naneos.device.PartectorDevice`: `serial_number`, `device_type`, `firmware_version`,
+  `connection_type`, `is_connected`, `sample_rate_hz`, `write(command)`,
+  `query(command, timeout) -> list[str]`, `set_sample_rate(hz)`. Implemented by the serial
+  classes and by `BlePartector`, the thread-safe handle of a BLE link. Exported from `naneos`.
+- [x] All three managers have `get_devices()`. `NaneosDeviceManager` also has `get_device(sn)`
+  (KeyError if not connected) and the shortcuts `write(sn, cmd)`, `query(sn, cmd)`,
+  `set_sample_rate(sn, hz)`. A device reachable both ways is handed out with its USB connection.
+- [x] `set_sample_rate` over BLE raises `NotSupportedError`; `sample_rate_hz` is 1.
+- [x] `examples/send_commands.py` uses the manager and works on USB and BLE. Not run against a
+  device here (it needs a command file); the old script sent each line with its line end, the
+  new one strips it.
+- [x] README section "Talking to a device".
+
+Verified end to end on both devices: queries over BLE and USB through `NaneosDeviceManager`, two
+threads querying one BLE device at once, 10 Hz on USB giving 104 rows per 10 s snapshot and 11
+uploaded rows, never more than one per second.
+
+### 7.3 P1 - Serial side (done 2026-09-17, verified on SN8617 P2 FW422 and SN8764 P2 Pro FW424)
+
+- [x] **Blueprint split** (also closes the open item in 3.1). `SerialTransport` (open / write /
+  readline / close, no threads), `PartectorBlueprint` (protocol and reader thread), and the scan
+  talks to the transport directly, so `ScanPartector` and its two threads per port are gone.
+  Deviations from the first plan:
+  - The reader thread stays with the device instead of moving to the manager: reads block, so
+    one thread per port is the simple correct design. The second (checker) thread is gone; the
+    reader probes a device that was silent for 10 s itself.
+  - A device no longer reconnects on its own. The old class rescanned all ports by serial number
+    while the manager also dropped and re-found it. Now `is_connected` goes False and stays
+    False; `PartectorSerialManager` re-finds the device on its next scan.
+  - The constructor raises `ConnectionError` instead of returning a half-initialised object.
+  - The transport can be injected, so the whole class is tested without hardware
+    (`tests/fake_transport.py`, `test_04`).
+- [x] `write(command)` and `query(command) -> list[str]` replace `write_line(line, number_of_elem)`.
+  One command lock per device; verified with 4 threads x 30 queries while streaming at 100 Hz
+  (40 of 40 rounds correct). Commands such as `X000n!`, `A0002!`, `opd0n!` send no
+  acknowledgement, so a query cannot pick up a stale one; answers nobody waited for are drained.
+- [x] Rates in Hz: `set_sample_rate(0 | 1 | 10 | 100)`, `sample_rate_hz`. The P2 Pro has
+  `set_size_distribution(active, sample_rate_hz)`; in size distribution mode the device paces
+  itself (one line about every 6 s), `sample_rate_hz` is None and `set_sample_rate` raises
+  `NotSupportedError`. Found on hardware: a mode switch (`M000n!`) resets the pulse
+  diagnostics output, so the settings must follow every switch, which also restarts the gain
+  test settling time.
+- [x] 100 Hz: nominal 1 / 10 / 100 Hz deliver 1.0 / 10.1 / 100 rows per second, nothing lost. The
+  port is USB CDC, so the baudrate does not limit it. Lines are parsed in the reader thread and
+  the point queue holds 1000 (ten seconds at 100 Hz).
+- [x] Gain test and pulse diagnostics are arguments of `PartectorSerialManager` and
+  `NaneosDeviceManager` (`serial_gain_test`, `serial_pulse_diagnostics`).
+- [x] Done on the way, from 7.5: `close(reset_device=True)` plus an explicit `power_off()`;
+  `get_data()` no longer holds the newest line back; `clear_data_cache()` and the
+  `PartectorBluePrint` alias are gone.
+
+### 7.4 P1 - BLE side (done 2026-09-17)
+
+- [x] `PartectorBleConnection.write()` / `query()`, same ASCII commands as serial, one command in
+  flight per device (asyncio lock). `BlePartector` hands calls from other threads to the
+  manager's loop with `asyncio.run_coroutine_threadsafe`. What was measured on both devices:
+  - `write` characteristic: property `write` (with response), 20 bytes per write. Longer
+    commands raise `ValueError`; splitting them is untested.
+  - `read` characteristic: property `indicate` only. A GATT read fails with "Read Not
+    Permitted", so it is subscribed next to std / aux / size_dist. A device without it still
+    gets its data link, commands then raise `ConnectionError`.
+  - An answer is a 20 byte frame: the text, `\r\n`, padded with spaces. Frames are collected
+    until the line end, so longer answers should work, but no command with one was found to
+    verify it.
+  - Latency 0.25 s to 1.0 s, so the query timeout is 2 s (serial: 0.25 s).
+- [x] After every connect the link asks `f?` and `name?`: BLE points now carry
+  `firmware_version`, and a P2 Pro is known as one right away instead of only after its first
+  size distribution frame.
+- [ ] Share the command layer between both transports. Left open on purpose: what is shared today
+  is the interface; the only duplicated knowledge is the `name?` -> device type table (scan and
+  BLE connection). Not worth a module yet.
+
+### 7.5 P2 - Drop or simplify (done 2026-09-17, released as 2.0.0)
+
+The migration table is in the README ("Migrating from 1.x to 2.0").
+
+- [x] Compatibility shims removed: `scanPartector.py`, the `PartectorBluePrint` alias, `DEV_TYPE_*` /
+  `CONN_TYPE_*`, the static DataFrame methods on the dataclass, the re-exports in
+  `_data_structure.py`.
+- [x] `scan_for_serial_partectors()`, the string `kind` argument and `DEVICE_KIND_NAMES` removed.
+- [x] `serial_utils/` folded into `scan.py` (`list_serial_ports`).
+- [x] `ConnectionType.ADVERTISEMENT` removed.
+- [x] `NaneosUploadThread` is gone; `naneos/iotweb/upload.py` has plain functions
+  (`upload_snapshot`, `to_upload_frame`, `build_combined_entry`, `build_body`).
+- [x] `iotweb/download` is the optional extra `naneos-devices[download]`; a default install (the
+  Pi) no longer pulls in `influxdb-client`. Importing it without the extra says what to install.
+- [x] `NaneosDeviceManager` getter / setter pairs are properties: `use_serial`, `use_ble`,
+  `upload_active`, `gathering_interval_seconds`, `pending_upload_count`,
+  `seconds_until_next_snapshot`. The runtime toggling and `_sync_manager` stay (decided
+  2026-09-17: unused today, but wanted for a GUI).
+- [x] `get_connected_*_device_strings()` removed from all managers in favour of `get_devices()`;
+  `BleLink.device_type` went with it (the connection knows its type).
+- [x] `close(reset_device)` / `power_off()`, `get_data()` without the held back line: done in 7.3.
+- [x] `upload_blocked_devices` is private; the serial manager's
+  `get_gain_test_activating_devices()` is now `get_settling_serial_numbers()`.
+
+### 7.6 Module layout (done 2026-09-17, part of 2.0.0)
+
+Sections 0 to 7.5 use the module paths of their time. The layout since 2.0.0, grouped by
+transport so that `usb/` and `ble/` mirror each other:
+
+```
+naneos/
+  __init__.py   device.py   data_point.py   frames.py   manager.py   logger.py   cli.py
+  usb/
+    transport.py            shared by every USB device family
+    partector/              device.py  layouts.py  scan.py  manager.py
+  ble/
+    partector/              connection.py  device.py  characteristics.py  advertisement.py
+                            scanner.py  manager.py
+  cloud/                    upload.py  download.py (optional extra)
+  protobuf/                 protobuf.py  proto_v2.proto  proto_v2_pb2.py
+```
+
+- One subpackage per device family below each transport, because other devices will follow. What
+  a new family can share goes one level up, like `usb/transport.py`. Everything in
+  `ble/partector/` is Partector specific today (UUIDs, advertisement format, name filter); pull
+  the generic parts up when the second BLE family arrives, not before.
+- `usb/partector/device.py` holds the base class (`PartectorBlueprint` is now `UsbPartector`, next to
+  `BlePartector`) and `Partector1` / `Partector2` / `Partector2Pro`.
+- The one-file packages `manager/` and `logger/` are plain modules; `naneos.logger` and
+  `from naneos.manager import NaneosDeviceManager` still import as before.
+- `uploader.py` (the `naneos-uploader` command) is `cli.py`; `iotweb/` is `cloud/`; `protobuf/` stays
+  its own package.
+- `connection_type` stays `"serial"` in the data: the value is in stored frames and on the backend.
+- The old -> new module table is in the README ("Migrating from 1.x to 2.0").
+
+### 7.7 Upload format v2 (done 2026-09-17, part of 2.0.0)
+
+- `proto_v2.proto` replaces `protoV1.proto` (deleted with its generated files). The upload goes to
+  `.../dev/proto/v2/combined_data`. `UiCurve` (`/uicurve`) and `PulseForm` (`/pulseform`) exist in
+  the schema but nothing in this package produces them yet.
+- The schema carries the scale of every field as a field option, so `protobuf.py` builds its
+  conversion table from the descriptor. Hand written are only: the six names that differ between
+  frame and schema, the fields no device reports (`cs_status`, `electrometer_offset`,
+  `electrometer_2_offset`) and the cs -> s unit factor of the two pulse delays. A test fails if
+  any of these names stops existing in the schema or in `NaneosDeviceDataPoint`.
+- Changes against v1 on the wire:
+  - `electrometer_1/2_amplitude` go to `electrometer_amplitude(_2)` (scale 16). v1 had no amplitude
+    field and sent them as `electrometer_1/2_offset` (scale 10). **Check that the backend reads
+    the amplitude from the new field.**
+  - New: `diffusion_current_average` -> `diffusion_current_avg`, `diffusion_current_max`.
+    Still without a field: `corona_voltage_onset`, `hires_adc1/2`.
+  - Every unsigned field clamps a negative reading to 0 (v1: three listed columns; any other
+    negative value dropped the whole point).
+  - The size distribution groups have no per-field presence: a group is sent when the row has at
+    least one of its columns, missing columns then read back as 0.
+- Verified against the dev endpoint: a live snapshot of SN8617 / SN8764 gave HTTP 200, "Wrote 9
+  data point(s)". The recorded test frames (SN 666 / 777) give HTTP 200 but "Wrote 0": the dev
+  backend does not store them (unknown serial numbers, presumably), so `test_10`'s upload test
+  only proves that the request is accepted.
+
+### 7.8 README and docs split (done 2026-09-17)
+
+- `README.md` (also the PyPI page) only explains the device manager: quick start, queue hand-off,
+  runtime controls, talking to a device, logging. All links are absolute, because PyPI does not
+  resolve relative ones. Every section names the example that shows it.
+- `docs/`: `user-guide/devices.md` (handles, rate, P2 Pro modes, diagnostics),
+  `user-guide/logging.md`, `user-guide/migration-2.0.md`, `user-guide/raspberry-pi-setup.md`,
+  `development/contributing.md` (tests, hardware testing before a merge, protobuf, executables).
+- `examples/`: one script per README section (`quick_start`, `queue_handoff`, `runtime_controls`,
+  `device_commands`) replaces `demo.py`. All examples were run against SN8617 / SN8764;
+  `send_commands.py` only with a file that has no line to send, `download_iotweb.py` only up to
+  its missing-token message.
+
+### 7.9 Live data stream (done 2026-09-17)
+
+- Before: data only left `NaneosDeviceManager` as snapshots, every 10 s at best; internally it was
+  polled once per second through two layers.
+- `register_live_queue(queue)` delivers every `NaneosDeviceDataPoint` as it arrives. The points are
+  pushed, not polled: `UsbPartector`, `PartectorSerialManager`, `PartectorBleConnection` and
+  `PartectorBleManager` take an optional `point_listener`; the device manager passes its
+  `_on_live_point`. The pull API (`get_data()`), the snapshots and the upload are unchanged.
+- Rules: BLE points of a device that is also connected over USB are skipped (same preference as the
+  snapshots); a full queue drops its oldest point and counts it (`live_points_dropped`); a
+  listener that raises is logged and does not stop a reader thread or a BLE link.
+- Points are dataclasses, not DataFrames: a DataFrame per point is the most expensive thing this
+  library does on a Pi.
+- Measured: SN8617 at 100 Hz gave 501 live points in 5 s with both BLE links up (no BLE
+  duplicates), about 1 ms after the line was read, 0 dropped, while the 10 s snapshot still had
+  its 1003 rows. With USB switched off at runtime both devices continued at 1 Hz over BLE.
+
+### 7.10 What is left
+
+Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
+command layer, left open on purpose) and the hardware check of the Windows-only BLE branches
+(3.3).

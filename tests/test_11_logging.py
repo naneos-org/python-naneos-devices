@@ -5,11 +5,13 @@ import logging
 from naneos.logger import (
     LEVEL_DEBUG,
     LEVEL_WARNING,
+    ROOT_LOGGER_NAME,
+    _NaneosConsoleHandler,
+    _NaneosFileHandler,
     enable_console_logging,
     enable_file_logging,
     get_naneos_logger,
 )
-from naneos.logger.custom_logger import ROOT_LOGGER_NAME, _NaneosConsoleHandler, _NaneosFileHandler
 
 
 def _console_handlers() -> list[logging.Handler]:

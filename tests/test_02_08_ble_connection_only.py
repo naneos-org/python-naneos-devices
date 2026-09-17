@@ -4,8 +4,8 @@ import asyncio
 
 from bleak.backends.device import BLEDevice
 
-from naneos.partector_ble.partector_ble_manager import BleLink, PartectorBleManager
-from naneos.partector_ble.partector_ble_scanner import PartectorBleScanner
+from naneos.ble.partector.manager import BleLink, PartectorBleManager
+from naneos.ble.partector.scanner import PartectorBleScanner
 
 
 class _FakeScanner:

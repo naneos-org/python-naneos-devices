@@ -1,7 +1,7 @@
 """Hardware-free tests for PartectorSerialManager's data hand-over."""
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
-from naneos.partector.partector_serial_manager import PartectorSerialManager
+from naneos.usb.partector.manager import PartectorSerialManager
 
 
 class _FakeDevice:
@@ -11,11 +11,11 @@ class _FakeDevice:
         batches: list[list[NaneosDeviceDataPoint]],
         kind: DeviceType = DeviceType.P2,
     ) -> None:
-        self._sn = serial_number
+        self.serial_number = serial_number
         self._batches = batches
         self.device_type = kind
-        self._connected = True
-        self._wait_with_data_output_until = 0.0
+        self.is_connected = True
+        self.is_settling = False
 
     def get_data(self) -> list[NaneosDeviceDataPoint]:
         return self._batches.pop(0) if self._batches else []
@@ -56,6 +56,6 @@ def test_fetch_collects_from_every_device_and_reports_them() -> None:
     manager._fetch_data()
 
     assert sorted(manager.get_data()) == [1, 2, 3]
-    assert manager.get_connected_device_strings() == ["SN1 (P1)", "SN2 (P2)", "SN3 (P2 Pro)"]
-    assert manager.get_connected_addresses() == ["/dev/c", "/dev/a", "/dev/b"]
     assert manager.get_connected_serial_numbers() == [3, 1, 2]
+    assert [device.serial_number for device in manager.get_devices()] == [3, 1, 2]
+    assert manager.get_settling_serial_numbers() == []

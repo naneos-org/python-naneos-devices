@@ -34,7 +34,7 @@ that.
 To install a release tag or a test branch instead of `master`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --ref v1.2.0
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --ref v2.0.0
 ```
 
 ## 3. Check that it runs

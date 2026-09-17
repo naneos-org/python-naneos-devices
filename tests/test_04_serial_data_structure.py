@@ -1,106 +1,247 @@
-"""Hardware-free tests for the serial data-structure selection."""
+"""Hardware-free tests for the serial devices, run against a fake transport."""
 
 import copy
+import time
 
-from naneos.data_point import ConnectionType
-from naneos.partector.blueprints import _data_structure as ds
-from naneos.partector.partector2 import Partector2
-from naneos.partector.partector2_pro import Partector2Pro
+import pytest
+from fake_transport import FakeTransport
 
-
-def _bare_device(cls, fw: int, gain_test: bool, pulse_diag: bool):
-    """Build a device object without opening a serial port."""
-    device = object.__new__(cls)
-    device._init_variables()
-    device._fw = fw
-    device._sn = 1234
-    device._GAIN_TEST_ACTIVE = gain_test
-    device._OUTPUT_PULSE_DIAGNOSTICS = pulse_diag
-    device._connected = True
-    device._write_line = lambda line: None  # type: ignore[assignment]
-    return device
+from naneos.data_point import ConnectionType, DeviceType
+from naneos.device import NotSupportedError, PartectorDevice
+from naneos.usb.partector import layouts as ds
+from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro
 
 
-def test_p2_optional_columns_do_not_leak_into_module_structure() -> None:
+def _wait_for(condition, timeout: float = 2.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def _p2(**kwargs) -> tuple[Partector2, FakeTransport]:
+    transport = FakeTransport(firmware=kwargs.pop("firmware", 422))
+    kwargs.setdefault("gain_test_active", False)
+    kwargs.setdefault("output_pulse_diagnostics", False)
+    return Partector2(transport=transport, **kwargs), transport  # type: ignore[arg-type]
+
+
+def _pro(**kwargs) -> tuple[Partector2Pro, FakeTransport]:
+    transport = FakeTransport(serial_number=8764, firmware=424, name="P2pro")
+    kwargs.setdefault("gain_test_active", False)
+    kwargs.setdefault("output_pulse_diagnostics", False)
+    return Partector2Pro(transport=transport, **kwargs), transport  # type: ignore[arg-type]
+
+
+def test_connect_reads_the_device_info_and_starts_the_output() -> None:
+    device, transport = _p2()
+    try:
+        assert isinstance(device, PartectorDevice)
+        assert device.serial_number == 8617
+        assert device.firmware_version == 422
+        assert device.integration_time_seconds == 4
+        assert device.device_type == DeviceType.P2
+        assert device.connection_type == ConnectionType.SERIAL
+        assert device.is_connected
+        assert device.sample_rate_hz == 1
+        assert transport.written[0] == "X0000!"  # silenced before it is asked anything
+        assert transport.written[-1] == "X0001!"
+    finally:
+        device.close()
+
+
+def test_connect_fails_if_nothing_answers_or_the_serial_number_is_wrong() -> None:
+    silent = FakeTransport()
+    silent.mute = True
+    with pytest.raises(ConnectionError):
+        Partector2(transport=silent)  # type: ignore[arg-type]
+    assert not silent.is_open
+
+    with pytest.raises(ConnectionError, match="not SN1"):
+        Partector2(serial_number=1, transport=FakeTransport())  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError):
+        Partector2()
+
+
+def test_sample_rate_is_given_in_hz() -> None:
+    device, transport = _p2(sample_rate_hz=0)
+    try:
+        for hz, command in ((1, "X0001!"), (10, "X0002!"), (100, "X0003!"), (0, "X0000!")):
+            device.set_sample_rate(hz)
+            assert transport.written[-1] == command
+            assert device.sample_rate_hz == hz
+
+        with pytest.raises(ValueError):
+            device.set_sample_rate(2)  # the old mode code for 10 Hz
+    finally:
+        device.close()
+
+
+def test_query_returns_the_answer_fields_and_write_expects_none() -> None:
+    device, transport = _p2()
+    try:
+        transport.answers["custom?"] = "a\tb"
+        assert device.query("custom?") == ["a", "b"]
+        assert device.query("name?") == ["P2"]
+
+        device.write("A0002!")
+        assert transport.written[-1] == "A0002!"
+
+        with pytest.raises(TimeoutError):
+            device.query("unknown?", timeout=0.05)
+    finally:
+        device.close()
+
+
+def test_a_stale_answer_is_not_taken_for_the_next_one() -> None:
+    device, transport = _p2()
+    try:
+        device.write("name?")  # answered, but nobody waits for it
+        assert _wait_for(lambda: not device._replies.empty())
+        assert device.query("f?") == ["422"]
+    finally:
+        device.close()
+
+
+def test_verbose_lines_become_data_points_and_answers_do_not() -> None:
+    device, transport = _p2()
+    try:
+        columns = len(ds.PARTECTOR2_DATA_STRUCTURE) - 1  # the timestamp is ours
+        for _ in range(3):
+            transport.emit(columns)
+        transport.emit(columns + 1)  # not a known layout: dropped
+        assert device.query("N?") == ["8617"]
+        assert _wait_for(lambda: len(device._points) == 3)
+
+        points = device.get_data()
+        assert len(points) == 3
+        assert device.get_data() == []
+        assert points[0].serial_number == 8617
+        assert points[0].firmware_version == 422
+        assert points[0].connection_type == ConnectionType.SERIAL
+        assert points[0].ldsa == 1.0
+        assert points[0].unix_timestamp is not None and points[0].unix_timestamp > 1e12
+    finally:
+        device.close()
+
+
+def test_legacy_layout_cuts_extra_columns_off() -> None:
+    transport = FakeTransport(serial_number=24, firmware=100)
+    device = Partector1(transport=transport)  # type: ignore[arg-type]
+    try:
+        transport.emit(len(ds.PARTECTOR1_DATA_STRUCTURE_V_LEGACY) + 5)
+        assert _wait_for(lambda: len(device._points) == 1)
+        assert device.get_data()[0].device_type == DeviceType.P1
+    finally:
+        device.close()
+
+
+def test_optional_columns_do_not_leak_into_the_module_layouts() -> None:
     before = copy.deepcopy(ds.PARTECTOR2_DATA_STRUCTURE)
-
-    with_extras = _bare_device(Partector2, fw=320, gain_test=True, pulse_diag=True)
-    with_extras._init_serial_data_structure()
-
-    assert "electrometer_1_gain" in with_extras._data_structure
-    assert "diffusion_current_delay_on" in with_extras._data_structure
-    assert ds.PARTECTOR2_DATA_STRUCTURE == before
-
-    plain = _bare_device(Partector2, fw=320, gain_test=False, pulse_diag=False)
-    plain._init_serial_data_structure()
-
-    assert plain._data_structure == before
-
-
-def test_p2_pro_optional_columns_do_not_leak_into_module_structure() -> None:
     before_pro = copy.deepcopy(ds.PARTECTOR2_PRO_DATA_STRUCTURE_V336)
-    before_std = copy.deepcopy(ds.PARTECTOR2_DATA_STRUCTURE)
 
-    pro_mode = _bare_device(Partector2Pro, fw=340, gain_test=True, pulse_diag=True)
-    pro_mode._set_verbose_freq(6)
-    assert "electrometer_1_gain" in pro_mode._data_structure
+    with_extras, _ = _p2(gain_test_active=True, output_pulse_diagnostics=True)
+    plain, _ = _p2()
+    pro, _ = _pro(gain_test_active=True, output_pulse_diagnostics=True)
+    try:
+        assert "electrometer_1_gain" in with_extras._data_structure
+        assert "diffusion_current_delay_on" in with_extras._data_structure
+        assert plain._data_structure == before
+        assert "electrometer_1_gain" in pro._data_structure
+        assert with_extras.is_settling and not plain.is_settling
+    finally:
+        for device in (with_extras, plain, pro):
+            device.close()
+
+    assert ds.PARTECTOR2_DATA_STRUCTURE == before
     assert ds.PARTECTOR2_PRO_DATA_STRUCTURE_V336 == before_pro
 
-    std_mode = _bare_device(Partector2Pro, fw=340, gain_test=True, pulse_diag=True)
-    std_mode._set_verbose_freq(1)
-    assert "electrometer_1_gain" in std_mode._data_structure
-    assert ds.PARTECTOR2_DATA_STRUCTURE == before_std
 
-
-def test_device_info_has_defaults_before_it_is_read() -> None:
-    device = object.__new__(Partector2)
-    device._init_variables()
-
-    assert device._fw == 0
-    assert device._integration_time == 0
+def test_old_p2_firmware_gets_no_diagnostics() -> None:
+    device, transport = _p2(firmware=275, gain_test_active=True, output_pulse_diagnostics=True)
+    try:
+        assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE_V265_V275
+        assert "opd01!" not in transport.written
+        assert not device.is_settling
+    finally:
+        device.close()
 
 
 def test_every_p2_pro_column_lands_on_a_data_point_field_or_is_dropped() -> None:
-    device = _bare_device(Partector2Pro, fw=340, gain_test=False, pulse_diag=False)
-    device._set_verbose_freq(6)
+    device, transport = _pro()
+    try:
+        layout = device._data_structure
+        transport._lines.put("\t".join(str(i) for i in range(1, len(layout))))
+        assert _wait_for(lambda: len(device._points) == 1)
+        point = device.get_data()[0]
 
-    structure = device._data_structure
-    line = [1_700_000_000_000] + [str(i) for i in range(1, len(structure))]
-
-    point = device._create_naneos_device_point(device._cast_splitted_input_string(line))
-
-    assert point.serial_number == 1234
-    assert point.connection_type == ConnectionType.SERIAL
-    assert point.unix_timestamp == 1_700_000_000_000
-    assert point.particle_surface == float(list(structure).index("particle_surface"))
-    assert point.steps_inversion == list(structure).index("steps_inversion")
-    assert point.particle_number_300nm == list(structure).index("particle_number_300nm")
-    # columns without a field are parsed for the line length but not attached
-    assert not hasattr(point, "flow_from_phase_angle")
-    assert "particle_surface" in point.to_dict()
+        assert point.particle_surface == float(list(layout).index("particle_surface"))
+        assert point.steps_inversion == list(layout).index("steps_inversion")
+        assert point.particle_number_300nm == list(layout).index("particle_number_300nm")
+        # columns without a field are parsed for the line length but not attached
+        assert not hasattr(point, "flow_from_phase_angle")
+    finally:
+        device.close()
 
 
-def test_write_line_returns_the_device_answer_or_an_empty_list() -> None:
-    device = _bare_device(Partector2, fw=320, gain_test=False, pulse_diag=False)
-    device._init_data_structures()
-    device.thread_event = __import__("threading").Event()
-    sent: list[str] = []
+def test_p2_pro_modes() -> None:
+    device, transport = _pro()
+    try:
+        assert device.size_distribution
+        assert device.sample_rate_hz is None  # paced by the device
+        assert device._data_structure == ds.PARTECTOR2_PRO_DATA_STRUCTURE_V336
+        with pytest.raises(NotSupportedError):
+            device.set_sample_rate(10)
 
-    def fake_write_line(line: str) -> None:  # the device answers the name query
-        sent.append(line)
-        if line == "name?":
-            device._queue_info.append([1, "P2pro"])
+        device.set_size_distribution(False, sample_rate_hz=10)
+        assert device.sample_rate_hz == 10
+        assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE
+        # the mode switch resets the device settings, so they follow it
+        switch = transport.written.index("M0000!")
+        assert transport.written[switch:] == [
+            "M0000!", "A0002!", "opd00!", "h2000!", "e0000!", "X0002!",
+        ]  # fmt: skip
 
-    device._write_line = fake_write_line  # type: ignore[assignment]
+        device.set_sample_rate(100)
+        assert transport.written[-1] == "X0003!"
+    finally:
+        device.close()
 
-    assert device.write_line("name?") == [1, "P2pro"]
-    assert sent == ["name?"]
 
-    assert device.write_line("X0000!", 0) == []  # fire and forget
-    assert sent == ["name?", "X0000!"]
+def test_close_resets_the_device_and_further_commands_fail() -> None:
+    device, transport = _p2()
+    device.close()
 
-    device.SERIAL_RETRIES = 1
-    assert device.write_line("N?") == []  # nothing came back within the timeout
+    assert transport.written[-4:] == ["X0000!", "opd00!", "h2000!", "e0000!"]
+    assert not device.is_connected
+    assert not transport.is_open
+    with pytest.raises(ConnectionError):
+        device.write("X0001!")
+    with pytest.raises(ConnectionError):
+        device.query("N?")
 
-    device._connected = False
-    assert device.write_line("N?") == []
+
+def test_an_unplugged_device_reports_disconnected() -> None:
+    device, transport = _p2()
+    transport.unplug()
+    assert _wait_for(lambda: not device.is_connected)
+    device.close()  # must not raise or hang
+
+
+def test_a_silent_device_is_probed_and_dropped_if_it_does_not_answer() -> None:
+    device, transport = _p2(sample_rate_hz=0)
+    try:
+        device.SILENCE_BEFORE_PROBE_SECONDS = 0.05
+        device.PROBE_TIMEOUT_SECONDS = 0.1
+
+        time.sleep(0.3)  # silent, but it answers the probe
+        assert device.is_connected
+        assert transport.written.count("N?") > 3
+
+        transport.mute = True
+        assert _wait_for(lambda: not device.is_connected)
+    finally:
+        device.close()

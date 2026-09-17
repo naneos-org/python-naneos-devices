@@ -6,13 +6,13 @@ fixed payloads, so these tests pin the byte layout, not just the code.
 
 import pytest
 
-from naneos.data_point import NaneosDeviceDataPoint
-from naneos.partector_ble.decoders import (
+from naneos.ble.partector.characteristics import (
     PartectorBleDecoderAux,
     PartectorBleDecoderAuxError,
     PartectorBleDecoderSize,
     PartectorBleDecoderStd,
 )
+from naneos.data_point import NaneosDeviceDataPoint
 
 RECORDED = {
     PartectorBleDecoderStd: (

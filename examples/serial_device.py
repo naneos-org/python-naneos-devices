@@ -9,8 +9,8 @@ import pandas as pd
 
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import LEVEL_INFO, enable_console_logging
-from naneos.partector.partector_serial_manager import DEVICE_CLASSES
-from naneos.partector.scan import scan_serial_ports
+from naneos.usb.partector.manager import DEVICE_CLASSES
+from naneos.usb.partector.scan import scan_serial_ports
 
 
 def main() -> None:
@@ -36,7 +36,7 @@ def main() -> None:
                 break
             print("No data received yet...")
     finally:
-        device.close(blocking=True)
+        device.close()
 
 
 if __name__ == "__main__":
