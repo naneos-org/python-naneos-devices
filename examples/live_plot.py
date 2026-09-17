@@ -4,7 +4,7 @@ Needs matplotlib, which is not a dependency of naneos-devices: pip install matpl
 
 Usage: python live_plot.py [serial_number] [sample_rate_hz]
        serial_number   default: the first device that delivers data
-       sample_rate_hz  1 (default), 10 or 100
+       sample_rate_hz  1, 10 or 100 (default)
 
 Close the window to stop.
 """
@@ -20,8 +20,8 @@ from matplotlib.animation import FuncAnimation
 from naneos import NaneosDeviceDataPoint, NaneosDeviceManager
 from naneos.usb.partector import Partector2Pro
 
-WINDOW_SECONDS = 60
-REFRESH_MS = 100
+WINDOW_SECONDS = 10
+REFRESH_MS = 500
 
 
 class LivePlot:
@@ -114,7 +114,7 @@ class LivePlot:
 
 def main() -> None:
     serial_number = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    sample_rate_hz = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    sample_rate_hz = int(sys.argv[2]) if len(sys.argv) > 2 else 100
     if sample_rate_hz not in (1, 10, 100):
         sys.exit(__doc__)
 
