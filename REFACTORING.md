@@ -450,7 +450,7 @@ naneos/
     partector/              connection.py  device.py  characteristics.py  advertisement.py
                             scanner.py  manager.py
   cloud/                    upload.py  download.py (optional extra)
-  protobuf/                 protobuf.py  protoV1.proto  protoV1_pb2.py
+  protobuf/                 protobuf.py  proto_v2.proto  proto_v2_pb2.py
 ```
 
 - One subpackage per device family below each transport, because other devices will follow. What
@@ -466,7 +466,32 @@ naneos/
 - `connection_type` stays `"serial"` in the data: the value is in stored frames and on the backend.
 - The old -> new module table is in the README ("Migrating from 1.x to 2.0").
 
-### 7.7 What is left
+### 7.7 Upload format v2 (done 2026-09-17, part of 2.0.0)
+
+- `proto_v2.proto` replaces `protoV1.proto` (deleted with its generated files). The upload goes to
+  `.../dev/proto/v2/combined_data`. `UiCurve` (`/uicurve`) and `PulseForm` (`/pulseform`) exist in
+  the schema but nothing in this package produces them yet.
+- The schema carries the scale of every field as a field option, so `protobuf.py` builds its
+  conversion table from the descriptor. Hand written are only: the six names that differ between
+  frame and schema, the fields no device reports (`cs_status`, `electrometer_offset`,
+  `electrometer_2_offset`) and the cs -> s unit factor of the two pulse delays. A test fails if
+  any of these names stops existing in the schema or in `NaneosDeviceDataPoint`.
+- Changes against v1 on the wire:
+  - `electrometer_1/2_amplitude` go to `electrometer_amplitude(_2)` (scale 16). v1 had no amplitude
+    field and sent them as `electrometer_1/2_offset` (scale 10). **Check that the backend reads
+    the amplitude from the new field.**
+  - New: `diffusion_current_average` -> `diffusion_current_avg`, `diffusion_current_max`.
+    Still without a field: `corona_voltage_onset`, `hires_adc1/2`.
+  - Every unsigned field clamps a negative reading to 0 (v1: three listed columns; any other
+    negative value dropped the whole point).
+  - The size distribution groups have no per-field presence: a group is sent when the row has at
+    least one of its columns, missing columns then read back as 0.
+- Verified against the dev endpoint: a live snapshot of SN8617 / SN8764 gave HTTP 200, "Wrote 9
+  data point(s)". The recorded test frames (SN 666 / 777) give HTTP 200 but "Wrote 0": the dev
+  backend does not store them (unknown serial numbers, presumably), so `test_10`'s upload test
+  only proves that the request is accepted.
+
+### 7.8 What is left
 
 Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
 command layer, left open on purpose) and the hardware check of the Windows-only BLE branches

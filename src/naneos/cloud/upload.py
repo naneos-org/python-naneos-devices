@@ -9,10 +9,13 @@ import pandas as pd
 import requests
 
 from naneos.frames import aggregate_duplicate_index
-from naneos.protobuf import protoV1_pb2 as pbScheme
+from naneos.protobuf import proto_v2_pb2 as pb
 from naneos.protobuf.protobuf import create_combined_entry, create_proto_device
 
-URL = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/prod/proto/v1"
+# The v2 API has one endpoint per message type. Only CombinedData is uploaded
+# from here; UiCurve goes to /uicurve and PulseForm to /pulseform.
+BASE_URL = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/dev/proto/v2"
+URL_COMBINED_DATA = f"{BASE_URL}/combined_data"
 HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
 TIMEOUT_SECONDS = 10
 
@@ -27,7 +30,9 @@ def upload_snapshot(data: dict[int, pd.DataFrame]) -> requests.Response:
     combined_entry = build_combined_entry(data, abs_time)
     payload = base64.b64encode(combined_entry.SerializeToString()).decode()
 
-    return requests.post(URL, headers=HEADERS, data=build_body(payload), timeout=TIMEOUT_SECONDS)
+    return requests.post(
+        URL_COMBINED_DATA, headers=HEADERS, data=build_body(payload), timeout=TIMEOUT_SECONDS
+    )
 
 
 def build_body(upload_string: str) -> str:
@@ -61,7 +66,7 @@ def to_upload_frame(df: pd.DataFrame) -> pd.DataFrame:
     return aggregate_duplicate_index(df)
 
 
-def build_combined_entry(data: dict[int, pd.DataFrame], abs_time: int) -> pbScheme.CombinedData:
+def build_combined_entry(data: dict[int, pd.DataFrame], abs_time: int) -> pb.CombinedData:
     """The protobuf message for a snapshot, with timestamps relative to abs_time."""
     devices = [create_proto_device(sn, abs_time, to_upload_frame(df)) for sn, df in data.items()]
     return create_combined_entry(devices=devices, abs_timestamp=abs_time)

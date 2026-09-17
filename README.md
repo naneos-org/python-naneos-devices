@@ -215,7 +215,7 @@ The modules were regrouped by transport, with one subpackage per device family (
 | `naneos.partector_ble.decoders` / `partector_ble_decoder` | `naneos.ble.partector.characteristics` / `naneos.ble.partector.advertisement` |
 | `naneos.manager.naneos_device_manager` | `naneos.manager` |
 | `naneos.iotweb` | `naneos.cloud` (`upload`, `download`) |
-| `naneos.protobuf` | unchanged |
+| `naneos.protobuf` (`protoV1_pb2`) | `naneos.protobuf` with `proto_v2_pb2`; the upload uses the v2 endpoint `.../proto/v2/combined_data` |
 | (new) | `naneos.usb.transport`: the serial transport shared by every USB device family |
 | `naneos.uploader` (the `naneos-uploader` command) | `naneos.cli` |
 | `naneos.logger` | unchanged |
@@ -241,10 +241,10 @@ to the root logger like any other library.
 The documentation for the `naneos-devices` package can be found in the [package's documentation page](https://naneos-org.github.io/python-naneos-devices/).
 
 # Protobuf
-The upload format is defined in `src/naneos/protobuf/protoV1.proto` (shared with the backend, never
+The upload format is defined in `src/naneos/protobuf/proto_v2.proto` (shared with the backend, never
 renumber fields). Regenerate the Python module and the stub in that directory with:
 ```bash
-protoc -I=. --python_out=. --pyi_out=. ./protoV1.proto
+protoc -I=. --python_out=. --pyi_out=. ./proto_v2.proto
 ```
 
 # Testing

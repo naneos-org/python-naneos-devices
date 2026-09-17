@@ -1,0 +1,207 @@
+// Created by ^hue (2026-05-04)
+
+// most important is to be up do date with "upload_timeseries" repo
+// all fields with optional get a presence bit -> we can check with has_value()
+
+syntax = "proto3";
+package v2;
+
+import "google/protobuf/descriptor.proto";
+
+// Field metadata, readable at runtime via
+//   field.GetOptions().Extensions[proto_v2_pb2.scale]
+// Options live in the descriptor only -> no wire-size cost.
+extend google.protobuf.FieldOptions {
+  // wire value / scale = value in `unit`. Unset reads back as 0 -> treat as 1.
+  double scale = 50000;
+  string unit = 50001;
+}
+
+// goes to /proto/v2/uicurve endpoint
+message UiCurve {
+  DeviceType type = 1;
+  uint32 abs_timestamp = 2 [(unit) = "s"];
+  uint32 serial_number = 3;
+  repeated uint32 U_values = 4 [(unit) = "V"];
+  repeated uint32 I_values = 5 [(scale) = 100, (unit) = "nA"];
+}
+
+// goes to /proto/v2/pulseform endpoint
+message PulseForm {
+  DeviceType type = 1;
+  uint32 abs_timestamp = 2 [(unit) = "s"];
+  uint32 serial_number = 3;
+  repeated uint32 U_values = 4 [(scale) = 100, (unit) = "mV"];
+}
+
+// goes to /proto/v2/combined_data endpoint
+message CombinedData {
+  uint32 abs_timestamp = 1 [(unit) = "s"];
+  repeated Device devices = 2;
+  Uplink uplink = 3;
+  // counts for every device, that has sent some data in the same message
+  repeated PositionPoint position_points = 4;
+}
+
+// Naneos Device
+enum DeviceType {
+  P2 = 0;
+  P1 = 1;
+  P2_PRO = 2;
+  P2_PRO_CS = 3;
+  OLS = 4;
+  P9 = 5;
+}
+
+message Device {
+  DeviceType type = 1;
+  uint32 serial_number = 2;
+  repeated DevicePoint device_points = 3;
+}
+
+message UserPlanDataFast {
+  optional uint32 ldsa = 1 [(scale) = 100, (unit) = "um^2/cm^3"];
+  optional uint32 average_particle_diameter = 2 [(unit) = "nm"];
+  optional uint32 particle_number_concentration = 3 [(unit) = "1/cm^3"];
+  optional uint32 particle_mass = 4 [(scale) = 100, (unit) = "ug/m^3"];
+  optional uint32 surface = 5 [(scale) = 100, (unit) = "um^2/cm^3"];
+}
+
+message UserSizeDistData {
+  uint32 particle_number_10nm = 1 [(unit) = "1/cm^3/log(d)"];
+  uint32 particle_number_16nm = 2 [(unit) = "1/cm^3/log(d)"];
+  uint32 particle_number_26nm = 3 [(unit) = "1/cm^3/log(d)"];
+  uint32 particle_number_43nm = 4 [(unit) = "1/cm^3/log(d)"];
+  uint32 particle_number_70nm = 5 [(unit) = "1/cm^3/log(d)"];
+  uint32 particle_number_114nm = 6 [(unit) = "1/cm^3/log(d)"];
+  uint32 particle_number_185nm = 7 [(unit) = "1/cm^3/log(d)"];
+  uint32 particle_number_300nm = 8 [(unit) = "1/cm^3/log(d)"];
+}
+
+message StatusDataSizeDist {
+  uint32 sigma_size_dist = 1 [(scale) = 100, (unit) = "gsd"];
+  uint32 steps_inversion = 2 [(unit) = "steps"];
+  uint32 current_dist_0 = 3 [(scale) = 100000, (unit) = "mV"];
+  uint32 current_dist_1 = 4 [(scale) = 100000, (unit) = "mV"];
+  uint32 current_dist_2 = 5 [(scale) = 100000, (unit) = "mV"];
+  uint32 current_dist_3 = 6 [(scale) = 100000, (unit) = "mV"];
+  uint32 current_dist_4 = 7 [(scale) = 100000, (unit) = "mV"];
+}
+
+message StatusDataSlow {
+  optional uint32 device_status = 1;  // error bits
+  optional int32 temperature = 2 [(unit) = "Celsius"];
+  optional uint32 relative_humidity = 3 [(unit) = "%"];
+  optional uint32 battery_voltage = 4 [(scale) = 100, (unit) = "V"];
+  optional uint32 corona_voltage = 5 [(unit) = "V"];
+  optional uint32 diffusion_current = 6 [(scale) = 100, (unit) = "nA"];
+  optional uint32 deposition_voltage = 7 [(unit) = "V"];
+  optional uint32 flow = 8 [(scale) = 1000, (unit) = "l/min"];
+  optional uint32 ambient_pressure = 9 [(scale) = 10, (unit) = "hPa"];
+  optional int32 electrometer_offset = 10 [(scale) = 10, (unit) = "mV"];
+  optional int32 electrometer_2_offset = 11 [(scale) = 10, (unit) = "mV"];
+  optional uint32 electrometer_gain = 12 [(scale) = 100, (unit) = "mV"];
+  optional uint32 electrometer_2_gain = 13 [(scale) = 100, (unit) = "mV"];
+  optional int32 diffusion_current_offset = 14 [(scale) = 100, (unit) = "nA"];
+  optional uint32 pump_current = 15 [(scale) = 1000, (unit) = "mA"];
+  optional uint32 pump_pwm = 16 [(unit) = "%"];
+  optional int32 cs_status = 17;  // 0=off, 1=on, -1=unknown
+  optional int32 diffusion_current_stddev = 18 [(scale) = 100, (unit) = "nA"];
+  optional uint32 diffusion_current_delay_on = 19 [(scale) = 100, (unit) = "s"];
+  optional uint32 diffusion_current_delay_off = 20 [(scale) = 100, (unit) = "s"];
+  optional uint32 pump_voltage = 21 [(scale) = 100, (unit) = "V"];
+  optional uint32 differential_pressure = 22 [(scale) = 10, (unit) = "Pa"];
+  optional uint32 channel_pressure = 23 [(scale) = 10, (unit) = "hPa"];
+  optional uint32 supply_voltage_5V = 24 [(scale) = 10, (unit) = "V"];
+  optional uint32 positive_voltage_3V3 = 25 [(scale) = 10, (unit) = "V"];
+  optional uint32 negative_voltage_3V3 = 26 [(scale) = 10, (unit) = "V"];
+  optional uint32 usb_cc_voltage = 27 [(scale) = 10, (unit) = "V"];
+  optional uint32 firmware_version = 28;  // number
+  optional uint32 diffusion_current_max = 29 [(scale) = 100, (unit) = "nA"];
+  optional uint32 diffusion_current_avg = 30 [(scale) = 100, (unit) = "nA"];
+  optional uint32 electrometer_amplitude = 31 [(scale) = 16];
+  optional uint32 electrometer_amplitude_2 = 32 [(scale) = 16];
+}
+
+message DevicePoint {
+  uint32 timestamp = 1 [(unit) = "s"];  // since abs. ts
+  UserPlanDataFast user_plan_data = 2;
+  UserSizeDistData user_size_dist_data = 3;
+  StatusDataSlow status_data = 4;
+  StatusDataSizeDist status_data_size_dist = 5;
+}
+
+// Uplink
+enum UplinkType {
+  MSOM_UPLINK = 0;
+  TRACKER_UPLINK = 1;
+}
+
+message Uplink {
+  UplinkType type = 1;
+  uint32 serial_number = 2;  // default value 0 is a irregular value
+  repeated UplinkPoint uplink_points = 3;
+}
+
+message UplinkMeasurements {
+  optional uint32 battery_int_voltage = 1 [(scale) = 10, (unit) = "V"];
+  optional uint32 free_memory = 2 [(unit) = "bytes"];
+}
+
+message UplinkSensors {
+  // SHT4x humidity/temperature sensors (int = 0x44, ext1 = 0x45, ext2 = 0x46)
+  optional int32 sht_int_temperature = 1 [(scale) = 10, (unit) = "Celsius"];
+  optional uint32 sht_int_humidity = 2 [(scale) = 10, (unit) = "%"];
+  optional int32 sht_ext1_temperature = 3 [(scale) = 10, (unit) = "Celsius"];
+  optional uint32 sht_ext1_humidity = 4 [(scale) = 10, (unit) = "%"];
+  optional int32 sht_ext2_temperature = 5 [(scale) = 10, (unit) = "Celsius"];
+  optional uint32 sht_ext2_humidity = 6 [(scale) = 10, (unit) = "%"];
+  // SPS30 particulate sensor
+  optional uint32 sps30_pm1_0 = 7 [(scale) = 100, (unit) = "ug/m^3"];
+  optional uint32 sps30_pm2_5 = 8 [(scale) = 100, (unit) = "ug/m^3"];
+  optional uint32 sps30_pm4_0 = 9 [(scale) = 100, (unit) = "ug/m^3"];
+  optional uint32 sps30_pm10_0 = 10 [(scale) = 100, (unit) = "ug/m^3"];
+  optional uint32 sps30_nc0_5 = 11 [(scale) = 10, (unit) = "1/cm^3"];
+  optional uint32 sps30_nc1_0 = 12 [(scale) = 10, (unit) = "1/cm^3"];
+  optional uint32 sps30_nc2_5 = 13 [(scale) = 10, (unit) = "1/cm^3"];
+  optional uint32 sps30_nc4_0 = 14 [(scale) = 10, (unit) = "1/cm^3"];
+  optional uint32 sps30_nc10_0 = 15 [(scale) = 10, (unit) = "1/cm^3"];
+  optional uint32 sps30_typical_particle_size = 16 [(unit) = "nm"];
+  // Calypso ULP STD ultrasonic wind meter (UART).
+  // Speed is the scalar mean over the window;
+  // east/north carry the vector mean
+  optional uint32 wind_speed = 17 [(scale) = 100, (unit) = "m/s"];  // scalar mean
+  optional uint32 wind_gust = 18 [(scale) = 100, (unit) = "m/s"];  // peak sample in the window
+  optional sint32 wind_east = 19 [(scale) = 100, (unit) = "m/s"];  // vector mean east component
+  optional sint32 wind_north = 20 [(scale) = 100, (unit) = "m/s"];  // vector mean north component
+  // IIS2MDC magnetometer (I2C)
+  optional uint32 mag_heading = 21 [(scale) = 10, (unit) = "degree"];;  // mag_heading without mag declination
+}
+
+// Carrier board power rails and battery state (MSOM only)
+message UplinkPower {
+  optional uint32 solar_voltage = 1 [(unit) = "mV"];
+  optional uint32 battery_ext_voltage = 2 [(unit) = "mV"];
+  // Charge that flowed during this point's aggregation window, not a rate:
+  // summing the points over any span gives the total for that span without
+  // having to know the plan's window length.
+  optional uint32 battery_ext_charge_mah = 3 [(scale) = 100, (unit) = "mAh"];  // into the pack
+  optional uint32 battery_ext_discharge_mah = 4 [(scale) = 100, (unit) = "mAh"];  // out of the pack
+  optional int32 battery_ext_temperature = 5 [(scale) = 10, (unit) = "Celsius"];
+  optional uint32 battery_ext_soc = 6 [(scale) = 10, (unit) = "%"];
+}
+
+message UplinkPoint {
+  uint32 timestamp = 1 [(unit) = "s"];  // since abs. time stamp
+  UplinkMeasurements uplink_measurements = 2;
+  UplinkSensors uplink_sensors = 3;
+  UplinkPower uplink_power = 4;
+}
+
+// Position
+message PositionPoint {
+  uint32 timestamp = 1 [(unit) = "s"];  // since abs. time stamp
+  int32 latitude = 2 [(scale) = 10000000, (unit) = "degree"];
+  int32 longitude = 3 [(scale) = 10000000, (unit) = "degree"];
+  int32 vertical_accuracy = 4 [(unit) = "mm"];
+}

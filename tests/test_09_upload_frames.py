@@ -55,7 +55,7 @@ def test_upload_never_exceeds_1hz_whatever_the_reading_rate() -> None:
 
     points = combined.devices[0].device_points
     assert sorted(p.timestamp for p in points) == [7, 8, 9, 10]
-    assert all(p.ldsa == 100 for p in points)
+    assert all(p.user_plan_data.ldsa == 100 for p in points)
 
 
 def test_upload_frame_keeps_missing_values_missing_when_merging() -> None:
