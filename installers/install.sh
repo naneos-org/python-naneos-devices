@@ -116,6 +116,25 @@ cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<'CONF'
 ExecStart=
 ExecStart=/usr/libexec/bluetooth/bluetoothd --experimental
 CONF
+
+# BlueZ gives up a BLE link after 420 ms without a packet. On a Pi whose WiFi
+# and BLE share one antenna a single WiFi burst is longer than that, and the
+# links drop every few seconds ("Connection Timeout" in btmon). The kernel
+# keeps the old value for devices it already knows, so on an existing
+# installation the 5 s only take effect after a reboot.
+BT_CONF=/etc/bluetooth/main.conf
+SUPERVISION_TIMEOUT=500 # in units of 10 ms
+if [[ -f "$BT_CONF" ]] && ! grep -qE "^ConnectionSupervisionTimeout *= *$SUPERVISION_TIMEOUT\$" "$BT_CONF"; then
+  echo ">> Setting the BLE supervision timeout to 5 s..."
+  if grep -qE '^ConnectionSupervisionTimeout' "$BT_CONF"; then
+    sed -i -E "s/^ConnectionSupervisionTimeout.*/ConnectionSupervisionTimeout=$SUPERVISION_TIMEOUT/" "$BT_CONF"
+  elif grep -qE '^\[LE\]' "$BT_CONF"; then
+    sed -i "/^\[LE\]/a ConnectionSupervisionTimeout=$SUPERVISION_TIMEOUT" "$BT_CONF"
+  else
+    printf '\n[LE]\nConnectionSupervisionTimeout=%s\n' "$SUPERVISION_TIMEOUT" >> "$BT_CONF"
+  fi
+  REBOOT_RECOMMENDED=1
+fi
 systemctl daemon-reload
 systemctl restart bluetooth.service || true
 rfkill unblock bluetooth || true
@@ -166,3 +185,6 @@ echo
 echo ">> Done: $VERSION runs as $SERVICE.service"
 echo "   logs:    journalctl -u $SERVICE.service -f"
 echo "   upgrade: re-run this installer (optionally with another --ref)"
+if [[ -n "${REBOOT_RECOMMENDED:-}" ]]; then
+  echo "   reboot:  the new BLE supervision timeout needs one (sudo reboot)"
+fi

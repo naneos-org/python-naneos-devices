@@ -41,6 +41,7 @@ class PartectorBleScanner:
     # range. Connecting to it would only block the adapter until it times out.
     RSSI_MAX_AGE_SECONDS = 10.0
     RSSI_HISTORY_LEN = 5  # readings kept per device, median is used to damp outliers
+    RESTART_STOP_TIMEOUT_SECONDS = 10.0  # a wedged bluetoothd must not block restart()
 
     # Passive scanning on BlueZ needs a filter. Partector frames put the protocol
     # byte "X" first in the manufacturer data, and the devices name themselves
@@ -103,7 +104,14 @@ class PartectorBleScanner:
 
         # Passive scanning is tried first on Linux; once BlueZ refuses it, the
         # scanner stays active for the rest of its life.
-        self._passive = sys.platform.startswith("linux")
+        self._passive_supported = sys.platform.startswith("linux")
+        self._passive = self._passive_supported
+
+        # Silence is normal while every device is connected (a connected
+        # Partector does not advertise), so only the manager can tell whether it
+        # means trouble.
+        self._last_advertisement_ts: float | None = None
+        self._listening_since = time.monotonic()
 
         self._stop_event = asyncio.Event()
         self._stop_event.set()  # stopped by default
@@ -160,6 +168,18 @@ class PartectorBleScanner:
             return None
 
         return int(median(recent))
+
+    @property
+    def seconds_since_advertisement(self) -> float | None:
+        """Age of the last Partector advertisement, None if there never was one."""
+        if self._last_advertisement_ts is None:
+            return None
+        return time.monotonic() - self._last_advertisement_ts
+
+    @property
+    def silent_for(self) -> float:
+        """Seconds the current scan has been running without a Partector advertisement."""
+        return time.monotonic() - max(self._listening_since, self._last_advertisement_ts or 0.0)
 
     @property
     def is_discovering(self) -> bool:
@@ -237,6 +257,27 @@ class PartectorBleScanner:
             await self._task
         logger.info("PartectorBleScanner stopped.")
 
+    async def restart(self, switch_mode: bool = False) -> None:
+        """Tears the BlueZ scan down and starts a new one, keeping what was learned.
+
+        For a scan that went silent without failing: on a Raspberry Pi the
+        advertisement monitor behind a passive scan can stop reporting while the
+        D-Bus connection stays up, which is_discovering cannot see.
+
+        Args:
+            switch_mode: Scan the other way (passive <-> active) afterwards, for
+                when a restart in the same mode did not bring advertisements back.
+        """
+        try:
+            await asyncio.wait_for(self.stop(), timeout=self.RESTART_STOP_TIMEOUT_SECONDS)
+        except TimeoutError:
+            # wait_for has cancelled the scan task along with stop().
+            logger.warning("PartectorBleScanner did not stop in time, scan task cancelled.")
+
+        if switch_mode and self._passive_supported:
+            self._passive = not self._passive
+        self.start()
+
     # == Internal Async Processing =================================================================
     async def _detection_callback(self, device: BLEDevice, adv: AdvertisementData) -> None:
         """Records RSSI and device for a Partector advertisement and reports its serial.
@@ -258,8 +299,9 @@ class PartectorBleScanner:
         if not serial_number:
             return
 
+        self._last_advertisement_ts = time.monotonic()
         history = self._rssi.setdefault(device.address, deque(maxlen=self.RSSI_HISTORY_LEN))
-        history.append((time.monotonic(), adv.rssi))
+        history.append((self._last_advertisement_ts, adv.rssi))
         self._devices[device.address] = device
 
         # Drop the oldest entry when full: the callback must never block.
@@ -290,6 +332,7 @@ class PartectorBleScanner:
                 kwargs = self.scanner_kwargs(self._passive)
                 async with BleakScanner(self._detection_callback, **kwargs):
                     self._discovery_active = True
+                    self._listening_since = time.monotonic()
                     logger.info(f"BLE scanning ({'passive' if self._passive else 'active'}).")
                     await self._stop_event.wait()
             except BleakDBusError as e:
@@ -319,4 +362,5 @@ class PartectorBleScanner:
             f"Passive BLE scanning is not available ({error}); using active scanning. "
             "On Linux, start bluetoothd with --experimental to enable it."
         )
+        self._passive_supported = False
         self._passive = False

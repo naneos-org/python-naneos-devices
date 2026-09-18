@@ -60,6 +60,13 @@ class PartectorBleManager(threading.Thread):
     ADAPTER_LOST_AFTER_SECONDS = 30.0
     ADAPTER_CHECK_INTERVAL_SECONDS = 3.0
 
+    # A link that is down makes its device advertise again, so a scanner that
+    # hears no Partector at all for this long while a link waits to reconnect
+    # has probably gone deaf, and is restarted. The device may also just be
+    # switched off, so the interval doubles per fruitless restart up to the cap.
+    SCANNER_SILENCE_SECONDS = 60.0
+    SCANNER_RESTART_MAX_INTERVAL_SECONDS = 600.0
+
     # On a normal stop the links get this long to disconnect gracefully before
     # their tasks are cancelled.
     SHUTDOWN_GRACE_SECONDS = 8.0
@@ -88,6 +95,9 @@ class PartectorBleManager(threading.Thread):
         self._links: dict[int, BleLink] = {}  # key: serial number
         self._rejected_for_cap: set[int] = set()
         self._scanner: PartectorBleScanner | None = None
+        self._link_down_since: float | None = None
+        self._scanner_restart_interval = self.SCANNER_SILENCE_SECONDS
+        self._silent_scanner_restarts = 0
 
         # Raw data points from the links, converted to DataFrames only in
         # get_data(). Building them here would put pandas on the event loop that
@@ -179,11 +189,56 @@ class PartectorBleManager(threading.Thread):
                 await self._scanner_queue_routine()
                 await self._connection_queue_routine()
                 self._forget_finished_links()
+                await self._revive_silent_scanner()
 
             except Exception as e:
                 logger.exception(f"Error in manager loop: {e}")
 
         return False
+
+    async def _revive_silent_scanner(self) -> None:
+        """Restarts a scanner that hears nothing although a link waits to reconnect.
+
+        Without advertisements no link can come back: the RSSI gate stays shut and
+        BlueZ forgets the devices, so the occasional forced attempt fails with
+        "device not found". is_discovering does not catch this, because a passive
+        scan that stopped reporting looks exactly like one with nothing in reach.
+        """
+        now = time.monotonic()
+        waiting = [serial for serial, link in self._links.items() if not link.is_connected]
+        if self._scanner is None or not waiting:
+            self._link_down_since = None
+            self._reset_scanner_revival()
+            return
+
+        if self._link_down_since is None:
+            self._link_down_since = now
+
+        heard = self._scanner.seconds_since_advertisement
+        if heard is not None and heard < self.SCANNER_SILENCE_SECONDS:
+            self._reset_scanner_revival()  # the scanner hears Partectors, it is fine
+            return
+
+        # silent_for starts over with every restart, which paces the restarts.
+        silent_for = self._scanner.silent_for
+        if min(silent_for, now - self._link_down_since) < self._scanner_restart_interval:
+            return
+
+        # Every second fruitless restart tries the other scan mode.
+        self._silent_scanner_restarts += 1
+        switch_mode = self._silent_scanner_restarts % 2 == 0
+        logger.warning(
+            f"No Partector advertisement for {heard or silent_for:.0f}s while {waiting} wait to "
+            f"reconnect. Restarting the scanner{' in the other scan mode' if switch_mode else ''}."
+        )
+        await self._scanner.restart(switch_mode=switch_mode)
+        self._scanner_restart_interval = min(
+            self._scanner_restart_interval * 2, self.SCANNER_RESTART_MAX_INTERVAL_SECONDS
+        )
+
+    def _reset_scanner_revival(self) -> None:
+        self._scanner_restart_interval = self.SCANNER_SILENCE_SECONDS
+        self._silent_scanner_restarts = 0
 
     async def _shutdown_links(self, grace_seconds: float) -> None:
         """Ends every connection task: first by asking, then by cancelling."""
