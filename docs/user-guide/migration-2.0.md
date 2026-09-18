@@ -17,7 +17,7 @@ unchanged.
 | `from naneos.iotweb import download_from_iotweb` | `from naneos.cloud.download import download_from_iotweb`, with the `download` extra |
 | `device.write_line(cmd, n)` | `device.query(cmd)` (answer fields only, no timestamp) or `device.write(cmd)` |
 | `Partector2(verb_freq=2)`, `set_verbose_freq(2)` (mode codes) | `Partector2(sample_rate_hz=10)`, `set_sample_rate(10)` (Hz) |
-| `Partector2Pro(verb_freq=6)` | `Partector2Pro(size_distribution=True)` (default), `set_size_distribution()` |
+| `Partector2Pro(verb_freq=6)` | `Partector2Pro()` (default, `sample_rate_hz=None`), `set_sample_rate(None)`; a rate switches to the plain P2 line |
 | `device.close(blocking, shutdown, verbose_reset)` | `device.close(reset_device=True)`, `device.power_off()` |
 | `device.clear_data_cache()` | removed; `get_data()` returns everything received |
 | `naneos.partector.scanPartector`, `scan_for_serial_partectors()` | `naneos.usb.partector.scan.scan_serial_ports()` |

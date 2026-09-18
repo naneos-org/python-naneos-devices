@@ -4,7 +4,7 @@ import time
 import pandas as pd
 
 from naneos.data_point import DeviceType, NaneosDeviceDataPoint, PointListener
-from naneos.device import PartectorDevice
+from naneos.device import NotSupportedError, PartectorDevice
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import get_naneos_logger
 from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro, UsbPartector
@@ -28,6 +28,7 @@ class PartectorSerialManager(threading.Thread):
         output_pulse_diagnostics: let P2 / P2 Pro append the pulse diagnostics columns.
         point_listener: called with every data point as it arrives, in addition to
             get_data(). Runs on the reader threads: must be quick and must not block.
+        sample_rate_hz: the data rate of every device, see the property.
     """
 
     def __init__(
@@ -35,11 +36,14 @@ class PartectorSerialManager(threading.Thread):
         gain_test_active: bool = True,
         output_pulse_diagnostics: bool = True,
         point_listener: PointListener | None = None,
+        sample_rate_hz: int | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._point_listener = point_listener
         self._gain_test_active = gain_test_active
         self._output_pulse_diagnostics = output_pulse_diagnostics
+        self._sample_rate_hz = self.check_sample_rate(sample_rate_hz)
+        self._sample_rate_changed = threading.Event()
         self._stop_event = threading.Event()
 
         # Written by the manager thread in _fetch_data(), handed over in get_data().
@@ -60,6 +64,26 @@ class PartectorSerialManager(threading.Thread):
 
     def stop(self) -> None:
         self._stop_event.set()
+
+    @property
+    def sample_rate_hz(self) -> int | None:
+        """The data rate of every device: 1, 10 or 100 Hz, or None for the default
+        of each device (1 Hz, size distribution mode on a P2 Pro). Setting it
+        changes the connected devices within a second and applies to the ones
+        that connect later.
+        """
+        return self._sample_rate_hz
+
+    @sample_rate_hz.setter
+    def sample_rate_hz(self, hz: int | None) -> None:
+        self._sample_rate_hz = self.check_sample_rate(hz)
+        self._sample_rate_changed.set()  # applied by the manager thread
+
+    @staticmethod
+    def check_sample_rate(hz: int | None) -> int | None:
+        if hz not in (None, 1, 10, 100):
+            raise ValueError("Sample rate must be 1, 10 or 100 Hz, or None for the default.")
+        return hz
 
     def run(self) -> None:
         try:
@@ -88,6 +112,7 @@ class PartectorSerialManager(threading.Thread):
                 found = scan_serial_ports(ports_exclude=list(self._devices))
 
                 self._disconnect_unplugged_ports()
+                self._apply_sample_rate()  # before the connect: a new device gets the rate itself
                 self._connect_to_new_ports(found)
 
                 self._fetch_data()
@@ -116,6 +141,16 @@ class PartectorSerialManager(threading.Thread):
         with self._data_lock:
             self._data = add_data_points_to_dict(self._data, points)
 
+    def _apply_sample_rate(self) -> None:
+        if not self._sample_rate_changed.is_set():
+            return
+        self._sample_rate_changed.clear()
+        for device in self._all_devices():
+            try:
+                device.set_sample_rate(self._sample_rate_hz)
+            except (ConnectionError, NotSupportedError) as e:
+                logger.warning(f"SN{device.serial_number}: could not set the sample rate: {e}")
+
     def _disconnect_unplugged_ports(self) -> None:
         for port, device in list(self._devices.items()):
             if not device.is_connected:
@@ -133,10 +168,15 @@ class PartectorSerialManager(threading.Thread):
 
     def _connect(self, found: FoundDevice) -> UsbPartector:
         if found.kind == DeviceType.P1:
-            return Partector1(port=found.port, point_listener=self._point_listener)
+            return Partector1(
+                port=found.port,
+                sample_rate_hz=self._sample_rate_hz,
+                point_listener=self._point_listener,
+            )
         cls = Partector2Pro if found.kind == DeviceType.P2PRO else Partector2
         return cls(
             port=found.port,
+            sample_rate_hz=self._sample_rate_hz,
             gain_test_active=self._gain_test_active,
             output_pulse_diagnostics=self._output_pulse_diagnostics,
             point_listener=self._point_listener,

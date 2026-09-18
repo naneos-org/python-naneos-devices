@@ -7,7 +7,7 @@ import pytest
 from fake_transport import FakeTransport
 
 from naneos.data_point import ConnectionType, DeviceType
-from naneos.device import NotSupportedError, PartectorDevice
+from naneos.device import PartectorDevice
 from naneos.usb.partector import layouts as ds
 from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro
 
@@ -190,23 +190,46 @@ def test_every_p2_pro_column_lands_on_a_data_point_field_or_is_dropped() -> None
 def test_p2_pro_modes() -> None:
     device, transport = _pro()
     try:
-        assert device.size_distribution
-        assert device.sample_rate_hz is None  # paced by the device
+        # the default is the size distribution mode, paced by the device
+        assert device.sample_rate_hz is None
         assert device._data_structure == ds.PARTECTOR2_PRO_DATA_STRUCTURE_V336
-        with pytest.raises(NotSupportedError):
-            device.set_sample_rate(10)
+        assert transport.written[-6:] == [
+            "X0006!", "M0004!", "A0002!", "opd00!", "h2000!", "e0000!",
+        ]  # fmt: skip
 
-        device.set_size_distribution(False, sample_rate_hz=10)
+        # a rate switches to the plain P2 mode; the mode switch resets the
+        # device settings, so they follow it
+        device.set_sample_rate(10)
         assert device.sample_rate_hz == 10
         assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE
-        # the mode switch resets the device settings, so they follow it
         switch = transport.written.index("M0000!")
         assert transport.written[switch:] == [
             "M0000!", "A0002!", "opd00!", "h2000!", "e0000!", "X0002!",
         ]  # fmt: skip
 
+        # another rate in the P2 mode is just the rate
         device.set_sample_rate(100)
         assert transport.written[-1] == "X0003!"
+
+        # off keeps the mode, None is back to the size distribution
+        device.set_sample_rate(0)
+        assert transport.written[-1] == "X0000!"
+        assert device.sample_rate_hz == 0
+        device.set_sample_rate(None)
+        assert device.sample_rate_hz is None
+        assert transport.written[-6:-4] == ["X0006!", "M0004!"]
+        assert device._data_structure == ds.PARTECTOR2_PRO_DATA_STRUCTURE_V336
+    finally:
+        device.close()
+
+
+def test_p2_pro_can_start_in_the_p2_mode() -> None:
+    device, transport = _pro(sample_rate_hz=100)
+    try:
+        assert device.sample_rate_hz == 100
+        assert "M0000!" in transport.written
+        assert transport.written[-1] == "X0003!"
+        assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE
     finally:
         device.close()
 

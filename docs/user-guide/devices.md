@@ -11,8 +11,8 @@ connection: USB is faster and the only way to change the data rate.
 | | USB | BLE |
 |---|---|---|
 | `write(command)` / `query(command)` | yes | yes, a command is limited to 20 bytes |
-| default `query()` timeout | 0.25 s | 2 s (answers take 0.25 s to 1 s) |
-| `set_sample_rate(hz)` | 0, 1, 10, 100 Hz | raises `NotSupportedError`, fixed at 1 Hz |
+| default `query()` timeout | 1 s | 2 s (answers take 0.25 s to 1 s) |
+| `set_sample_rate(hz)` | 0, 1, 10, 100 Hz or `None` (the default of the device) | raises `NotSupportedError`, fixed at 1 Hz (`None` is accepted) |
 | `firmware_version`, `device_type` | known on connect | known a moment after the connect |
 
 One command is in flight per device; calls from several threads queue up. Answers carry no
@@ -30,8 +30,11 @@ The output queue receives the data at the rate that is set. The upload to the na
 service is always limited to 1 Hz: samples of the same second are averaged, status bits are
 OR-ed. 100 Hz is meant for tests, not for productive use.
 
-The rate belongs to the connection: when a device is unplugged or reconnects, the manager
-creates a new connection at 1 Hz and `set_sample_rate()` has to be called again.
+`manager.sample_rate_hz` (also a constructor argument) sets the rate of every USB device at
+once: `None` (the default) leaves each device at its own default, 1, 10 or 100 Hz applies to
+all connected devices within a second and to every device that connects later. A rate set on a
+single handle with `set_sample_rate()` is not remembered: a device that reconnects gets the
+manager setting.
 
 ## Snapshots and live data
 
@@ -55,16 +58,17 @@ on its integration time), also on the live queue.
 ## Partector 2 Pro modes (USB)
 
 A P2 Pro on USB starts in **size distribution mode**: one line with the size distribution per
-inversion cycle (6–21 s, depending on the integration time), paced by the device.
-`sample_rate_hz` is `None` and `set_sample_rate()` raises
-`NotSupportedError`. To get the plain P2 line at a selectable rate, switch the mode on the handle:
+inversion cycle (6–21 s, depending on the integration time), paced by the device, and
+`sample_rate_hz` is `None`. A rate switches it to the plain P2 line, `None` switches it back:
 
 ```python
-pro = manager.get_device(8764)  # a naneos.usb.partector.Partector2Pro
-pro.set_size_distribution(False, sample_rate_hz=10)
+pro = manager.get_device(8764)
+pro.set_sample_rate(10)  # the plain P2 line at 10 Hz, no size distribution
 pro.set_sample_rate(100)
-pro.set_size_distribution(True)  # back to the size distribution
+pro.set_sample_rate(None)  # back to the size distribution
 ```
+
+`manager.sample_rate_hz = 10` does the same for every USB device, P2 and P2 Pro alike.
 
 With the gain test active (the default), every mode switch holds the data of the device back
 for at least 10 s while it settles.

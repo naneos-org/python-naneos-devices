@@ -26,7 +26,12 @@ The installer
   your user and restarts it on failure and on every boot,
 * switches Bluetooth on, starts `bluetoothd` with `--experimental` (needed for passive BLE
   scanning) and disables WiFi power save (on a Pi Zero 2 W the sleeping WiFi link stalls
-  uploads and costs Bluetooth airtime, the two radios share one antenna).
+  uploads and costs Bluetooth airtime, the two radios share one antenna),
+* sets the BLE supervision timeout to 5 s (`ConnectionSupervisionTimeout=500` in
+  `/etc/bluetooth/main.conf`). With the BlueZ default of 420 ms a short WiFi burst on the
+  shared antenna is enough to drop a link, which shows as a reconnect every few seconds.
+  On a Pi that was already running, reboot once afterwards: the kernel keeps the old value
+  for devices it already knows.
 
 It does not upgrade the operating system; run `sudo apt full-upgrade` yourself if you want
 that.
@@ -68,6 +73,16 @@ ExecStart=/home/pi/naneos-uploader/.venv/bin/naneos-uploader --ble-allow 8617,87
 ```
 
 followed by `sudo systemctl restart naneos_uploader.service`.
+
+If the links drop every few seconds (`Disconnect callback called` followed by
+`Connected to ...`), check the supervision timeout while the service connects:
+
+```bash
+sudo timeout 40 btmon -T 2>/dev/null | grep -i "supervision timeout" | sort | uniq -c &
+sleep 2; sudo systemctl restart naneos_uploader.service; wait
+```
+
+It has to print `5000 msec`. If it prints `420 msec`, reboot the Pi.
 
 ## 4. Upgrading
 

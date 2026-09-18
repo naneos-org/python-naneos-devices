@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 from naneos import NaneosDeviceDataPoint, NaneosDeviceManager
-from naneos.usb.partector import Partector2Pro
 
 WINDOW_SECONDS = 10
 REFRESH_MS = 500
@@ -28,7 +27,6 @@ class LivePlot:
     def __init__(self, serial_number: int | None, sample_rate_hz: int) -> None:
         self.serial_number = serial_number
         self.sample_rate_hz = sample_rate_hz
-        self.rate_is_set = False
 
         # Bounded: if plotting falls behind, the oldest points are dropped.
         self.live: queue.Queue[NaneosDeviceDataPoint] = queue.Queue(maxsize=10_000)
@@ -36,6 +34,7 @@ class LivePlot:
             use_ble=False,  # USB only
             upload_active=False,
             serial_gain_test=False,  # the gain test holds the data back for 10 s after a connect
+            sample_rate_hz=sample_rate_hz,  # a P2 Pro leaves its size distribution mode for it
         )
         self.manager.register_live_queue(self.live)
 
@@ -69,8 +68,6 @@ class LivePlot:
             self.times.append(point.unix_timestamp / 1000)
             self.currents.append(point.diffusion_current)
 
-        self._set_rate_once()
-
         if self.times:
             now = time.time()
             self.line.set_data([t - now for t in self.times], list(self.currents))
@@ -81,21 +78,6 @@ class LivePlot:
                 f"({self.sample_rate_hz} Hz)"
             )
         return (self.line,)
-
-    def _set_rate_once(self) -> None:
-        if self.rate_is_set or self.serial_number is None:
-            return
-        try:
-            device = self.manager.get_device(self.serial_number)
-        except KeyError:
-            return  # not connected yet, try again with the next refresh
-
-        if isinstance(device, Partector2Pro):
-            # In its size distribution mode a P2 Pro sends a line every 6-21 s only.
-            device.set_size_distribution(False, self.sample_rate_hz)
-        else:
-            device.set_sample_rate(self.sample_rate_hz)
-        self.rate_is_set = True
 
     def run(self) -> None:
         self.manager.start()
