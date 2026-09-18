@@ -60,7 +60,9 @@ class BlePartector(PartectorDevice):
         timeout = timeout or PartectorBleConnection.QUERY_TIMEOUT_SECONDS
         return self._run(self._connection.query(command, timeout), timeout)
 
-    def set_sample_rate(self, hz: int) -> None:
+    def set_sample_rate(self, hz: int | None) -> None:
+        if hz is None:
+            return  # 1 Hz is the default over BLE
         raise NotSupportedError(
             "The data rate is fixed at 1 Hz over BLE; it can only be changed over USB."
         )

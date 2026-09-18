@@ -1,5 +1,7 @@
 """Hardware-free tests for PartectorSerialManager's data hand-over."""
 
+import pytest
+
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
 from naneos.usb.partector.manager import PartectorSerialManager
 
@@ -59,3 +61,26 @@ def test_fetch_collects_from_every_device_and_reports_them() -> None:
     assert manager.get_connected_serial_numbers() == [3, 1, 2]
     assert [device.serial_number for device in manager.get_devices()] == [3, 1, 2]
     assert manager.get_settling_serial_numbers() == []
+
+
+def test_sample_rate_setting_is_applied_to_every_device_by_the_loop() -> None:
+    manager = PartectorSerialManager(sample_rate_hz=10)
+    assert manager.sample_rate_hz == 10
+
+    rates: list[tuple[int, int | None]] = []
+    for serial_number in (1, 2):
+        device = _FakeDevice(serial_number, [])
+        device.set_sample_rate = lambda hz, sn=serial_number: rates.append((sn, hz))  # type: ignore[attr-defined]
+        manager._devices[f"/dev/{serial_number}"] = device  # type: ignore[assignment]
+
+    manager._apply_sample_rate()
+    assert rates == []  # nothing changed since the devices connected with the setting
+
+    manager.sample_rate_hz = None
+    manager._apply_sample_rate()
+    assert rates == [(1, None), (2, None)]
+
+    with pytest.raises(ValueError):
+        manager.sample_rate_hz = 2
+    with pytest.raises(ValueError):
+        PartectorSerialManager(sample_rate_hz=5)

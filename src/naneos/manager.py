@@ -39,6 +39,7 @@ class NaneosDeviceManager(threading.Thread):
         ble_max_links: int = PartectorBleManager.DEFAULT_MAX_LINKS,
         serial_gain_test: bool = True,
         serial_pulse_diagnostics: bool = True,
+        sample_rate_hz: int | None = None,
     ) -> None:
         """
         Args:
@@ -51,6 +52,7 @@ class NaneosDeviceManager(threading.Thread):
             serial_gain_test: run the electrometer gain test on USB devices. Their data is
                 held back for at least 10 s after every connect while it settles.
             serial_pulse_diagnostics: let USB devices report the pulse diagnostics.
+            sample_rate_hz: the data rate of the USB devices, see the property.
         """
         super().__init__(daemon=True)
         self._use_serial = use_serial
@@ -59,6 +61,7 @@ class NaneosDeviceManager(threading.Thread):
         self._ble_max_links = ble_max_links
         self._serial_gain_test = serial_gain_test
         self._serial_pulse_diagnostics = serial_pulse_diagnostics
+        self._sample_rate_hz = PartectorSerialManager.check_sample_rate(sample_rate_hz)
         self._upload_active = upload_active
         self._next_upload_time = time.time() + gathering_interval_seconds
         self.gathering_interval_seconds = gathering_interval_seconds
@@ -107,6 +110,21 @@ class NaneosDeviceManager(threading.Thread):
     @upload_active.setter
     def upload_active(self, active: bool) -> None:
         self._upload_active = active
+
+    @property
+    def sample_rate_hz(self) -> int | None:
+        """The data rate of every USB device: 1, 10 or 100 Hz, or None for the
+        default of each device (1 Hz, size distribution mode on a P2 Pro).
+        Takes effect within a second, also while running; BLE stays at 1 Hz.
+        The upload to naneos stays at 1 Hz whatever is set here.
+        """
+        return self._sample_rate_hz
+
+    @sample_rate_hz.setter
+    def sample_rate_hz(self, hz: int | None) -> None:
+        self._sample_rate_hz = PartectorSerialManager.check_sample_rate(hz)
+        if self._manager_serial is not None:
+            self._manager_serial.sample_rate_hz = hz
 
     @property
     def gathering_interval_seconds(self) -> int:
@@ -233,8 +251,9 @@ class NaneosDeviceManager(threading.Thread):
         """Send a command to a device and return its answer, see PartectorDevice.query()."""
         return self.get_device(serial_number).query(command, timeout)
 
-    def set_sample_rate(self, serial_number: int, hz: int) -> None:
-        """Set the data rate of a device on USB, see PartectorDevice.set_sample_rate().
+    def set_sample_rate(self, serial_number: int, hz: int | None) -> None:
+        """Set the data rate of one device on USB, see PartectorDevice.set_sample_rate().
+        For all devices at once, and for the ones that connect later, set sample_rate_hz.
 
         The output queue gets the data at this rate; the upload stays at 1 Hz.
         """
@@ -249,7 +268,10 @@ class NaneosDeviceManager(threading.Thread):
             self._manager_serial,
             self._use_serial,
             lambda: PartectorSerialManager(
-                self._serial_gain_test, self._serial_pulse_diagnostics, self._on_live_point
+                self._serial_gain_test,
+                self._serial_pulse_diagnostics,
+                self._on_live_point,
+                self._sample_rate_hz,
             ),
             "serial",
         )

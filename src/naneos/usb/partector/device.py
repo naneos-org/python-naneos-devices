@@ -59,7 +59,7 @@ class UsbPartector(PartectorDevice, ABC):
         self,
         serial_number: int | None = None,
         port: str | None = None,
-        sample_rate_hz: int = 1,
+        sample_rate_hz: int | None = None,
         transport: SerialTransport | None = None,
         point_listener: PointListener | None = None,
     ) -> None:
@@ -68,7 +68,8 @@ class UsbPartector(PartectorDevice, ABC):
         Args:
             serial_number: find the device with this serial number on the USB ports.
             port: use this port instead of searching for the serial number.
-            sample_rate_hz: 0 (no output), 1, 10 or 100.
+            sample_rate_hz: 0 (no output), 1, 10, 100 or None for the default of the
+                device, see set_sample_rate().
             transport: an already constructed transport; replaces serial_number / port lookup.
             point_listener: called with every data point as it arrives, on the reader
                 thread, in addition to get_data(). Must be quick and must not block.
@@ -112,7 +113,7 @@ class UsbPartector(PartectorDevice, ABC):
         try:
             self._read_device_info(expected_serial_number=serial_number)
             self._configure()
-            self._start_output(sample_rate_hz)
+            self.set_sample_rate(sample_rate_hz)
         except Exception:
             self.close(reset_device=False)
             raise
@@ -160,7 +161,9 @@ class UsbPartector(PartectorDevice, ABC):
             except queue.Empty:
                 raise TimeoutError(f"SN{self._sn}: no answer to {command!r}.") from None
 
-    def set_sample_rate(self, hz: int) -> None:
+    def set_sample_rate(self, hz: int | None) -> None:
+        if hz is None:
+            hz = 1
         if hz not in self.SAMPLE_RATE_CODES:
             raise ValueError(f"Sample rate must be one of {sorted(self.SAMPLE_RATE_CODES)} Hz.")
         self.write(f"X000{self.SAMPLE_RATE_CODES[hz]}!")
@@ -216,9 +219,6 @@ class UsbPartector(PartectorDevice, ABC):
     @abstractmethod
     def _configure(self) -> None:
         """Select self._data_structure for the firmware and send the device settings."""
-
-    def _start_output(self, sample_rate_hz: int) -> None:
-        self.set_sample_rate(sample_rate_hz)
 
     def _configure_diagnostics(self, gain_test: bool, pulse_diagnostics: bool) -> None:
         """Switch the optional P2 / P2 Pro output blocks on or off.
@@ -450,7 +450,7 @@ class Partector2(UsbPartector):
         self,
         serial_number: int | None = None,
         port: str | None = None,
-        sample_rate_hz: int = 1,
+        sample_rate_hz: int | None = None,
         gain_test_active: bool = True,
         output_pulse_diagnostics: bool = True,
         transport: SerialTransport | None = None,
@@ -484,11 +484,14 @@ class Partector2(UsbPartector):
 
 
 class Partector2Pro(UsbPartector):
-    """The P2 Pro has two output modes.
+    """The P2 Pro has two output modes, selected with set_sample_rate().
 
-    Size distribution (default): one line with the size distribution every few
-    seconds, paced by the device; sample_rate_hz is None.
-    P2 mode: the plain P2 line at 1, 10 or 100 Hz, without size distribution.
+    Size distribution (None, the default): one line with the size distribution
+    per inversion cycle, paced by the device; sample_rate_hz is None.
+    P2 mode (1, 10 or 100): the plain P2 line at that rate, without size distribution.
+
+    With the gain test active, every switch between the modes holds the data
+    back until the device has settled again (see is_settling).
     """
 
     DEVICE_TYPE = DeviceType.P2PRO
@@ -499,41 +502,27 @@ class Partector2Pro(UsbPartector):
         self,
         serial_number: int | None = None,
         port: str | None = None,
-        size_distribution: bool = True,
-        sample_rate_hz: int = 1,
+        sample_rate_hz: int | None = None,
         gain_test_active: bool = True,
         output_pulse_diagnostics: bool = True,
         transport: SerialTransport | None = None,
         point_listener: PointListener | None = None,
     ) -> None:
-        """See UsbPartector. sample_rate_hz only applies with size_distribution=False."""
-        self._size_distribution = size_distribution
+        """See UsbPartector."""
+        self._p2_mode = False  # True once the device was switched to the plain P2 mode
         self._want_gain_test = gain_test_active
         self._want_pulse_diagnostics = output_pulse_diagnostics
         super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
 
-    @property
-    def size_distribution(self) -> bool:
-        return self._size_distribution
-
-    def set_size_distribution(self, active: bool, sample_rate_hz: int = 1) -> None:
-        """Switch between the two output modes; sample_rate_hz is for the P2 mode.
-
-        With the gain test active, every switch holds the data back until the
-        device has settled again (see is_settling).
-        """
-        if active:
+    def set_sample_rate(self, hz: int | None) -> None:
+        if hz is None:
             self._enter_size_dist_mode()
+        elif hz == 0:
+            super().set_sample_rate(0)  # the mode stays
         else:
-            self._enter_p2_mode(sample_rate_hz)
-
-    def set_sample_rate(self, hz: int) -> None:
-        if self._size_distribution and hz != 0:
-            raise NotSupportedError(
-                "The size distribution mode has no selectable rate. "
-                "Call set_size_distribution(False) first."
-            )
-        super().set_sample_rate(hz)
+            if not self._p2_mode:
+                self._enter_p2_mode()
+            super().set_sample_rate(hz)
 
     def _configure(self) -> None:
         """Nothing to do here: a mode switch resets the device settings, so they
@@ -542,7 +531,7 @@ class Partector2Pro(UsbPartector):
     def _silence_before_probe_seconds(self) -> float:
         # In size distribution mode one line per inversion cycle is normal;
         # the cycle grows with the integration time (21 s at 16 s, FW420).
-        if self._size_distribution:
+        if not self._p2_mode:
             return max(self.SILENCE_BEFORE_PROBE_SECONDS, 2.0 * self._integration_time + 10.0)
         return self.SILENCE_BEFORE_PROBE_SECONDS
 
@@ -550,22 +539,15 @@ class Partector2Pro(UsbPartector):
         self.write("A0002!")  # activates antispikes
         self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
 
-    def _start_output(self, sample_rate_hz: int) -> None:
-        self.set_size_distribution(self._size_distribution, sample_rate_hz)
-
-    def _enter_p2_mode(self, hz: int) -> None:
+    def _enter_p2_mode(self) -> None:
         if self._fw < self.MIN_FIRMWARE_P2_MODE:
             raise NotSupportedError(
                 f"The P2 mode needs firmware {self.MIN_FIRMWARE_P2_MODE} or newer."
             )
-        if hz not in self.SAMPLE_RATE_CODES:
-            raise ValueError(f"Sample rate must be one of {sorted(self.SAMPLE_RATE_CODES)} Hz.")
-
         self.write("M0000!")  # deactivates size dist mode
         self._apply_settings()
         self._data_structure = {**PARTECTOR2_DATA_STRUCTURE, **self._diagnostic_columns()}
-        self._size_distribution = False
-        super().set_sample_rate(hz)
+        self._p2_mode = True
 
     def _enter_size_dist_mode(self) -> None:
         base = (
@@ -577,5 +559,5 @@ class Partector2Pro(UsbPartector):
         self.write("M0004!")  # activates size dist mode
         self._apply_settings()
         self._data_structure = {**base, **self._diagnostic_columns()}
-        self._size_distribution = True
+        self._p2_mode = False
         self._sample_rate_hz = None  # paced by the device

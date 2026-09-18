@@ -5,6 +5,7 @@ A Partector on USB and a Partector on a BLE link are used the same way:
     device.write("X0001!")            # a command without an answer
     fields = device.query("f?")       # a command with an answer -> ["422"]
     device.set_sample_rate(10)        # USB only, see NotSupportedError
+    device.set_sample_rate(None)      # back to the default of the device
 """
 
 from abc import ABC, abstractmethod
@@ -70,13 +71,15 @@ class PartectorDevice(ABC):
         """
 
     @abstractmethod
-    def set_sample_rate(self, hz: int) -> None:
-        """Set the data rate to 0 (off), 1, 10 or 100 Hz.
+    def set_sample_rate(self, hz: int | None) -> None:
+        """Set the data rate to 0 (off), 1, 10 or 100 Hz, or None for the default
+        of the device: 1 Hz, or the size distribution mode of a P2 Pro, where the
+        device sets the pace itself.
 
         The upload to naneos is limited to 1 Hz whatever is set here.
 
         Raises:
-            NotSupportedError: over BLE, where the rate is fixed at 1 Hz.
+            NotSupportedError: over BLE, where the rate is fixed at 1 Hz (None is fine).
             ValueError: for a rate the device does not offer.
         """
 

@@ -154,7 +154,7 @@ for device in manager.get_devices():
     device.write("A0002!")  # a command without an answer
 
     try:
-        device.set_sample_rate(10)  # 0 (off), 1, 10 or 100 Hz
+        device.set_sample_rate(10)  # 0 (off), 1, 10 or 100 Hz, None for the device default
     except NotSupportedError:
         pass  # over BLE the rate is fixed at 1 Hz, it can only be changed over USB
 
@@ -162,14 +162,18 @@ for device in manager.get_devices():
 manager.query(8617, "name?")
 manager.write(8617, "A0002!")
 manager.set_sample_rate(8617, 100)
+
+# or set the rate of every USB device, now and for the ones plugged in later
+manager.sample_rate_hz = 10  # also NaneosDeviceManager(sample_rate_hz=10)
 ```
 - An unknown serial number raises `KeyError`, a lost device `ConnectionError`, a missing answer
   `TimeoutError`. Calls are safe from any thread.
 - Your queue receives the data at the rate you set. **The upload to naneos is always limited to
   1 Hz.** 100 Hz is meant for tests.
-- The rate is not remembered: a device that reconnects starts at 1 Hz again.
-- A Partector 2 Pro on USB starts in size distribution mode, where it sets its own pace. See the
-  [documentation](https://naneos-org.github.io/python-naneos-devices/user-guide/devices/) for its modes and the other details.
+- A rate set on one device is not remembered: a device that reconnects gets `manager.sample_rate_hz`.
+- A Partector 2 Pro on USB starts in size distribution mode, where it sets its own pace
+  (`sample_rate_hz` is `None`); a rate switches it to the plain P2 line. See the
+  [documentation](https://naneos-org.github.io/python-naneos-devices/user-guide/devices/) for the details.
 
 # Logging
 The library logs to loggers below `naneos` and prints nothing by default:
