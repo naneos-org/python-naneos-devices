@@ -42,14 +42,17 @@ class UsbPartector(PartectorDevice, ABC):
     # The "X000n!" code behind each rate.
     SAMPLE_RATE_CODES: ClassVar[dict[int, int]] = {0: 0, 1: 1, 10: 2, 100: 3}
 
-    QUERY_TIMEOUT_SECONDS = 0.25
+    # Normally answered within a few ms, but a P2 Pro pauses for up to ~0.7 s
+    # once per size distribution cycle (see scan.py).
+    QUERY_TIMEOUT_SECONDS = 1.0
     # Used for the queries of this class only, which are safe to repeat.
-    QUERY_RETRIES = 7
+    QUERY_RETRIES = 3
     # Parsed points waiting for get_data(): ten seconds at 100 Hz.
     DATA_QUEUE_MAXSIZE = 1000
     # A silent device is asked for its serial number to see if it is still there.
+    # Device specific: see _silence_before_probe_seconds().
     SILENCE_BEFORE_PROBE_SECONDS = 10.0
-    PROBE_TIMEOUT_SECONDS = 1.0
+    PROBE_TIMEOUT_SECONDS = 2.0
     PORT_SCAN_RETRIES = 5
 
     def __init__(
@@ -322,7 +325,7 @@ class UsbPartector(PartectorDevice, ABC):
                 line = self._transport.readline()
                 if line:
                     self._handle_line(line)
-                elif time.monotonic() - self._last_line_at > self.SILENCE_BEFORE_PROBE_SECONDS:
+                elif time.monotonic() - self._last_line_at > self._silence_before_probe_seconds():
                     self._probe()
             except ConnectionError as e:
                 if not self._stop_event.is_set():
@@ -365,6 +368,10 @@ class UsbPartector(PartectorDevice, ABC):
         if self._point_listener is not None:
             self._point_listener(point)  # an exception is logged by the reader loop
 
+    def _silence_before_probe_seconds(self) -> float:
+        """How long the device may send nothing before it is probed."""
+        return self.SILENCE_BEFORE_PROBE_SECONDS
+
     def _probe(self) -> None:
         """Ask a silent device for its serial number. Raises ConnectionError if it is gone.
 
@@ -375,7 +382,7 @@ class UsbPartector(PartectorDevice, ABC):
             return  # a query is in flight and will see for itself
 
         try:
-            logger.info(f"SN{self._sn} {self._transport.port}: checking device connection...")
+            logger.debug(f"SN{self._sn} {self._transport.port}: checking device connection...")
             self._drain_replies()
             self._transport.write("N?")
 
@@ -531,6 +538,13 @@ class Partector2Pro(UsbPartector):
     def _configure(self) -> None:
         """Nothing to do here: a mode switch resets the device settings, so they
         are sent by _apply_settings() after every switch."""
+
+    def _silence_before_probe_seconds(self) -> float:
+        # In size distribution mode one line per inversion cycle is normal;
+        # the cycle grows with the integration time (21 s at 16 s, FW420).
+        if self._size_distribution:
+            return max(self.SILENCE_BEFORE_PROBE_SECONDS, 2.0 * self._integration_time + 10.0)
+        return self.SILENCE_BEFORE_PROBE_SECONDS
 
     def _apply_settings(self) -> None:
         self.write("A0002!")  # activates antispikes

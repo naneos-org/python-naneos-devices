@@ -186,6 +186,7 @@ enable_file_logging("logs/", LEVEL_INFO)  # appends to logs/naneos-devices.log
 | [`quick_start.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/quick_start.py) | upload everything in reach |
 | [`queue_handoff.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/queue_handoff.py) | process the snapshots yourself |
 | [`live_data.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_data.py) | every data point the moment it arrives |
+| [`live_multi_device.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_multi_device.py) | several USB devices at 10 Hz on the live queue |
 | [`live_plot.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_plot.py) | live plot of the diffusion current of a device on USB (needs `pip install matplotlib`) |
 | [`runtime_controls.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/runtime_controls.py) | switch transports, upload and interval while running |
 | [`device_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/device_commands.py) | commands, answers and the data rate |

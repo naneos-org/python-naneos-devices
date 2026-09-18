@@ -24,9 +24,12 @@ def main() -> None:
     first = found[0]
     device = DEVICE_CLASSES[first.kind](port=first.port)
 
+    # With the gain test active (the default) the data is held back while the
+    # device settles, and a P2 Pro in size distribution mode sends one line
+    # per inversion cycle only, so the first point can take a while.
     data: dict[int, pd.DataFrame] = {}
     try:
-        for _ in range(5):
+        for _ in range(20):
             time.sleep(3)
             data = add_data_points_to_dict(data, device.get_data())
             df = next(iter(data.values()), pd.DataFrame())
@@ -34,7 +37,8 @@ def main() -> None:
                 print(f"SN{first.serial_number} on {first.port}")
                 print(df.dropna(axis=1, how="all"))
                 break
-            print("No data received yet...")
+            state = "settling" if device.is_settling else "waiting for the first line"
+            print(f"No data received yet ({state})...")
     finally:
         device.close()
 

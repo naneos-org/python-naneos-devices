@@ -1,6 +1,7 @@
 """Find Partectors on the serial ports of this machine."""
 
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -28,7 +29,11 @@ _PARTECTOR_PID = 5
 # so a port is only given up after this many immediate retries.
 _PORT_OPEN_RETRIES = 100
 
-_ANSWER_TIMEOUT_SECONDS = 0.25
+# A P2 Pro stops answering for up to ~0.7 s once per size distribution cycle
+# (measured on FW420). A shorter timeout runs out of retries during that pause
+# and the late answers then arrive one question behind, which is how a P2 Pro
+# gets taken for a P2 (and switched to the plain P2 output by "X0001!").
+_ANSWER_TIMEOUT_SECONDS = 1.0
 _ASK_RETRIES = 3
 
 
@@ -104,9 +109,9 @@ def _scan_port(port: str) -> FoundDevice | None:
         if serial_number is None:
             return None  # every port is scanned, most have no Partector behind them
 
-        firmware = _ask_int(transport, "f?") or 0
+        firmware = _ask_int(transport, "f?")
         kind = _classify(transport, serial_number, firmware)
-        return FoundDevice(serial_number, port, kind, firmware)
+        return FoundDevice(serial_number, port, kind, firmware or 0)
     except ConnectionError as e:
         logger.debug(f"Scanning {port} failed: {e}")
         return None
@@ -114,51 +119,64 @@ def _scan_port(port: str) -> FoundDevice | None:
         transport.close()
 
 
-def _classify(transport: SerialTransport, serial_number: int, firmware: int) -> DeviceType:
+def _classify(transport: SerialTransport, serial_number: int, firmware: int | None) -> DeviceType:
     if serial_number < _P1_MAX_SERIAL_NUMBER:
         return DeviceType.P1
-    if firmware < _FW_WITH_NAME_QUERY:
+    # An unknown firmware (no answer to "f?") is not taken for an old one: the
+    # name decides, so that a P2 Pro is never silently handled as a P2.
+    if firmware is not None and firmware < _FW_WITH_NAME_QUERY:
         return DeviceType.P2
 
     # Only a known name counts: a late or cut off line must not turn a P2 Pro
     # into a P2, which would then be read with the wrong line layout.
     for _ in range(_ASK_RETRIES):
-        name = _ask(transport, "name?")
-        if name in _DEVICE_NAMES:
+        name = _ask(transport, "name?", lambda answer: answer in _DEVICE_NAMES)
+        if name is not None:
             return _DEVICE_NAMES[name]
     logger.warning(f"SN{serial_number} did not tell its name, treating it as a P2.")
     return DeviceType.P2
 
 
-def _ask(transport: SerialTransport, command: str) -> str | None:
-    """The single field answer to a command, or None. The device must be silenced."""
+def _ask(
+    transport: SerialTransport, command: str, accept: Callable[[str], bool] = lambda _: True
+) -> str | None:
+    """The single field answer to a command, or None. The device must be silenced.
+
+    Lines that accept() rejects are skipped: they are late answers to an
+    earlier question or verbose lines that were still on their way.
+    """
+    transport.discard_input()  # the late answer to an earlier question
     transport.write(command)
     deadline = time.monotonic() + _ANSWER_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         line = transport.readline()
-        # A line with tabs is a verbose line that was still on its way.
-        if line and "\t" not in line:
+        if line and "\t" not in line and accept(line):
             return line
     return None
 
 
 def _ask_int(transport: SerialTransport, command: str) -> int | None:
     for _ in range(_ASK_RETRIES):
-        answer = _ask(transport, command)
-        try:
-            if answer is not None:
-                return int(answer)
-        except ValueError:
-            pass
+        answer = _ask(transport, command, _is_int)
+        if answer is not None:
+            return int(answer)
     return None
+
+
+def _is_int(line: str) -> bool:
+    try:
+        int(line)
+    except ValueError:
+        return False
+    return True
 
 
 def _ask_serial_number(transport: SerialTransport) -> int | None:
     """The serial number, once three reads in a row agree on it."""
     for _ in range(3):
-        numbers = [_ask_int(transport, "N?") for _ in range(3)]
+        numbers = [_ask(transport, "N?", _is_int) for _ in range(3)]
         if numbers[0] is not None and numbers[0] == numbers[1] == numbers[2]:
-            return numbers[0]
+            return int(numbers[0])
         if numbers == [None, None, None]:
             return None
     return None
