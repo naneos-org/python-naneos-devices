@@ -91,7 +91,7 @@ class LivePlot:
             return  # not connected yet, try again with the next refresh
 
         if isinstance(device, Partector2Pro):
-            # In its size distribution mode a P2 Pro sends a line about every 6 s only.
+            # In its size distribution mode a P2 Pro sends a line every 6-21 s only.
             device.set_size_distribution(False, self.sample_rate_hz)
         else:
             device.set_sample_rate(self.sample_rate_hz)

@@ -49,12 +49,14 @@ the live queue: give it a `maxsize`, and when it is full the oldest point is dro
 room. `manager.live_points_dropped` counts them. An unbounded queue that nobody reads grows
 without limit, at 100 Hz by about 200 kB per second and device.
 
-A P2 Pro in size distribution mode delivers a point about every 6 s, also on the live queue.
+A P2 Pro in size distribution mode delivers one point per inversion cycle (6–21 s, depending
+on its integration time), also on the live queue.
 
 ## Partector 2 Pro modes (USB)
 
-A P2 Pro on USB starts in **size distribution mode**: one line with the size distribution about
-every 6 s, paced by the device. `sample_rate_hz` is `None` and `set_sample_rate()` raises
+A P2 Pro on USB starts in **size distribution mode**: one line with the size distribution per
+inversion cycle (6–21 s, depending on the integration time), paced by the device.
+`sample_rate_hz` is `None` and `set_sample_rate()` raises
 `NotSupportedError`. To get the plain P2 line at a selectable rate, switch the mode on the handle:
 
 ```python
