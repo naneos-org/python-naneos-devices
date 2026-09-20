@@ -20,8 +20,8 @@ curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/ma
 The installer
 
 * installs `python3-venv` and `iw`,
-* creates a virtual environment in `~/naneos-uploader` and installs `naneos-devices` from the
-  `master` branch of the repository,
+* creates a virtual environment in `~/naneos-uploader` and installs the newest release of
+  `naneos-devices` from [PyPI](https://pypi.org/project/naneos-devices/),
 * writes the `naneos_uploader` systemd service, which runs the `naneos-uploader` command as
   your user and restarts it on failure and on every boot,
 * switches Bluetooth on, starts `bluetoothd` with `--experimental` (needed for passive BLE
@@ -36,23 +36,21 @@ The installer
 It does not upgrade the operating system; run `sudo apt full-upgrade` yourself if you want
 that.
 
-To install a release tag or a test branch instead of `master`:
+Re-running the installer upgrades to the newest release. To install another version, add one of
+these options after `sudo bash -s --`:
+
+| Option | Installs |
+|---|---|
+| `--version 2.0.4rc1` | exactly this version from PyPI, for example a release candidate |
+| `--pre` | the newest version on PyPI with pre-releases included: `2.0.4rc1` while that is the newest upload, `2.0.4` once it is released |
+| `--ref release_test` | a git branch or tag from GitHub instead of PyPI, for code that is not released yet |
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --ref v2.0.0
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --version 2.0.4rc1
 ```
 
-To try a release candidate that was published to TestPyPI (see
-[Releasing](../development/contributing.md#releasing)), pass its version, or `latest` for the
-newest upload:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --testpypi 2.0.4rc1
-```
-
-Only the `naneos-devices` wheel comes from TestPyPI, its dependencies are installed from PyPI as
-usual. The first log line of the service names the wheel it runs. Re-run the installer without the
-option to go back to `master`.
+The dependencies are always stable releases. The first log line of the service tells where the
+package came from (`PyPI` or the git archive URL).
 
 ## 3. Check that it runs
 

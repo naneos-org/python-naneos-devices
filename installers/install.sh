@@ -1,38 +1,48 @@
 #!/usr/bin/env bash
 # naneos uploader installer for Raspberry Pi OS (Bookworm or newer, Python 3.11+).
 #
-# Installs the naneos-devices package into a virtual environment and runs the
+# Installs the naneos-devices package from PyPI into a virtual environment and runs the
 # `naneos-uploader` command as a systemd service that starts on boot.
 # Re-running the installer upgrades an existing installation.
 #
 # Usage (as root):
 #   curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh \
-#     | sudo bash -s -- [--ref <branch-or-tag> | --testpypi <version>] [--user <name>]
+#     | sudo bash -s -- [--version <version> | --pre | --ref <branch-or-tag>] [--user <name>]
 #
-#   --ref       git branch or tag to install, default: master
-#               e.g. --ref release_test for hardware testing, --ref v2.0.0 for a release
-#   --testpypi  install a version published to TestPyPI instead of a git ref,
-#               e.g. --testpypi 2.0.4rc1, or --testpypi latest for the newest one
-#   --user      unprivileged user that runs the service, default: the sudo user
+#   (default)  the newest release on PyPI
+#   --version  this version from PyPI, e.g. --version 2.0.4rc1
+#   --pre      the newest version on PyPI, pre-releases included
+#              (2.0.4rc1 if that is newer than the last release, else the release)
+#   --ref      a git branch or tag from GitHub instead of PyPI,
+#              e.g. --ref release_test for hardware testing before a merge
+#   --user     unprivileged user that runs the service, default: the sudo user
 set -euo pipefail
 
 REPO="naneos-org/python-naneos-devices"
-REF="master"
-TESTPYPI_VERSION=""
+REF=""
+PYPI_VERSION=""
+PRE=""
+SOURCES=0
 USER_NAME="${SUDO_USER:-pi}"
 SERVICE="naneos_uploader"
 
-usage() { sed -n '2,17p' "$0" 2>/dev/null || true; }
+usage() { sed -n '2,18p' "$0" 2>/dev/null || true; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --ref) REF="$2"; shift 2 ;;
-    --testpypi) TESTPYPI_VERSION="${2#v}"; shift 2 ;;
+    --ref) REF="$2"; SOURCES=$((SOURCES + 1)); shift 2 ;;
+    --version) PYPI_VERSION="${2#v}"; SOURCES=$((SOURCES + 1)); shift 2 ;;
+    --pre) PRE="--pre"; SOURCES=$((SOURCES + 1)); shift ;;
     --user) USER_NAME="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
+
+if [[ "$SOURCES" -gt 1 ]]; then
+  echo "Use only one of --ref, --version and --pre."
+  exit 1
+fi
 
 if [[ "$EUID" -ne 0 ]]; then
   echo "Please run the installer with root rights: sudo $0"
@@ -46,11 +56,18 @@ if [[ -z "$HOME_DIR" ]]; then
 fi
 APP_DIR="$HOME_DIR/naneos-uploader"
 PACKAGE_URL="https://github.com/$REPO/archive/$REF.tar.gz"
-WHEEL_DIR="$APP_DIR/testpypi"
-if [[ -n "$TESTPYPI_VERSION" ]]; then
-  SOURCE="TestPyPI $TESTPYPI_VERSION"
+if [[ -n "$REF" ]]; then
+  REQUIREMENT=""
+  SOURCE="GitHub $REF"
+elif [[ -n "$PYPI_VERSION" ]]; then
+  REQUIREMENT="naneos-devices==$PYPI_VERSION"
+  SOURCE="PyPI $PYPI_VERSION"
+elif [[ -n "$PRE" ]]; then
+  REQUIREMENT="naneos-devices"
+  SOURCE="PyPI, newest version including pre-releases"
 else
-  SOURCE="$REF"
+  REQUIREMENT="naneos-devices"
+  SOURCE="PyPI, newest release"
 fi
 
 echo ">> naneos uploader installer"
@@ -64,7 +81,7 @@ echo ">> Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq python3-venv python3-pip iw >/dev/null
 
-# 2) Virtual environment with the package from the chosen git ref or TestPyPI
+# 2) Virtual environment with the package from PyPI or the chosen git ref
 echo ">> Installing naneos-devices ($SOURCE) into $APP_DIR/.venv ..."
 mkdir -p "$APP_DIR"
 chown "$USER_NAME":"$USER_NAME" "$APP_DIR"
@@ -74,36 +91,39 @@ sudo -u "$USER_NAME" bash -c "
   [ -d .venv ] || python3 -m venv .venv
   .venv/bin/pip install --quiet --upgrade pip
 "
-if [[ -n "$TESTPYPI_VERSION" ]]; then
-  # Only the wheel itself comes from TestPyPI: anyone can register any name
-  # there, so the dependencies must not be looked up on it. PIP_CONFIG_FILE
-  # keeps the piwheels index of Raspberry Pi OS out of this one download.
-  # Installing the downloaded file then resolves the dependencies as usual.
-  if [[ "$TESTPYPI_VERSION" == "latest" ]]; then
-    REQUIREMENT="naneos-devices"
-  else
-    REQUIREMENT="naneos-devices==$TESTPYPI_VERSION"
-  fi
+if [[ -n "$REQUIREMENT" ]]; then
+  # The package first, without its dependencies: --pre would otherwise let
+  # pre-releases of numpy, pandas and the like in as well. The forced reinstall
+  # also replaces an installation from a git ref with the same version number.
+  # The second step pins what the first one chose and resolves the dependencies.
   sudo -u "$USER_NAME" bash -c "
     set -e
     cd '$APP_DIR'
-    rm -rf '$WHEEL_DIR'
-    PIP_CONFIG_FILE=/dev/null .venv/bin/pip download --quiet --no-deps --pre --only-binary :all: \\
-      --index-url https://test.pypi.org/simple/ --dest '$WHEEL_DIR' '$REQUIREMENT'
+    .venv/bin/pip install --quiet --force-reinstall --no-deps $PRE '$REQUIREMENT'
   "
-  PACKAGE_URL="file://$(ls "$WHEEL_DIR"/naneos_devices-*.whl)"
+  RESOLVED="$(sudo -u "$USER_NAME" "$APP_DIR/.venv/bin/python" -c "
+from importlib.metadata import version
+print(version('naneos-devices'))
+")"
+  sudo -u "$USER_NAME" bash -c "
+    set -e
+    cd '$APP_DIR'
+    .venv/bin/pip install --quiet --upgrade 'naneos-devices==$RESOLVED'
+  "
+  PACKAGE_URL="PyPI"
+else
+  # Two pip steps: the first resolves and upgrades the dependencies, the second
+  # replaces the package itself. pip keeps an installed package when the
+  # version number is unchanged, even if the archive URL (the git ref) differs,
+  # so switching between branches or a branch and master needs the forced,
+  # dependency-free reinstall.
+  sudo -u "$USER_NAME" bash -c "
+    set -e
+    cd '$APP_DIR'
+    .venv/bin/pip install --quiet --upgrade '$PACKAGE_URL'
+    .venv/bin/pip install --quiet --force-reinstall --no-deps '$PACKAGE_URL'
+  "
 fi
-# Two pip steps: the first resolves and upgrades the dependencies, the second
-# replaces the package itself. pip keeps an installed package when the
-# version number is unchanged, even if the archive URL (the git ref) differs,
-# so switching between branches or a branch and master needs the forced,
-# dependency-free reinstall.
-sudo -u "$USER_NAME" bash -c "
-  set -e
-  cd '$APP_DIR'
-  .venv/bin/pip install --quiet --upgrade '$PACKAGE_URL'
-  .venv/bin/pip install --quiet --force-reinstall --no-deps '$PACKAGE_URL'
-"
 VERSION="$("$APP_DIR/.venv/bin/naneos-uploader" --version)"
 INSTALLED_FROM="$("$APP_DIR/.venv/bin/python" -c "
 import json
@@ -217,7 +237,7 @@ systemctl restart "$SERVICE.service"
 echo
 echo ">> Done: $VERSION runs as $SERVICE.service"
 echo "   logs:    journalctl -u $SERVICE.service -f"
-echo "   upgrade: re-run this installer (optionally with another --ref or --testpypi)"
+echo "   upgrade: re-run this installer (optionally with --version, --pre or --ref)"
 if [[ -n "${REBOOT_RECOMMENDED:-}" ]]; then
   echo "   reboot:  the new BLE supervision timeout needs one (sudo reboot)"
 fi

@@ -1,9 +1,10 @@
 name: release
 # Releases whatever version pyproject.toml holds, once per version:
-#   uv version --bump patch            -> 2.0.3     TestPyPI + PyPI
-#   uv version --bump patch --bump rc  -> 2.0.3rc1  TestPyPI only
+#   uv version --bump patch            -> 2.0.3     PyPI
+#   uv version --bump patch --bump rc  -> 2.0.3rc1  PyPI, as a pre-release (pip skips it unless asked)
 # The v<version> tag is created here, after publishing; a version whose tag
 # already exists is skipped, so ordinary pushes to master release nothing.
+# PyPI holds the releases, there are no GitHub releases.
 on:
   push:
     branches: [master]
@@ -20,7 +21,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       release: ${{ steps.version.outputs.release }}
-      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
@@ -34,13 +34,6 @@ jobs:
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
             echo "release=true" >> "$GITHUB_OUTPUT"
-          fi
-
-          # a/b/rc/dev versions stay on TestPyPI; final and .post versions go to PyPI too.
-          if [[ "$version" =~ (a|b|rc|\.dev)[0-9]+ ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
   # Runs on every push to master (ci.yml itself only triggers on pull requests),
@@ -71,25 +64,8 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  testpypi:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: testpypi
-    permissions:
-      id-token: write  # trusted publishing, no API token
-    steps:
-      - uses: actions/checkout@v7  # for the testpypi index in pyproject.toml
-      - uses: astral-sh/setup-uv@v10.1.0
-      - uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist/
-      # The index doubles as check URL: files that are already uploaded are skipped.
-      - run: uv publish --index testpypi --trusted-publishing always
-
   pypi:
-    needs: [check, testpypi]
-    if: needs.check.outputs.prerelease == 'false'
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -107,29 +83,16 @@ jobs:
           path: dist/
       - run: uv publish --check-url https://pypi.org/simple/ --trusted-publishing always
 
-  github-release:
-    needs: [check, testpypi, pypi]
-    # pypi is skipped for pre-releases; a failed pypi job must not get tagged.
-    if: ${{ !cancelled() && needs.testpypi.result == 'success' && (needs.pypi.result == 'success' || needs.pypi.result == 'skipped') }}
+  # The tag marks the released commit and is what the check job looks for.
+  tag:
+    needs: [check, pypi]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist/
-      - name: Tag and create the GitHub release
-        env:
+      - env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.check.outputs.version }}
-          PRERELEASE: ${{ needs.check.outputs.prerelease }}
         run: |
-          flags=()
-          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
-          gh release create "v$VERSION" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "v$VERSION" \
-            --generate-notes \
-            "${flags[@]}"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/v$VERSION" -f sha="$GITHUB_SHA" --silent
