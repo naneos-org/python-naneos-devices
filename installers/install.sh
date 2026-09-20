@@ -7,23 +7,27 @@
 #
 # Usage (as root):
 #   curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh \
-#     | sudo bash -s -- [--ref <branch-or-tag>] [--user <name>]
+#     | sudo bash -s -- [--ref <branch-or-tag> | --testpypi <version>] [--user <name>]
 #
-#   --ref   git branch or tag to install, default: master
-#           e.g. --ref release_test for hardware testing, --ref v2.0.0 for a release
-#   --user  unprivileged user that runs the service, default: the sudo user
+#   --ref       git branch or tag to install, default: master
+#               e.g. --ref release_test for hardware testing, --ref v2.0.0 for a release
+#   --testpypi  install a version published to TestPyPI instead of a git ref,
+#               e.g. --testpypi 2.0.4rc1, or --testpypi latest for the newest one
+#   --user      unprivileged user that runs the service, default: the sudo user
 set -euo pipefail
 
 REPO="naneos-org/python-naneos-devices"
 REF="master"
+TESTPYPI_VERSION=""
 USER_NAME="${SUDO_USER:-pi}"
 SERVICE="naneos_uploader"
 
-usage() { sed -n '2,15p' "$0" 2>/dev/null || true; }
+usage() { sed -n '2,17p' "$0" 2>/dev/null || true; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ref) REF="$2"; shift 2 ;;
+    --testpypi) TESTPYPI_VERSION="${2#v}"; shift 2 ;;
     --user) USER_NAME="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -42,11 +46,17 @@ if [[ -z "$HOME_DIR" ]]; then
 fi
 APP_DIR="$HOME_DIR/naneos-uploader"
 PACKAGE_URL="https://github.com/$REPO/archive/$REF.tar.gz"
+WHEEL_DIR="$APP_DIR/testpypi"
+if [[ -n "$TESTPYPI_VERSION" ]]; then
+  SOURCE="TestPyPI $TESTPYPI_VERSION"
+else
+  SOURCE="$REF"
+fi
 
 echo ">> naneos uploader installer"
 echo "   user:    $USER_NAME"
 echo "   app dir: $APP_DIR"
-echo "   ref:     $REF"
+echo "   source:  $SOURCE"
 echo
 
 # 1) System packages (no full upgrade: that is the owner's decision, not the installer's)
@@ -54,10 +64,35 @@ echo ">> Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq python3-venv python3-pip iw >/dev/null
 
-# 2) Virtual environment with the package from the chosen git ref
-echo ">> Installing naneos-devices ($REF) into $APP_DIR/.venv ..."
+# 2) Virtual environment with the package from the chosen git ref or TestPyPI
+echo ">> Installing naneos-devices ($SOURCE) into $APP_DIR/.venv ..."
 mkdir -p "$APP_DIR"
 chown "$USER_NAME":"$USER_NAME" "$APP_DIR"
+sudo -u "$USER_NAME" bash -c "
+  set -e
+  cd '$APP_DIR'
+  [ -d .venv ] || python3 -m venv .venv
+  .venv/bin/pip install --quiet --upgrade pip
+"
+if [[ -n "$TESTPYPI_VERSION" ]]; then
+  # Only the wheel itself comes from TestPyPI: anyone can register any name
+  # there, so the dependencies must not be looked up on it. PIP_CONFIG_FILE
+  # keeps the piwheels index of Raspberry Pi OS out of this one download.
+  # Installing the downloaded file then resolves the dependencies as usual.
+  if [[ "$TESTPYPI_VERSION" == "latest" ]]; then
+    REQUIREMENT="naneos-devices"
+  else
+    REQUIREMENT="naneos-devices==$TESTPYPI_VERSION"
+  fi
+  sudo -u "$USER_NAME" bash -c "
+    set -e
+    cd '$APP_DIR'
+    rm -rf '$WHEEL_DIR'
+    PIP_CONFIG_FILE=/dev/null .venv/bin/pip download --quiet --no-deps --pre --only-binary :all: \\
+      --index-url https://test.pypi.org/simple/ --dest '$WHEEL_DIR' '$REQUIREMENT'
+  "
+  PACKAGE_URL="file://$(ls "$WHEEL_DIR"/naneos_devices-*.whl)"
+fi
 # Two pip steps: the first resolves and upgrades the dependencies, the second
 # replaces the package itself. pip keeps an installed package when the
 # version number is unchanged, even if the archive URL (the git ref) differs,
@@ -66,8 +101,6 @@ chown "$USER_NAME":"$USER_NAME" "$APP_DIR"
 sudo -u "$USER_NAME" bash -c "
   set -e
   cd '$APP_DIR'
-  [ -d .venv ] || python3 -m venv .venv
-  .venv/bin/pip install --quiet --upgrade pip
   .venv/bin/pip install --quiet --upgrade '$PACKAGE_URL'
   .venv/bin/pip install --quiet --force-reinstall --no-deps '$PACKAGE_URL'
 "
@@ -184,7 +217,7 @@ systemctl restart "$SERVICE.service"
 echo
 echo ">> Done: $VERSION runs as $SERVICE.service"
 echo "   logs:    journalctl -u $SERVICE.service -f"
-echo "   upgrade: re-run this installer (optionally with another --ref)"
+echo "   upgrade: re-run this installer (optionally with another --ref or --testpypi)"
 if [[ -n "${REBOOT_RECOMMENDED:-}" ]]; then
   echo "   reboot:  the new BLE supervision timeout needs one (sudo reboot)"
 fi

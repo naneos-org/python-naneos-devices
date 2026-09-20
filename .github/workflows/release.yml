@@ -95,7 +95,12 @@ jobs:
     permissions:
       id-token: write
     steps:
+      # No checkout here, the job only uploads the built files: nothing to cache,
+      # and the empty working directory is intended.
       - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: false
+          ignore-empty-workdir: true
       - uses: actions/download-artifact@v8
         with:
           name: dist

@@ -83,6 +83,8 @@ Install a release candidate from TestPyPI (the dependencies come from PyPI):
 ```bash
 pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ naneos-devices==2.0.4rc1
 ```
+On a Raspberry Pi the installer does this with `--testpypi 2.0.4rc1`, see
+[Raspberry Pi Setup](../user-guide/raspberry-pi-setup.md).
 
 A version number can never be uploaded twice, not even after deleting it. If a release fails halfway,
 fix the cause and start the `release` workflow again from the Actions tab; files that are already

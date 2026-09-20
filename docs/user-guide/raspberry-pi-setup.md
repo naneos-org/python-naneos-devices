@@ -42,6 +42,18 @@ To install a release tag or a test branch instead of `master`:
 curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --ref v2.0.0
 ```
 
+To try a release candidate that was published to TestPyPI (see
+[Releasing](../development/contributing.md#releasing)), pass its version, or `latest` for the
+newest upload:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --testpypi 2.0.4rc1
+```
+
+Only the `naneos-devices` wheel comes from TestPyPI, its dependencies are installed from PyPI as
+usual. The first log line of the service names the wheel it runs. Re-run the installer without the
+option to go back to `master`.
+
 ## 3. Check that it runs
 
 ```bash
