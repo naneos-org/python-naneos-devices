@@ -1,9 +1,7 @@
 name: ci
 on:
-  push:
-    branches: [master]
   pull_request:
-  workflow_call:  # release.yml runs these checks before publishing
+  workflow_call:  # pushes to master run these checks through release.yml, once
 
 jobs:
   lint:
