@@ -11,6 +11,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: "3.11"  # the minimum we support; mypy checks that syntax level
+          # Same cache key as the 3.11 test job running in parallel; let that one save it.
+          save-cache: false
       - run: uv sync --group dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
