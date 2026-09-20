@@ -22,8 +22,8 @@ jobs:
       release: ${{ steps.version.outputs.release }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
       - id: version
         run: |
           version="$(uv version --short)"
@@ -54,8 +54,8 @@ jobs:
     if: needs.check.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: "3.11"
       - run: uv build --no-sources
@@ -65,7 +65,7 @@ jobs:
           reported="$(uv run --isolated --no-project --with dist/*.whl naneos-uploader --version)"
           echo "$reported"
           test "$reported" = "naneos-devices ${{ needs.check.outputs.version }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -78,9 +78,9 @@ jobs:
     permissions:
       id-token: write  # trusted publishing, no API token
     steps:
-      - uses: actions/checkout@v4  # for the testpypi index in pyproject.toml
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7  # for the testpypi index in pyproject.toml
+      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -95,8 +95,8 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/download-artifact@v4
+      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -110,7 +110,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/

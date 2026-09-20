@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Keeps the actions in .github/workflows current; setup-uv publishes no moving
+  # major tag, so its exact pin only moves through these PRs.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

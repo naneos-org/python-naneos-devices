@@ -1,6 +1,6 @@
 [project]
 name = "naneos-devices"
-version = "2.0.3rc2"
+version = "2.0.3rc3"
 description = "naneos particle solutions gmbh python backend"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
