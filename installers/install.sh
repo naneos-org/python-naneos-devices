@@ -96,10 +96,13 @@ if [[ -n "$REQUIREMENT" ]]; then
   # pre-releases of numpy, pandas and the like in as well. The forced reinstall
   # also replaces an installation from a git ref with the same version number.
   # The second step pins what the first one chose and resolves the dependencies.
+  # --no-cache-dir: look the version up without pip's local HTTP cache. It costs
+  # nothing here (one small wheel) and leaves PyPI as the only source of a stale
+  # answer in the minutes after an upload.
   sudo -u "$USER_NAME" bash -c "
     set -e
     cd '$APP_DIR'
-    .venv/bin/pip install --quiet --force-reinstall --no-deps $PRE '$REQUIREMENT'
+    .venv/bin/pip install --quiet --no-cache-dir --force-reinstall --no-deps $PRE '$REQUIREMENT'
   "
   RESOLVED="$(sudo -u "$USER_NAME" "$APP_DIR/.venv/bin/python" -c "
 from importlib.metadata import version
