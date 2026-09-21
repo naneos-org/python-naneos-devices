@@ -36,6 +36,12 @@ The installer
 * switches Bluetooth on, starts `bluetoothd` with `--experimental` (needed for passive BLE
   scanning) and disables WiFi power save (on a Pi Zero 2 W the sleeping WiFi link stalls
   uploads and costs Bluetooth airtime, the two radios share one antenna),
+* keeps the systemd journal in RAM (`Storage=volatile` in
+  `/etc/systemd/journald.conf.d/naneos-volatile.conf`). The service logs a few lines every
+  interval, and that was the only regular write to the SD card. A Pi that is switched off by
+  pulling the plug can corrupt the card during a write, so nothing is written during normal
+  operation. The log is gone after a reboot: `journalctl` shows the current boot only. For a
+  persistent log while debugging, delete that file and reboot,
 * sets the BLE supervision timeout to 5 s (`ConnectionSupervisionTimeout=500` in
   `/etc/bluetooth/main.conf`). With the BlueZ default of 420 ms a short WiFi burst on the
   shared antenna is enough to drop a link, which shows as a reconnect every few seconds.

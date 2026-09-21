@@ -41,6 +41,11 @@ the official `os_list_imagingutility_v4.json` (fields `name`, `description`, `ic
 - [ ] 64-bit only, target Pi Zero 2 W and newer. The Pi Zero W (1st gen, 32-bit) works
   with the installer but is too slow to support as an image; if we ever want it, it is a
   second pi-gen build with the `armhf` base and the OpenBLAS packages from the installer.
+- [ ] The settings files (section 2) are on the boot partition and ship with the image by
+  themselves. Before capturing an image from a prepared installation: reset
+  `naneos-uploader-change.txt` to its template, empty `/etc/naneos-uploader/options.env`,
+  and remove the WiFi profiles of the preparation (`naneos-*.nmconnection` and the netplan
+  one from the Imager), so no customer receives our network credentials.
 - [ ] The Imager writes WiFi and user settings through the base image's first-boot hook
   (`init_format` is `cloudinit-rpi` on Trixie, `systemd` with `firstrun.sh` on Bookworm).
   Verify after each base upgrade that the dialog still takes effect in our image.
@@ -82,55 +87,36 @@ expands, resets the change file to its template and writes the current file.
 - [x] Fully commented template, Notepad artifacts (BOM, CRLF, quotes) tolerated.
 - [x] A rejected line keeps the previous options and is explained in both files.
 - [x] `systemctl edit` overrides still win and are reported in the current file.
-- [ ] Ship the two files in the Pi image (section 1) and mention them in the customer
-  instructions.
-- [ ] Optional: apply `interval`, `ble_allow`, `ble_max_links` and `upload` at runtime
-  without a reboot by watching the file. The manager's runtime controls allow it; not
-  needed while the card is edited in a PC anyway.
 - [x] WiFi: `WIFI_SSID` and `WIFI_PASSWORD` add a NetworkManager profile (root-only
   keyfile, higher autoconnect priority, known networks kept). The password is on the card
   in plain text until the boot that applies it, the same trade-off the Imager makes.
-- [ ] Open: `WIFI_COUNTRY` for cards that were never set up with the Imager (the radio
-  stays blocked without a country). Not needed as long as the Imager does the first setup.
+- [x] Tested on a Pi Zero 2 W (Trixie) 2026-09-21: options applied at boot, WiFi added and
+  failover to the new network works. Nothing left open here.
+
+Decided against (2026-09-21): a runtime reload of the file without reboot (card edits come
+with a power cycle anyway, and over SSH a service restart applies the file), and a
+`WIFI_COUNTRY` key (the Imager always does the first setup and sets the country).
 
 ---
 
-## 3. Surviving hard power-offs: shutdown button, journal cap, read-only root
+## 3. Surviving hard power-offs: journal in RAM
 
 Noted 2026-09-21. A headless customer Pi is switched off by pulling the plug. The
 measurement data does not suffer: the uploader writes nothing to the card, unsent snapshots
 live in memory (at most `MAX_PENDING_UPLOADS`, about 10 minutes) and the Partector keeps its
-own record. The card does: the journal is written every interval, the two settings files on
+own record. The card does: the journal was written every interval, the two settings files on
 the FAT boot partition once per boot, and SD cards corrupt when power is cut mid-write.
 
-### Cheap steps, for the installer
+- [x] Journal in RAM (2026-09-21): the installer writes `Storage=volatile` with a 16 MB cap
+  into `/etc/systemd/journald.conf.d/naneos-volatile.conf`. No writes to the card during
+  operation; the log is lost at reboot, which is acceptable for customer Pis. For debugging,
+  delete the drop-in and reboot.
 
-- [ ] Shutdown button: `dtoverlay=gpio-shutdown` in `config.txt` makes GPIO 3 a shutdown
-  button (short to ground for a clean shutdown; the same pin wakes the Pi from halt). Needs
-  a two-pin momentary switch and nothing else. Mention the pin in the customer instructions.
-- [ ] Cap the journal (`SystemMaxUse=`, `RuntimeMaxUse=` in `journald.conf`) so it can never
-  fill the card. Keep it persistent: the log is what a support request needs.
-
-### Read-only root (overlay filesystem), for the image
-
-`raspi-config nonint do_overlayfs 0` (or the "Overlay File System" entry in `raspi-config`)
-puts an overlay on the root filesystem: the card is only read, every write goes to RAM and is
-gone at reboot. The Pi then survives any number of power cuts.
-
-- [ ] Only in the image (section 1), not in the installer: with the overlay on, an upgrade
-  needs `raspi-config nonint do_overlayfs 1`, a reboot, the installer, and the overlay back
-  on. Document that sequence next to the image.
-- [ ] The boot partition must stay writable, otherwise the settings step cannot reset the
-  change file and write the current file. raspi-config asks separately whether to make
-  `/boot/firmware` read-only: answer no.
-- [ ] The settings step writes `/etc/naneos-uploader/options.env` and the NetworkManager
-  profile on the root filesystem. With the overlay those writes land in RAM and vanish at
-  the next boot, so a change from the SD card would be applied for one boot only. Options:
-  keep the environment file on the boot partition too (`EnvironmentFile=` can point there;
-  it is world readable, but the options are not secret), and for WiFi write the profile to
-  a small writable data partition or remount the root read-write for the duration of the
-  settings step. Decide before building the image.
-- [ ] The journal is in RAM with the overlay. Acceptable for customer Pis; for hardware
-  tests use the installer without overlay.
-- [ ] Persistent log and journal caps become moot with the overlay; the shutdown button
-  stays useful.
+Decided against (2026-09-21): the read-only root (overlay filesystem from `raspi-config`).
+Too much for the gain: every upgrade would need the overlay off and on again with reboots,
+and the settings step writes to the root filesystem (`options.env`, the WiFi profile), which
+would then have to move to the boot partition or a data partition. With the journal in RAM
+the remaining writes are rare and small: NetworkManager leases, `fake-hwclock` once an hour,
+the settings files once per boot, and the swap file under memory pressure. Also dropped: a
+GPIO shutdown button (`dtoverlay=gpio-shutdown`), since pulling the plug is acceptable once
+nothing is written during operation.

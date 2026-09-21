@@ -282,7 +282,24 @@ if [[ -n "$WIFI_DEV" ]]; then
   echo "   $WIFI_DEV: $(iw dev "$WIFI_DEV" get power_save 2>/dev/null || echo 'state unknown')"
 fi
 
-# 6) Enable and (re)start the service
+# 6) Journal in RAM. The service logs a few lines every interval, and that
+# was the only write to the SD card during operation. Customer Pis are
+# switched off by pulling the plug, and SD cards corrupt when that happens
+# mid-write. The log is lost at reboot (journalctl shows the current boot);
+# for persistent logs while debugging, delete the drop-in and reboot.
+echo ">> Keeping the journal in RAM (no log writes to the SD card)..."
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/naneos-volatile.conf <<'CONF'
+# Installed by the naneos uploader installer: the journal stays in RAM so the
+# SD card is not written every upload interval. Delete this file and reboot
+# for a persistent journal.
+[Journal]
+Storage=volatile
+RuntimeMaxUse=16M
+CONF
+systemctl restart systemd-journald || true
+
+# 7) Enable and (re)start the service
 echo ">> Starting the service..."
 systemctl daemon-reload
 systemctl enable "$SERVICE.service" >/dev/null
@@ -290,7 +307,7 @@ systemctl restart "$SERVICE.service"
 
 echo
 echo ">> Done: $VERSION runs as $SERVICE.service"
-echo "   logs:    journalctl -u $SERVICE.service -f"
+echo "   logs:    journalctl -u $SERVICE.service -f  (in RAM, current boot only)"
 if [[ -n "$SETTINGS_UNIT" ]]; then
   echo "   options: edit $BOOT_DIR/naneos-uploader-change.txt (options and WiFi, applied at boot),"
   echo "            see naneos-uploader-current.txt"
