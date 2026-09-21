@@ -80,6 +80,17 @@ echo
 echo ">> Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq python3-venv python3-pip iw >/dev/null
+# 32-bit ARM (Pi Zero W, Pi 1/2, or a 32-bit OS on newer boards): PyPI has no
+# numpy wheels for it, so pip takes the ones from piwheels. Those link against
+# the system OpenBLAS instead of bundling it, and numpy fails to import
+# without these two packages ("libopenblas.so.0: cannot open shared object").
+# The 64-bit wheels from PyPI ship their own BLAS and need nothing.
+case "$(uname -m)" in
+  armv6l|armv7l)
+    echo ">> 32-bit ARM detected ($(uname -m)): installing OpenBLAS for the piwheels numpy build..."
+    apt-get install -y -qq libopenblas0-pthread libgfortran5 >/dev/null
+    ;;
+esac
 
 # 2) Virtual environment with the package from PyPI or the chosen git ref
 echo ">> Installing naneos-devices ($SOURCE) into $APP_DIR/.venv ..."
