@@ -30,6 +30,9 @@ The installer
   `naneos-devices` from [PyPI](https://pypi.org/project/naneos-devices/),
 * writes the `naneos_uploader` systemd service, which runs the `naneos-uploader` command as
   your user and restarts it on failure and on every boot,
+* puts `naneos-uploader-change.txt` and `naneos-uploader-current.txt` on the boot partition,
+  through which the options of the service can be changed and a WiFi network added without
+  SSH (see [Changing the options](#4-changing-the-options)),
 * switches Bluetooth on, starts `bluetoothd` with `--experimental` (needed for passive BLE
   scanning) and disables WiFi power save (on a Pi Zero 2 W the sleeping WiFi link stalls
   uploads and costs Bluetooth airtime, the two radios share one antenna),
@@ -74,7 +77,62 @@ start. If it says `(active)` together with a warning, BlueZ refused passive scan
 that `systemctl show bluetooth -p ExecStart` contains `--experimental` and that
 `bluetoothctl --version` is 5.56 or newer.
 
-To restrict the Pi to your own devices, or to limit the number of links, edit the service:
+## 4. Changing the options
+
+To restrict the Pi to your own devices, limit the number of Bluetooth links or change the
+interval, you set options of the `naneos-uploader` command. There are two ways.
+
+### From the SD card, without SSH
+
+The boot partition of the card is FAT and opens on any Computer. It holds two
+files:
+
+| File | Purpose |
+|---|---|
+| `naneos-uploader-change.txt` | Write the new options here. They are applied at the next boot, and the file is then reset to its commented template. |
+| `naneos-uploader-current.txt` | Written at every boot: the options the service runs with. Editing it has no effect. |
+
+Switch the Pi off, put the card into the PC, open `naneos-uploader-change.txt` in Notepad or
+TextEdit, remove the `#` in front of the `OPTIONS` line and write the options after the `=`,
+exactly as you would on the command line:
+
+```ini
+OPTIONS=--ble-allow 8617,8764 --ble-max-links 2
+```
+
+Put the card back and switch the Pi on. `OPTIONS=` with nothing after the `=` restores the
+defaults. The file lists all options with a short explanation.
+
+The same file adds a WiFi network, for example before the Pi moves to another site:
+
+```ini
+WIFI_SSID=Office
+WIFI_PASSWORD=the-office-password
+```
+
+The network is added to the ones the Pi already knows as a NetworkManager profile with a
+higher priority, nothing is removed, so a typo cannot cut the Pi off the network it has.
+WPA2 and WPA3 personal are supported (password of 8 to 63 characters), enterprise networks
+with a user name and certificate are not. The WiFi country has to be set already, which the
+Raspberry Pi Imager does. The password is stored root-only on the Pi and removed from the
+card at boot, when the file is reset. Until that boot it sits in plain text on the card,
+the same as with the Imager's own WiFi setup. `naneos-uploader-current.txt` lists the names
+of the known networks and never the password.
+
+Every line is checked before anything is applied: the options with the uploader's own
+argument parser, the WiFi lines for length and characters. If one line fails, nothing from
+the file is applied, the previous settings stay in use, and both files start with a `# !!`
+block naming the error and the rejected lines (password masked), so the service always comes
+up.
+
+Behind the scenes the `naneos_uploader_settings` service (`naneos-uploader-settings`, part of
+the package) runs before the uploader, stores the options in
+`/etc/naneos-uploader/options.env`, and the uploader unit expands them in its `ExecStart`. Its
+log is in `journalctl -u naneos_uploader_settings.service`. Over SSH the same happens without a
+reboot with `sudo systemctl restart naneos_uploader.service`, which pulls the settings service
+in first.
+
+### Over SSH, with systemctl
 
 ```bash
 sudo systemctl edit naneos_uploader.service
@@ -88,7 +146,12 @@ ExecStart=
 ExecStart=/home/pi/naneos-uploader/.venv/bin/naneos-uploader --ble-allow 8617,8764 --ble-max-links 2
 ```
 
-followed by `sudo systemctl restart naneos_uploader.service`.
+followed by `sudo systemctl restart naneos_uploader.service`. Such an override replaces the
+command and wins over the SD card file; `naneos-uploader-current.txt` then says so in a `# !!`
+line. Remove it with `sudo systemctl revert naneos_uploader.service` to hand control back to
+the file.
+
+## 5. Link problems
 
 If the links drop every few seconds (`Disconnect callback called` followed by
 `Connected to ...`), check the supervision timeout while the service connects:
@@ -100,7 +163,7 @@ sleep 2; sudo systemctl restart naneos_uploader.service; wait
 
 It has to print `5000 msec`. If it prints `420 msec`, reboot the Pi.
 
-## 4. Upgrading
+## 6. Upgrading
 
 Re-run the installer. It keeps the virtual environment, installs the newer package and
 restarts the service.

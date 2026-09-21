@@ -1,7 +1,7 @@
 # Development
 
 Set up with [uv](https://docs.astral.sh/uv/): `uv sync` installs the package with the dev tools.
-`REFACTORING.md` in the repository root records the design decisions and hardware findings.
+`REFACTORING.md` in the repository root records the design decisions and hardware findings. `IDEAS.md` next to it collects planned features that are not started yet.
 
 ## Testing
 I recommend working with uv.

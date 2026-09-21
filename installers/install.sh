@@ -151,16 +151,51 @@ if [[ "$INSTALLED_FROM" != "$PACKAGE_URL" ]]; then
 fi
 echo "   installed: $VERSION from $INSTALLED_FROM"
 
-# 3) systemd service running the naneos-uploader command
+# 3) Settings from the SD card. naneos-uploader-settings (part of the package)
+# reads naneos-uploader-change.txt on the boot partition, validates the OPTIONS
+# line, stores it in an environment file the service expands in ExecStart, adds
+# a WiFi network from WIFI_SSID/WIFI_PASSWORD as a NetworkManager profile, and
+# writes naneos-uploader-current.txt. A oneshot unit runs it before the service
+# at every boot, and the service pulls it in (Wants=) on a manual restart too.
+# It runs after NetworkManager so that `nmcli connection reload` reaches it.
+# The environment file survives upgrades: the installer never touches it.
+BOOT_DIR=/boot/firmware
+[[ -d "$BOOT_DIR" ]] || BOOT_DIR=/boot
+ENV_FILE=/etc/naneos-uploader/options.env
+SETTINGS_CMD="$APP_DIR/.venv/bin/naneos-uploader-settings"
+SETTINGS_SERVICE="${SERVICE}_settings"
+if [[ -x "$SETTINGS_CMD" ]]; then
+  echo ">> Writing /etc/systemd/system/$SETTINGS_SERVICE.service ..."
+  cat > "/etc/systemd/system/$SETTINGS_SERVICE.service" <<UNIT
+[Unit]
+Description=naneos uploader settings from the SD card ($BOOT_DIR/naneos-uploader-change.txt)
+RequiresMountsFor=$BOOT_DIR
+After=NetworkManager.service
+Before=$SERVICE.service
+
+[Service]
+Type=oneshot
+ExecStart=$SETTINGS_CMD --boot-dir $BOOT_DIR --env-file $ENV_FILE
+UNIT
+  chmod 644 "/etc/systemd/system/$SETTINGS_SERVICE.service"
+  SETTINGS_UNIT="$SETTINGS_SERVICE.service"
+else
+  # An older package without the command (--version, --ref): plain service.
+  rm -f "/etc/systemd/system/$SETTINGS_SERVICE.service"
+  SETTINGS_UNIT=""
+fi
+
+# systemd service running the naneos-uploader command
 echo ">> Writing /etc/systemd/system/$SERVICE.service ..."
 cat > "/etc/systemd/system/$SERVICE.service" <<UNIT
 [Unit]
 Description=naneos uploader (Partector data to the naneos IoT service)
-After=network-online.target bluetooth.target
-Wants=network-online.target
+After=network-online.target bluetooth.target $SETTINGS_UNIT
+Wants=network-online.target $SETTINGS_UNIT
 
 [Service]
-ExecStart=$APP_DIR/.venv/bin/naneos-uploader
+EnvironmentFile=-$ENV_FILE
+ExecStart=$APP_DIR/.venv/bin/naneos-uploader \$NANEOS_UPLOADER_OPTIONS
 WorkingDirectory=$APP_DIR
 Restart=always
 RestartSec=5
@@ -170,6 +205,11 @@ User=$USER_NAME
 WantedBy=multi-user.target
 UNIT
 chmod 644 "/etc/systemd/system/$SERVICE.service"
+
+if [[ -n "$SETTINGS_UNIT" ]]; then
+  echo ">> Applying settings from $BOOT_DIR/naneos-uploader-change.txt ..."
+  "$SETTINGS_CMD" --boot-dir "$BOOT_DIR" --env-file "$ENV_FILE" | sed 's/^/   /'
+fi
 
 # 4) Bluetooth on, with BlueZ experimental features. Passive scanning (no scan
 # requests on the antenna the Pi shares with WiFi) is only offered by
@@ -251,6 +291,10 @@ systemctl restart "$SERVICE.service"
 echo
 echo ">> Done: $VERSION runs as $SERVICE.service"
 echo "   logs:    journalctl -u $SERVICE.service -f"
+if [[ -n "$SETTINGS_UNIT" ]]; then
+  echo "   options: edit $BOOT_DIR/naneos-uploader-change.txt (options and WiFi, applied at boot),"
+  echo "            see naneos-uploader-current.txt"
+fi
 echo "   upgrade: re-run this installer (optionally with --version, --pre or --ref)"
 if [[ -n "${REBOOT_RECOMMENDED:-}" ]]; then
   echo "   reboot:  the new BLE supervision timeout needs one (sudo reboot)"
