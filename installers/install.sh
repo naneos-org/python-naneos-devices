@@ -8,6 +8,7 @@
 # Usage (as root):
 #   curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh \
 #     | sudo bash -s -- [--version <version> | --pre | --ref <branch-or-tag>] [--user <name>]
+#                      [--auto-update | --no-auto-update]
 #
 #   (default)  the newest release on PyPI
 #   --version  this version from PyPI, e.g. --version 2.0.4rc1
@@ -16,6 +17,9 @@
 #   --ref      a git branch or tag from GitHub instead of PyPI,
 #              e.g. --ref release_test for hardware testing before a merge
 #   --user     unprivileged user that runs the service, default: the sudo user
+#   --auto-update     check once a day for a new release and install it
+#   --no-auto-update  never (the default on a fresh installation; without either
+#                     flag a re-run keeps the current setting)
 set -euo pipefail
 
 REPO="naneos-org/python-naneos-devices"
@@ -26,7 +30,9 @@ SOURCES=0
 USER_NAME="${SUDO_USER:-pi}"
 SERVICE="naneos_uploader"
 
-usage() { sed -n '2,18p' "$0" 2>/dev/null || true; }
+AUTO_UPDATE=""  # "on", "off" or "" (keep)
+
+usage() { sed -n '2,22p' "$0" 2>/dev/null || true; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -34,6 +40,8 @@ while [[ $# -gt 0 ]]; do
     --version) PYPI_VERSION="${2#v}"; SOURCES=$((SOURCES + 1)); shift 2 ;;
     --pre) PRE="--pre"; SOURCES=$((SOURCES + 1)); shift ;;
     --user) USER_NAME="$2"; shift 2 ;;
+    --auto-update) AUTO_UPDATE="on"; shift ;;
+    --no-auto-update) AUTO_UPDATE="off"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -299,7 +307,55 @@ RuntimeMaxUse=16M
 CONF
 systemctl restart systemd-journald || true
 
-# 7) Enable and (re)start the service
+# 7) Automatic updates. naneos-uploader-update (part of the package) asks PyPI
+# for the newest release once a day and, only if it is newer than the installed
+# one, downloads the installer of that release and runs it. The timer is the
+# single switch: --auto-update / --no-auto-update here, AUTO_UPDATE=on|off in
+# the change file on the SD card, or systemctl enable/disable --now.
+UPDATE_CMD="$APP_DIR/.venv/bin/naneos-uploader-update"
+UPDATE_SERVICE="${SERVICE}_update"
+if [[ -x "$UPDATE_CMD" ]]; then
+  echo ">> Writing /etc/systemd/system/$UPDATE_SERVICE.service and .timer ..."
+  cat > "/etc/systemd/system/$UPDATE_SERVICE.service" <<UNIT
+[Unit]
+Description=naneos uploader: update to the newest release if there is one
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$UPDATE_CMD --user $USER_NAME
+UNIT
+  cat > "/etc/systemd/system/$UPDATE_SERVICE.timer" <<UNIT
+[Unit]
+Description=naneos uploader: check for a new release once a day
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  chmod 644 "/etc/systemd/system/$UPDATE_SERVICE.service" "/etc/systemd/system/$UPDATE_SERVICE.timer"
+  systemctl daemon-reload
+  if [[ -z "$AUTO_UPDATE" ]]; then
+    systemctl is-enabled --quiet "$UPDATE_SERVICE.timer" 2>/dev/null && AUTO_UPDATE="on" || AUTO_UPDATE="off"
+  fi
+  if [[ "$AUTO_UPDATE" == "on" ]]; then
+    systemctl enable --now "$UPDATE_SERVICE.timer" >/dev/null 2>&1
+  else
+    systemctl disable --now "$UPDATE_SERVICE.timer" >/dev/null 2>&1 || true
+  fi
+else
+  # An older package without the command (--version, --ref): no timer.
+  systemctl disable --now "$UPDATE_SERVICE.timer" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/$UPDATE_SERVICE.service" "/etc/systemd/system/$UPDATE_SERVICE.timer"
+  AUTO_UPDATE="unavailable"
+fi
+
+# 8) Enable and (re)start the service
 echo ">> Starting the service..."
 systemctl daemon-reload
 systemctl enable "$SERVICE.service" >/dev/null
@@ -309,9 +365,13 @@ echo
 echo ">> Done: $VERSION runs as $SERVICE.service"
 echo "   logs:    journalctl -u $SERVICE.service -f  (in RAM, current boot only)"
 if [[ -n "$SETTINGS_UNIT" ]]; then
-  echo "   options: edit $BOOT_DIR/naneos-uploader-change.txt (options and WiFi, applied at boot),"
+  echo "   options: edit $BOOT_DIR/naneos-uploader-change.txt (options, WiFi, AUTO_UPDATE; applied at boot),"
   echo "            see naneos-uploader-current.txt"
 fi
+case "$AUTO_UPDATE" in
+  on)  echo "   updates: automatic, once a day (off: --no-auto-update or AUTO_UPDATE=off on the card)" ;;
+  off) echo "   updates: off (on: --auto-update or AUTO_UPDATE=on on the card)" ;;
+esac
 echo "   upgrade: re-run this installer (optionally with --version, --pre or --ref)"
 if [[ -n "${REBOOT_RECOMMENDED:-}" ]]; then
   echo "   reboot:  the new BLE supervision timeout needs one (sudo reboot)"

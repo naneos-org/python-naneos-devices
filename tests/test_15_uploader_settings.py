@@ -49,13 +49,40 @@ class FakeReload:
         return self.warning
 
 
-def run(boot: Path, env_file: Path, nm_dir: Path, reload: FakeReload | None = None):
+class FakeTimer:
+    """Stands in for systemctl enable/disable and is-enabled of the update timer."""
+
+    def __init__(self, state: bool | None = False, warning: str | None = None) -> None:
+        self.state = state
+        self.warning = warning
+        self.calls: list[bool] = []
+
+    def switch(self, enabled: bool) -> str | None:
+        self.calls.append(enabled)
+        if self.warning is None:
+            self.state = enabled
+        return self.warning
+
+    def is_enabled(self) -> bool | None:
+        return self.state
+
+
+def run(
+    boot: Path,
+    env_file: Path,
+    nm_dir: Path,
+    reload: FakeReload | None = None,
+    timer: FakeTimer | None = None,
+):
+    timer = timer or FakeTimer()
     return apply(
         boot,
         env_file,
         override_dir=boot / "none",
         nm_dir=nm_dir,
         nm_reload=reload or FakeReload(),
+        set_auto_update=timer.switch,
+        auto_update_state=timer.is_enabled,
         now=NOW,
     )
 
@@ -72,6 +99,7 @@ def test_template_has_no_active_line_and_lists_the_settings() -> None:
         assert option in text
     assert "--ble-max-links N" in text and "default 7" in text
     assert "#WIFI_SSID=" in text and "#WIFI_PASSWORD=" in text
+    assert "#AUTO_UPDATE=" in text
 
 
 def test_first_boot_creates_both_files_with_defaults(
@@ -85,6 +113,7 @@ def test_first_boot_creates_both_files_with_defaults(
     assert "OPTIONS=\n" in current
     assert "written 2026-09-21 14:03 UTC" in current
     assert "# wifi networks: none" in current
+    assert "# automatic updates: off" in current
     assert not env_file.exists()
 
 
@@ -150,6 +179,7 @@ def test_untouched_template_keeps_the_previous_options(
         ("WIFI_SSID=Office\nWIFI_PASSWORD=short", "8 to 63 characters"),
         ("WIFI_SSID=Office\nWIFI_PASSWORD=" + "x" * 64, "8 to 63 characters"),
         ("WIFI_SSID=" + "s" * 33 + "\nWIFI_PASSWORD=longenough", "longer than 32 bytes"),
+        ("AUTO_UPDATE=maybe", "AUTO_UPDATE must be on or off"),
     ],
 )
 def test_rejected_change_keeps_previous_options_and_explains(
@@ -265,6 +295,51 @@ def test_known_wifi_lists_existing_profiles(boot: Path, env_file: Path, nm_dir: 
     assert "# wifi networks: Home\n" in (boot / CURRENT_FILE).read_text()
 
 
+@pytest.mark.parametrize(
+    "value, enabled", [("on", True), ("Yes", True), ("off", False), ("0", False)]
+)
+def test_auto_update_switches_the_timer(
+    boot: Path, env_file: Path, nm_dir: Path, value: str, enabled: bool
+) -> None:
+    (boot / CHANGE_FILE).write_text(f"AUTO_UPDATE={value}\n")
+    timer = FakeTimer(state=not enabled)
+
+    result = run(boot, env_file, nm_dir, timer=timer)
+
+    assert timer.calls == [enabled]
+    assert result.auto_update is enabled and result.error is None
+    assert (boot / CHANGE_FILE).read_text() == template()
+    current = (boot / CURRENT_FILE).read_text()
+    assert f"# automatic updates: {'on' if enabled else 'off'}" in current
+    assert result.describe() == f"automatic updates {'on' if enabled else 'off'}"
+
+
+def test_auto_update_without_timer_installed_is_a_warning(
+    boot: Path, env_file: Path, nm_dir: Path
+) -> None:
+    (boot / CHANGE_FILE).write_text("AUTO_UPDATE=on\n")
+    timer = FakeTimer(
+        state=None, warning="could not enable automatic updates (x), re-run the installer"
+    )
+
+    result = run(boot, env_file, nm_dir, timer=timer)
+
+    assert result.auto_update is None and result.error is None
+    assert any("re-run the installer" in w for w in result.warnings)
+    current = (boot / CURRENT_FILE).read_text()
+    assert "# automatic updates: not installed" in current
+    assert "# !! could not enable automatic updates" in current
+
+
+def test_rejected_file_switches_nothing(boot: Path, env_file: Path, nm_dir: Path) -> None:
+    (boot / CHANGE_FILE).write_text("AUTO_UPDATE=on\nOPTIONS=--interval abc\n")
+    timer = FakeTimer()
+
+    result = run(boot, env_file, nm_dir, timer=timer)
+
+    assert result.error is not None and timer.calls == []
+
+
 def test_validate_options_normalizes_whitespace() -> None:
     assert validate_options("  --no-ble   --interval  10 ") == "--no-ble --interval 10"
     with pytest.raises(SettingsError):
@@ -278,7 +353,16 @@ def test_systemctl_override_is_reported(boot: Path, env_file: Path, nm_dir: Path
         "[Service]\nExecStart=\nExecStart=/x/naneos-uploader --no-ble\n"
     )
 
-    result = apply(boot, env_file, override_dir=override_dir, nm_dir=nm_dir, nm_reload=FakeReload())
+    timer = FakeTimer()
+    result = apply(
+        boot,
+        env_file,
+        override_dir=override_dir,
+        nm_dir=nm_dir,
+        nm_reload=FakeReload(),
+        set_auto_update=timer.switch,
+        auto_update_state=timer.is_enabled,
+    )
 
     assert any("override.conf" in w for w in result.warnings)
     assert "replaces the command" in (boot / CURRENT_FILE).read_text()

@@ -5,9 +5,10 @@ WiFi network: the boot partition of a Raspberry Pi is FAT and opens on any PC.
 Two files live there:
 
 * ``naneos-uploader-change.txt``: the customer writes ``OPTIONS=--interval 60``
-  (the same options as on the command line) and/or ``WIFI_SSID=`` plus
-  ``WIFI_PASSWORD=``. The next boot applies the lines, then resets the file to
-  its commented template, which also removes the password from the card.
+  (the same options as on the command line), ``WIFI_SSID=`` plus
+  ``WIFI_PASSWORD=``, and/or ``AUTO_UPDATE=on|off``. The next boot applies the
+  lines, then resets the file to its commented template, which also removes
+  the password from the card.
 * ``naneos-uploader-current.txt``: written at every boot, shows the options the
   service runs with and the WiFi networks the Pi knows, plus an error if the
   last change was rejected. Never the password.
@@ -20,6 +21,8 @@ systemd unit reads (``EnvironmentFile=``) and expands in its ``ExecStart``:
 and for WiFi, a NetworkManager keyfile in /etc/NetworkManager/system-connections
 (root only, mode 600) followed by ``nmcli connection reload``. The new network is
 added with a higher autoconnect priority; the known ones are kept.
+``AUTO_UPDATE`` enables or disables the ``naneos_uploader_update.timer`` (see
+``uploader_update.py``) with systemctl.
 
 The installer writes the ``naneos_uploader_settings.service`` unit that runs
 ``naneos-uploader-settings`` as root before the uploader starts. All lines are
@@ -46,11 +49,14 @@ from pathlib import Path
 from naneos import __version__
 from naneos.ble import PartectorBleManager
 from naneos.cli import parse_args as parse_uploader_args
+from naneos.uploader_update import UPDATE_TIMER
 
 CHANGE_FILE = "naneos-uploader-change.txt"
 CURRENT_FILE = "naneos-uploader-current.txt"
 ENV_KEY = "NANEOS_UPLOADER_OPTIONS"
-KEYS = ("OPTIONS", "WIFI_SSID", "WIFI_PASSWORD")
+KEYS = ("OPTIONS", "WIFI_SSID", "WIFI_PASSWORD", "AUTO_UPDATE")
+_ON = ("on", "yes", "true", "1")
+_OFF = ("off", "no", "false", "0")
 DEFAULT_BOOT_DIR = Path("/boot/firmware")
 DEFAULT_ENV_FILE = Path("/etc/naneos-uploader/options.env")
 DEFAULT_OVERRIDE_DIR = Path("/etc/systemd/system/naneos_uploader.service.d")
@@ -100,6 +106,11 @@ def template() -> str:
 #
 #WIFI_SSID=
 #WIFI_PASSWORD=
+#
+# AUTO_UPDATE: on = once a day, install a new release of the naneos software
+# if there is one (the service restarts once for it). off = never (default).
+#
+#AUTO_UPDATE=
 """
 
 
@@ -162,6 +173,56 @@ def validate_wifi(settings: dict[str, str]) -> tuple[str, str] | None:
     if not _ALLOWED_PASSWORD.match(password):
         raise SettingsError("WIFI_PASSWORD must have 8 to 63 characters (letters, digits, symbols)")
     return ssid, password
+
+
+def validate_auto_update(settings: dict[str, str]) -> bool | None:
+    """True/False for AUTO_UPDATE=on/off, None if the line is absent."""
+    value = settings.get("AUTO_UPDATE")
+    if value is None:
+        return None
+    if value.lower() in _ON:
+        return True
+    if value.lower() in _OFF:
+        return False
+    raise SettingsError("AUTO_UPDATE must be on or off")
+
+
+def systemctl_auto_update(enabled: bool) -> str | None:
+    """Switch the update timer; a warning if systemctl could not do it."""
+    action = "enable" if enabled else "disable"
+    try:
+        subprocess.run(
+            ["systemctl", action, "--now", UPDATE_TIMER],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        return "systemctl not found: automatic updates could not be switched"
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or "").strip().splitlines()
+        reason = detail[-1] if detail else str(e)
+        return f"could not {action} automatic updates ({reason}), re-run the installer"
+    except subprocess.SubprocessError as e:
+        return f"could not {action} automatic updates ({e})"
+    return None
+
+
+def systemctl_auto_update_state() -> bool | None:
+    """Whether the update timer is enabled, None if it is not installed."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-enabled", UPDATE_TIMER], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    state = result.stdout.strip()
+    if state in ("enabled", "enabled-runtime", "static"):
+        return True
+    if state in ("disabled", "masked"):
+        return False
+    return None
 
 
 def read_env(env_file: Path) -> str:
@@ -281,6 +342,8 @@ class Result:
     current: str
     applied: str | None = None
     wifi: str | None = None
+    auto_update: bool | None = None
+    auto_update_state: bool | None = None
     error: str | None = None
     rejected: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -294,6 +357,8 @@ class Result:
             parts.append(f"applied {self.applied!r}")
         if self.wifi is not None:
             parts.append(f"added WiFi {self.wifi!r}")
+        if self.auto_update is not None:
+            parts.append(f"automatic updates {'on' if self.auto_update else 'off'}")
         return ", ".join(parts) or f"unchanged, running with {self.current!r}"
 
 
@@ -303,6 +368,8 @@ def apply(
     override_dir: Path = DEFAULT_OVERRIDE_DIR,
     nm_dir: Path = DEFAULT_NM_DIR,
     nm_reload: Callable[[], str | None] = nmcli_reload,
+    set_auto_update: Callable[[bool], str | None] = systemctl_auto_update,
+    auto_update_state: Callable[[], bool | None] = systemctl_auto_update_state,
     now: datetime | None = None,
 ) -> Result:
     """One boot: consume the change file, apply what it holds, write the current file."""
@@ -324,6 +391,7 @@ def apply(
             options = settings.get("OPTIONS")
             validated = validate_options(options) if options is not None else None
             wifi = validate_wifi(settings)
+            auto_update = validate_auto_update(settings)
             if validated is not None:
                 write_env(env_file, validated)
                 result.current = result.applied = validated
@@ -333,8 +401,14 @@ def apply(
                 warning = nm_reload()
                 if warning is not None:
                     result.warnings.append(warning)
+            if auto_update is not None:
+                warning = set_auto_update(auto_update)
+                if warning is None:
+                    result.auto_update = auto_update
+                else:
+                    result.warnings.append(warning)
             result.rejected = []
-            if validated is not None or wifi is not None:
+            if validated is not None or wifi is not None or auto_update is not None:
                 change_file.write_text(template(), encoding="utf-8")
         except SettingsError as e:
             result.error = str(e)
@@ -344,6 +418,7 @@ def apply(
     if warning is not None:
         result.warnings.append(warning)
     result.known_wifi = known_wifi(nm_dir)
+    result.auto_update_state = auto_update_state()
     (boot_dir / CURRENT_FILE).write_text(_current_text(result, now), encoding="utf-8")
     return result
 
@@ -366,6 +441,12 @@ def _with_error(text: str, result: Result) -> str:
     )
 
 
+def _state_text(state: bool | None) -> str:
+    if state is None:
+        return "not installed (re-run the installer)"
+    return "on" if state else "off"
+
+
 def _current_text(result: Result, now: datetime | None) -> str:
     stamp = (now or datetime.now(UTC)).strftime("%Y-%m-%d %H:%M UTC")
     command = Path(sys.executable).with_name("naneos-uploader")
@@ -376,6 +457,7 @@ def _current_text(result: Result, now: datetime | None) -> str:
         f"OPTIONS={result.current}",
         f"# command: {command} {result.current}".rstrip(),
         f"# wifi networks: {', '.join(result.known_wifi) or 'none'}",
+        f"# automatic updates: {_state_text(result.auto_update_state)}",
     ]
     if result.wifi is not None:
         lines.append(f"# wifi added at this boot: {result.wifi}")

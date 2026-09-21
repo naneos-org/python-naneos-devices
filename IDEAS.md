@@ -55,13 +55,12 @@ the official `os_list_imagingutility_v4.json` (fields `name`, `description`, `ic
 An image freezes the version at flash time. Without a way to update, customers stay on
 it forever.
 
-- [ ] systemd timer (nightly, randomized delay) that re-runs the pip upgrade step of the
-  installer and restarts the service only if the version changed.
-- [ ] Alternative: the uploader checks PyPI itself and logs "update available"; a manual
-  update path is then still the installer over SSH. Simpler, but does not help customers
-  without SSH. Prefer the timer.
-- [ ] Keep the current installer working on a flashed image, so a re-run over SSH remains
-  the manual upgrade path for us.
+- [x] Implemented 2026-09-21 as `naneos-uploader-update` (`src/naneos/uploader_update.py`)
+  with the `naneos_uploader_update.timer` from the installer: once a day, one request to
+  PyPI, and only a newer release triggers a download of that release's installer and a run
+  with `--version`. Off by default; `--auto-update`, `AUTO_UPDATE=on` on the card, or
+  `systemctl enable --now` switch it on. The image should ship with it on.
+- [x] Re-running the installer over SSH remains the manual upgrade path.
 
 ### Open questions
 

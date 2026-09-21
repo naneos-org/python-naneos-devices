@@ -31,8 +31,10 @@ The installer
 * writes the `naneos_uploader` systemd service, which runs the `naneos-uploader` command as
   your user and restarts it on failure and on every boot,
 * puts `naneos-uploader-change.txt` and `naneos-uploader-current.txt` on the boot partition,
-  through which the options of the service can be changed and a WiFi network added without
-  SSH (see [Changing the options](#4-changing-the-options)),
+  through which the options of the service can be changed, a WiFi network added and automatic
+  updates switched without SSH (see [Changing the options](#4-changing-the-options)),
+* writes the `naneos_uploader_update` timer for
+  [automatic updates](#automatic-updates), off unless `--auto-update` is given,
 * switches Bluetooth on, starts `bluetoothd` with `--experimental` (needed for passive BLE
   scanning) and disables WiFi power save (on a Pi Zero 2 W the sleeping WiFi link stalls
   uploads and costs Bluetooth airtime, the two radios share one antenna),
@@ -59,6 +61,15 @@ these options after `sudo bash -s --`:
 | `--version 2.0.4rc1` | exactly this version from PyPI, for example a release candidate |
 | `--pre` | the newest version on PyPI with pre-releases included: `2.0.4rc1` while that is the newest upload, `2.0.4` once it is released |
 | `--ref release_test` | a git branch or tag from GitHub instead of PyPI, for code that is not released yet |
+| `--auto-update` / `--no-auto-update` | switch [automatic updates](#automatic-updates) on or off; without either, a re-run keeps the current setting (off on a fresh installation) |
+
+For example, the newest release with automatic updates switched on:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --auto-update
+```
+
+or exactly one version, for example a release candidate:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install.sh | sudo bash -s -- --version 2.0.4rc1
@@ -125,11 +136,19 @@ card at boot, when the file is reset. Until that boot it sits in plain text on t
 the same as with the Imager's own WiFi setup. `naneos-uploader-current.txt` lists the names
 of the known networks and never the password.
 
+The file also switches [automatic updates](#automatic-updates):
+
+```ini
+AUTO_UPDATE=on
+```
+
+`on` or `off`. The current file shows the state after each boot.
+
 Every line is checked before anything is applied: the options with the uploader's own
-argument parser, the WiFi lines for length and characters. If one line fails, nothing from
-the file is applied, the previous settings stay in use, and both files start with a `# !!`
-block naming the error and the rejected lines (password masked), so the service always comes
-up.
+argument parser, the WiFi lines for length and characters, `AUTO_UPDATE` for `on` or `off`.
+If one line fails, nothing from the file is applied, the previous settings stay in use, and
+both files start with a `# !!` block naming the error and the rejected lines (password
+masked), so the service always comes up.
 
 Behind the scenes the `naneos_uploader_settings` service (`naneos-uploader-settings`, part of
 the package) runs before the uploader, stores the options in
@@ -173,6 +192,30 @@ It has to print `5000 msec`. If it prints `420 msec`, reboot the Pi.
 
 Re-run the installer. It keeps the virtual environment, installs the newer package and
 restarts the service.
+
+### Automatic updates
+
+Off by default. Switch them on with `--auto-update` on the installer line, with
+`AUTO_UPDATE=on` in `naneos-uploader-change.txt` on the SD card, or with
+`sudo systemctl enable --now naneos_uploader_update.timer`. All three set the same switch,
+the timer, and `--no-auto-update`, `AUTO_UPDATE=off` or `systemctl disable --now` turn it off
+again. Re-running the installer without either flag keeps the current setting.
+
+Once a day, between 03:00 and 04:00 local time, the timer runs `naneos-uploader-update`. It
+asks PyPI for the newest release, pre-releases excluded, and compares it with the installed
+version. If nothing is newer, that is all: one small request, and the service is not
+touched. If there is a newer release, it downloads the installer of that release from GitHub
+and runs it with `--version`, which installs the package, refreshes the unit files and
+configuration, and restarts the service once. At most one interval of buffered data is lost.
+
+A Pi that was off at that time catches up after the next boot. An installation from a git
+ref (`--ref`) is never updated automatically. Check the state and the last run with:
+
+```bash
+systemctl list-timers naneos_uploader_update.timer
+journalctl -u naneos_uploader_update.service
+sudo ~/naneos-uploader/.venv/bin/naneos-uploader-update --check
+```
 
 ## Running it by hand
 

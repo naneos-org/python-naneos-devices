@@ -1,6 +1,6 @@
 [project]
 name = "naneos-devices"
-version = "2.0.6rc2"
+version = "2.0.6"
 description = "naneos particle solutions gmbh python backend"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
@@ -34,6 +34,7 @@ download = ["influxdb-client[ciso]>=1.50.0"]
 [project.scripts]
 naneos-uploader = "naneos.cli:main"
 naneos-uploader-settings = "naneos.uploader_settings:main"
+naneos-uploader-update = "naneos.uploader_update:main"
 
 [project.urls]
 Repository = "https://github.com/naneos-org/python-naneos-devices"
