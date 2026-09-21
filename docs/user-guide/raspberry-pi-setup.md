@@ -4,6 +4,12 @@ A Raspberry Pi (a Zero 2 W is enough) can run as an always-on uploader: it conne
 to every Partector in reach over USB and Bluetooth and uploads the data to the naneos
 IoT service every 30 seconds.
 
+Tested hardware: **Raspberry Pi Zero 2 W** (recommended) and **Raspberry Pi Zero W**
+(1st generation). The Zero W works, but it is old hardware with a single 32-bit core and
+512 MB of RAM: the installation takes a long time and so does every boot before the
+uploader is running. The installer detects the 32-bit system and installs the extra
+OpenBLAS packages the numpy build for it needs.
+
 ## 1. Operating system
 
 Flash **Raspberry Pi OS Bookworm or newer** (Python 3.11 or newer is required) with the

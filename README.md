@@ -201,7 +201,9 @@ enable_file_logging("logs/", LEVEL_INFO)  # appends to logs/naneos-devices.log
 # Documentation
 The [documentation](https://naneos-org.github.io/python-naneos-devices/) covers the rest:
 
-- [Raspberry Pi as an always-on uploader](https://naneos-org.github.io/python-naneos-devices/user-guide/raspberry-pi-setup/)
+- [Raspberry Pi as an always-on uploader](https://naneos-org.github.io/python-naneos-devices/user-guide/raspberry-pi-setup/).
+  Tested on a Raspberry Pi Zero 2 W and a Pi Zero W (1st generation). The Zero W works
+  too, but its old hardware makes installation and every boot really slow.
 - [Devices, commands and the Partector 2 Pro modes](https://naneos-org.github.io/python-naneos-devices/user-guide/devices/)
 - [Migrating from 1.x to 2.0](https://naneos-org.github.io/python-naneos-devices/user-guide/migration-2.0/)
 - [Development: tests, protobuf, releases](https://naneos-org.github.io/python-naneos-devices/development/contributing/)
