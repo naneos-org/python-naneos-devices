@@ -8,9 +8,10 @@ from typing import TypeVar
 import pandas as pd
 
 from naneos.ble.partector.manager import PartectorBleManager
-from naneos.cloud.upload import upload_snapshot
+from naneos.cloud.upload import upload_diagnostic, upload_snapshot
 from naneos.data_point import ConnectionType, NaneosDeviceDataPoint
-from naneos.device import PartectorDevice
+from naneos.device import NotSupportedError, PartectorDevice
+from naneos.diagnostics import PulseForm, UiCurve
 from naneos.frames import add_to_existing_naneos_data, sort_and_clean_naneos_data
 from naneos.logger import get_naneos_logger
 from naneos.usb.partector.manager import PartectorSerialManager
@@ -28,6 +29,8 @@ class NaneosDeviceManager(threading.Thread):
     # tick, oldest first. With the default 30 s interval this covers a network
     # outage of about 10 minutes; older snapshots are dropped.
     MAX_PENDING_UPLOADS = 20
+    # UI curves and pulse forms waiting for their upload, same policy.
+    MAX_PENDING_DIAGNOSTICS = 20
 
     def __init__(
         self,
@@ -40,6 +43,7 @@ class NaneosDeviceManager(threading.Thread):
         serial_gain_test: bool = True,
         serial_pulse_diagnostics: bool = True,
         sample_rate_hz: int | None = None,
+        diagnostics_interval_hours: float | None = 1.0,
     ) -> None:
         """
         Args:
@@ -53,6 +57,8 @@ class NaneosDeviceManager(threading.Thread):
                 held back for at least 10 s after every connect while it settles.
             serial_pulse_diagnostics: let USB devices report the pulse diagnostics.
             sample_rate_hz: the data rate of the USB devices, see the property.
+            diagnostics_interval_hours: read the UI curve and the pulse form of every
+                connected device this often, see the property. None switches it off.
         """
         super().__init__(daemon=True)
         self._use_serial = use_serial
@@ -69,6 +75,15 @@ class NaneosDeviceManager(threading.Thread):
         self._out_queue: queue.Queue | None = None
         self._live_queue: queue.Queue | None = None
         self._live_points_dropped = 0
+
+        self.diagnostics_interval_hours = diagnostics_interval_hours
+        self._diagnostics_queue: queue.Queue | None = None
+        self._diagnostics_requested = threading.Event()
+        self._diagnostics_thread: threading.Thread | None = None
+        self._last_diagnostics_block: int | None = None
+        self._pending_diagnostics: deque[UiCurve | PulseForm] = deque(
+            maxlen=self.MAX_PENDING_DIAGNOSTICS
+        )
 
         self._stop_event = threading.Event()
 
@@ -141,9 +156,53 @@ class NaneosDeviceManager(threading.Thread):
         self._next_upload_time = min(self._next_upload_time, tmp_next_upload_time)
 
     @property
+    def diagnostics_interval_hours(self) -> float | None:
+        """How often the UI curve and the pulse form of every connected device are read
+        and uploaded, None for never. The readouts happen at the wall clock multiples
+        of the interval (with 1 h: on the hour), one device after the other, so a
+        change takes effect at the next multiple; request_diagnostics() reads now.
+
+        A UI curve sweep disturbs the measurement: the data points of the device are
+        held back for about 15 s (USB) to 30 s (BLE) per readout.
+        """
+        return self._diagnostics_interval_hours
+
+    @diagnostics_interval_hours.setter
+    def diagnostics_interval_hours(self, hours: float | None) -> None:
+        if hours is not None and hours <= 0:
+            raise ValueError("The diagnostics interval must be positive, or None for never.")
+        self._diagnostics_interval_hours = hours
+        self._last_diagnostics_block = None  # the next multiple counts from now
+
+    @property
     def pending_upload_count(self) -> int:
         """Number of snapshots waiting to be uploaded, including retries."""
         return len(self._pending_uploads)
+
+    @property
+    def pending_diagnostics_count(self) -> int:
+        """Number of UI curves and pulse forms waiting to be uploaded, including retries."""
+        return len(self._pending_diagnostics)
+
+    def register_diagnostics_queue(self, diagnostics_queue: queue.Queue) -> None:
+        """Every UiCurve and PulseForm the manager reads is put on this queue, whether
+        it was read on the interval or with request_diagnostics()."""
+        self._diagnostics_queue = diagnostics_queue
+
+    def unregister_diagnostics_queue(self) -> None:
+        self._diagnostics_queue = None
+
+    def request_diagnostics(self) -> None:
+        """Read the UI curve and the pulse form of every connected device now, one
+        device after the other, on a thread of the manager. Returns at once; the
+        results go to the diagnostics queue and the upload like the periodic ones."""
+        self._diagnostics_requested.set()
+
+    @property
+    def diagnostics_in_progress(self) -> bool:
+        """True while the manager is reading the diagnostics of its devices."""
+        thread = self._diagnostics_thread
+        return thread is not None and thread.is_alive()
 
     @property
     def seconds_until_next_snapshot(self) -> float:
@@ -259,6 +318,64 @@ class NaneosDeviceManager(threading.Thread):
         """
         self.get_device(serial_number).set_sample_rate(hz)
 
+    def read_ui_curve(self, serial_number: int, timeout: float | None = None) -> UiCurve:
+        """Read the UI curve of one device, see PartectorDevice.read_ui_curve().
+        Blocks for 15 s or more; the result is returned, not uploaded."""
+        return self.get_device(serial_number).read_ui_curve(timeout)
+
+    def read_pulse_form(self, serial_number: int, timeout: float | None = None) -> PulseForm:
+        """Read the pulse form of one device, see PartectorDevice.read_pulse_form().
+        The result is returned, not uploaded."""
+        return self.get_device(serial_number).read_pulse_form(timeout)
+
+    # == Diagnostics ===============================================================================
+    def _tick_diagnostics(self) -> None:
+        """Once a second on the manager thread: start the readouts when they are due."""
+        interval = self._diagnostics_interval_hours
+        if interval is not None:
+            block = int(time.time() // (interval * 3600))
+            if self._last_diagnostics_block is None:
+                self._last_diagnostics_block = block  # the first readout at the next multiple
+            elif block != self._last_diagnostics_block:
+                self._last_diagnostics_block = block
+                self._diagnostics_requested.set()
+
+        if self._diagnostics_requested.is_set() and not self.diagnostics_in_progress:
+            self._diagnostics_requested.clear()
+            self._diagnostics_thread = threading.Thread(
+                target=self._read_all_diagnostics, name="naneos-diagnostics", daemon=True
+            )
+            self._diagnostics_thread.start()
+
+    def _read_all_diagnostics(self) -> None:
+        """One device after the other: the readouts hold the command lock of their
+        device, and the BLE links share one radio."""
+        for device in self.get_devices():
+            if self._stop_event.is_set():
+                return
+            for read in (device.read_ui_curve, device.read_pulse_form):
+                try:
+                    result = read()
+                except NotSupportedError as e:
+                    logger.debug(f"SN{device.serial_number}: no diagnostics: {e}")
+                    break
+                except (ConnectionError, TimeoutError, RuntimeError) as e:
+                    logger.warning(f"SN{device.serial_number}: {read.__name__} failed: {e}")
+                    continue
+                except Exception as e:
+                    logger.exception(f"SN{device.serial_number}: {read.__name__} failed: {e}")
+                    continue
+                logger.info(f"SN{device.serial_number}: read the {type(result).__name__}")
+                self._publish_diagnostic(result)
+
+    def _publish_diagnostic(self, diagnostic: UiCurve | PulseForm) -> None:
+        """Hand a UI curve or pulse form to the diagnostics queue and the uploader.
+        The upload itself runs on the manager thread with the snapshots."""
+        if isinstance(self._diagnostics_queue, queue.Queue):
+            self._diagnostics_queue.put(diagnostic)
+        if self._upload_active:
+            self._pending_diagnostics.append(diagnostic)
+
     def _loop_serial_manager(self) -> None:
         if self._manager_serial is not None and self._manager_serial.is_alive():
             self._upload_blocked_devices = self._manager_serial.get_settling_serial_numbers()
@@ -314,6 +431,7 @@ class NaneosDeviceManager(threading.Thread):
 
                 self._loop_serial_manager()
                 self._loop_ble_manager()
+                self._tick_diagnostics()
 
                 # a device that is settling after a gain test start delivers no valid data
                 for blocked_sn in self._upload_blocked_devices:
@@ -348,7 +466,8 @@ class NaneosDeviceManager(threading.Thread):
         self._upload_pending()
 
     def _upload_pending(self) -> None:
-        """Upload queued snapshots oldest first; stop at the first failure.
+        """Upload queued snapshots oldest first, then the queued diagnostics; stop at
+        the first failure.
 
         The point timestamps are absolute, so a snapshot uploaded a few
         intervals late lands at the right time on the server.
@@ -362,11 +481,24 @@ class NaneosDeviceManager(threading.Thread):
                 return
             self._pending_uploads.popleft()
 
+        while self._pending_diagnostics:
+            outcome = self._try_upload(self._pending_diagnostics[0])
+            if outcome == "retry":
+                logger.warning(
+                    f"Upload failed, keeping {len(self._pending_diagnostics)} "
+                    "diagnostic(s) for retry."
+                )
+                return
+            self._pending_diagnostics.popleft()
+
     @staticmethod
-    def _try_upload(snapshot: dict[int, pd.DataFrame]) -> str:
+    def _try_upload(item: dict[int, pd.DataFrame] | UiCurve | PulseForm) -> str:
         """Returns "ok", "retry" (network / server problem) or "drop" (rejected)."""
         try:
-            response = upload_snapshot(snapshot)
+            if isinstance(item, UiCurve | PulseForm):
+                response = upload_diagnostic(item)
+            else:
+                response = upload_snapshot(item)
         except Exception as e:
             logger.warning(f"Upload failed: {e}")
             return "retry"

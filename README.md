@@ -163,6 +163,11 @@ manager.query(8617, "name?")
 manager.write(8617, "A0002!")
 manager.set_sample_rate(8617, 100)
 
+# the two diagnostics of a P2 (firmware 418 or newer), over USB and BLE alike
+curve = manager.read_ui_curve(8617)  # electrometer current over corona voltage, 100 points
+form = manager.read_pulse_form(8617)  # one charging pulse, 200 samples
+# the manager reads and uploads both of every device once an hour: diagnostics_interval_hours
+
 # or set the rate of every USB device, now and for the ones plugged in later
 manager.sample_rate_hz = 10  # also NaneosDeviceManager(sample_rate_hz=10)
 ```
@@ -194,6 +199,7 @@ enable_file_logging("logs/", LEVEL_INFO)  # appends to logs/naneos-devices.log
 | [`live_plot.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/live_plot.py) | live plot of the diffusion current of a device on USB (needs `pip install matplotlib`) |
 | [`runtime_controls.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/runtime_controls.py) | switch transports, upload and interval while running |
 | [`device_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/device_commands.py) | commands, answers and the data rate |
+| [`diagnostics.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/diagnostics.py) | the UI curve and the pulse form of every device, on request and on the hourly schedule |
 | [`send_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/send_commands.py) | send a file of commands to one device |
 | [`serial_device.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/serial_device.py) | one USB device without the manager |
 | [`download_iotweb.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/download_iotweb.py) | read your data back from the naneos IoT service (needs `pip install "naneos-devices[download]"`) |

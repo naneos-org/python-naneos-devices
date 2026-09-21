@@ -8,14 +8,21 @@ import numpy as np
 import pandas as pd
 import requests
 
+from naneos.diagnostics import PulseForm, UiCurve
 from naneos.frames import aggregate_duplicate_index
 from naneos.protobuf import proto_v2_pb2 as pb
-from naneos.protobuf.protobuf import create_combined_entry, create_proto_device
+from naneos.protobuf.protobuf import (
+    create_combined_entry,
+    create_proto_device,
+    create_pulse_form,
+    create_ui_curve,
+)
 
-# The v2 API has one endpoint per message type. Only CombinedData is uploaded
-# from here; UiCurve goes to /uicurve and PulseForm to /pulseform.
+# The v2 API has one endpoint per message type.
 BASE_URL = "https://hg3zkburji.execute-api.eu-central-1.amazonaws.com/dev/proto/v2"
 URL_COMBINED_DATA = f"{BASE_URL}/combined_data"
+URL_UI_CURVE = f"{BASE_URL}/uicurve"
+URL_PULSE_FORM = f"{BASE_URL}/pulseform"
 HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
 TIMEOUT_SECONDS = 10
 
@@ -27,12 +34,29 @@ def upload_snapshot(data: dict[int, pd.DataFrame]) -> requests.Response:
     network problems; HTTP errors are reported by the returned response.
     """
     abs_time = int(datetime.datetime.now().timestamp())
-    combined_entry = build_combined_entry(data, abs_time)
-    payload = base64.b64encode(combined_entry.SerializeToString()).decode()
+    return _post(URL_COMBINED_DATA, build_combined_entry(data, abs_time))
 
-    return requests.post(
-        URL_COMBINED_DATA, headers=HEADERS, data=build_body(payload), timeout=TIMEOUT_SECONDS
-    )
+
+def upload_ui_curve(curve: UiCurve) -> requests.Response:
+    """Upload one UI curve. Blocks and raises like upload_snapshot()."""
+    return _post(URL_UI_CURVE, create_ui_curve(curve))
+
+
+def upload_pulse_form(form: PulseForm) -> requests.Response:
+    """Upload one pulse form. Blocks and raises like upload_snapshot()."""
+    return _post(URL_PULSE_FORM, create_pulse_form(form))
+
+
+def upload_diagnostic(diagnostic: UiCurve | PulseForm) -> requests.Response:
+    """Upload a UI curve or a pulse form to its endpoint."""
+    if isinstance(diagnostic, UiCurve):
+        return upload_ui_curve(diagnostic)
+    return upload_pulse_form(diagnostic)
+
+
+def _post(url: str, message: pb.CombinedData | pb.UiCurve | pb.PulseForm) -> requests.Response:
+    payload = base64.b64encode(message.SerializeToString()).decode()
+    return requests.post(url, headers=HEADERS, data=build_body(payload), timeout=TIMEOUT_SECONDS)
 
 
 def build_body(upload_string: str) -> str:

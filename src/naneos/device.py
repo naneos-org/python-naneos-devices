@@ -6,11 +6,14 @@ A Partector on USB and a Partector on a BLE link are used the same way:
     fields = device.query("f?")       # a command with an answer -> ["422"]
     device.set_sample_rate(10)        # USB only, see NotSupportedError
     device.set_sample_rate(None)      # back to the default of the device
+    curve = device.read_ui_curve()    # the two diagnostics, firmware 418 or newer
+    form = device.read_pulse_form()
 """
 
 from abc import ABC, abstractmethod
 
 from naneos.data_point import ConnectionType, DeviceType
+from naneos.diagnostics import PulseForm, UiCurve
 
 
 class NotSupportedError(Exception):
@@ -81,6 +84,37 @@ class PartectorDevice(ABC):
         Raises:
             NotSupportedError: over BLE, where the rate is fixed at 1 Hz (None is fine).
             ValueError: for a rate the device does not offer.
+        """
+
+    @abstractmethod
+    def read_ui_curve(self, timeout: float | None = None) -> UiCurve:
+        """Sweep the corona voltage and read the resulting UI curve, 100 points.
+
+        Blocks for the sweep (10 s) plus the readout, so 15 s or more. The
+        measurement is disturbed by the sweep: the data points of the device
+        are held back until it has settled again.
+
+        Args:
+            timeout: for the readout that follows the sweep; default 30 s.
+
+        Raises:
+            NotSupportedError: a P1, or firmware older than 418.
+            TimeoutError: the curve did not arrive complete within the timeout.
+            ConnectionError: the device is not connected.
+        """
+
+    @abstractmethod
+    def read_pulse_form(self, timeout: float | None = None) -> PulseForm:
+        """Read the form of the last charging pulse, 200 samples. Does not disturb
+        the measurement.
+
+        Args:
+            timeout: for the readout; default 30 s.
+
+        Raises:
+            NotSupportedError: a P1, or firmware older than 418.
+            TimeoutError: the form did not arrive complete within the timeout.
+            ConnectionError: the device is not connected.
         """
 
     def __repr__(self) -> str:

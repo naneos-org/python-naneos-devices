@@ -8,7 +8,13 @@ class FakeTransport:
 
     def __init__(self, serial_number: int = 8617, firmware: int = 422, name: str = "P2") -> None:
         self.port = "/dev/fake"
-        self.answers = {"N?": str(serial_number), "f?": str(firmware), "H?": "1", "name?": name}
+        # A command answers with one line, or with every line of a list.
+        self.answers: dict[str, str | list[str]] = {
+            "N?": str(serial_number),
+            "f?": str(firmware),
+            "H?": "1",
+            "name?": name,
+        }
         self.written: list[str] = []
         self.mute = False  # a device that stopped answering
         self._lines: queue.Queue[str] = queue.Queue()
@@ -32,7 +38,9 @@ class FakeTransport:
             raise ConnectionError("fake port is closed")
         self.written.append(command)
         if command in self.answers and not self.mute:
-            self._lines.put(self.answers[command])
+            answer = self.answers[command]
+            for line in answer if isinstance(answer, list) else [answer]:
+                self._lines.put(line)
 
     def readline(self) -> str:
         if not self._open:

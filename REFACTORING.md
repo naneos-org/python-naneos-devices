@@ -521,7 +521,39 @@ naneos/
   duplicates), about 1 ms after the line was read, 0 dropped, while the 10 s snapshot still had
   its 1003 rows. With USB switched off at runtime both devices continued at 1 Hz over BLE.
 
-### 7.10 What is left
+### 7.10 UI curve and pulse form (done 2026-09-21, verified on SN8617 P2 FW422 and SN8764 P2 Pro FW424, USB and BLE)
+
+Ported from the tracker gateway (`iot-particle-tracker-gateway/src/ble/diag_readout.*`,
+`src/usb/usb_p2_device.cpp`). Decisions: the data is held back during the sweep (the gateway
+uploads it), the periodic readout is on by default every hour, both diagnostics are gated at
+firmware 418.
+
+- `naneos/diagnostics.py`: `UiCurve` (V, nA; 100 points sorted by voltage) and `PulseForm`
+  (nA; 200 samples in time order) plus the constants. `PartectorDevice.read_ui_curve()` /
+  `read_pulse_form()` on both transports, `NaneosDeviceManager.read_ui_curve(sn)` /
+  `read_pulse_form(sn)`, `diagnostics_interval_hours` (default 1, wall clock aligned, one
+  device after the other on a helper thread), `request_diagnostics()`,
+  `register_diagnostics_queue()`. Uploads go to `/uicurve` and `/pulseform` with the retry
+  policy of the snapshots. CLI: `--diagnostics-interval HOURS`, 0 for never.
+- Wire format, USB: `UI!` answers nothing and needs 10 s; `UI?` answers 100 lines of
+  `U<TAB>I` (V, nA*100), already sorted; `pulse?` answers one line of 200 values (nA*100) with
+  a trailing tab. The reader thread hands such lines to a `_LineCapture` before the layout
+  logic, so a readout runs while the measurement streams on.
+- Wire format, BLE: both come on the aux characteristic, one 20 byte packet every 2 s, byte 1
+  = 254 (UI) / 253 (pulse), byte 0 = 254 on the last packet, packet number in the last byte.
+  UI: 5 points of uint16 LE V + uint8 nA*100, 20 packets (40 s). Pulse: 9 pairs of uint8
+  sample index + uint8 nA*100, consecutive packets overlap by one sample, 25 packets (50 s):
+  the samples are placed by index. The aux callback routes these packets to the readout, or
+  drops them; before, a `write("UI?")` over BLE would have decoded them as measurements.
+  A `UI!` interrupts a pulse stream in flight, hence the order curve -> pulse per device.
+- Schema: `PulseForm.U_values` is misnamed; the devices send and the backend stores the
+  electrometer current in nA at scale 100. The scale is taken from the descriptor.
+- **Backend:** the dev lambda answered the UI curve with "Wrote 100 data point(s)" but the
+  pulse form with the `no_data` body (HTTP 200 wrapping a 404): the deployed lambda does not
+  route `/proto/v2/pulseform`, although `upload-timeseries` has it since #59 (2026-07-29).
+  Redeploy the lambda, then check that a pulse form lands in influx as `pulse_form`.
+
+### 7.11 What is left
 
 Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
 command layer, left open on purpose) and the hardware check of the Windows-only BLE branches

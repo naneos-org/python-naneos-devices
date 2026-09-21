@@ -10,6 +10,16 @@ from typing import ClassVar, TypeVar
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint, PointListener
 from naneos.device import NotSupportedError, PartectorDevice
+from naneos.diagnostics import (
+    PULSE_FORM_VALUES,
+    READOUT_TIMEOUT_SECONDS,
+    UI_COMPUTE_SECONDS,
+    UI_CURVE_POINTS,
+    PulseForm,
+    UiCurve,
+    check_firmware,
+    raw_to_nanoamperes,
+)
 from naneos.logger import get_naneos_logger
 from naneos.usb.partector.layouts import (
     PARTECTOR1_DATA_STRUCTURE_V_LEGACY,
@@ -26,6 +36,31 @@ from naneos.usb.transport import SerialTransport
 logger = get_naneos_logger(__name__)
 
 T = TypeVar("T")
+
+
+class _LineCapture:
+    """Collects the lines of a diagnostics readout on the reader thread.
+
+    A UI curve comes as 100 lines of two fields, a pulse form as one line of
+    200 fields. Nothing else on the port has these shapes while a readout is
+    in flight: the measurement lines are longer, the answers to queries are
+    one field, and the command lock keeps other queries out.
+    """
+
+    def __init__(self, fields: tuple[int, ...], lines: int) -> None:
+        self.fields = fields  # the accepted numbers of fields per line
+        self.lines = lines
+        self.collected: list[list[str]] = []
+        self.done = Event()
+
+    def offer(self, fields: list[str]) -> bool:
+        """True if the line belongs to the readout and was taken."""
+        if self.done.is_set() or len(fields) not in self.fields:
+            return False
+        self.collected.append(fields)
+        if len(self.collected) >= self.lines:
+            self.done.set()
+        return True
 
 
 class UsbPartector(PartectorDevice, ABC):
@@ -93,6 +128,8 @@ class UsbPartector(PartectorDevice, ABC):
         self._pulse_diagnostics_active = False
         self._diagnostics_configured = False
         self._settled_at = 0.0  # time.time() from which data is trusted again
+        self._sweep_until = 0.0  # the data is held back during a UI curve sweep
+        self._capture: _LineCapture | None = None  # a diagnostics readout in flight
 
         self._points: deque[NaneosDeviceDataPoint] = deque(maxlen=self.DATA_QUEUE_MAXSIZE)
         self._replies: queue.Queue[list[str]] = queue.Queue()
@@ -168,6 +205,67 @@ class UsbPartector(PartectorDevice, ABC):
             raise ValueError(f"Sample rate must be one of {sorted(self.SAMPLE_RATE_CODES)} Hz.")
         self.write(f"X000{self.SAMPLE_RATE_CODES[hz]}!")
         self._sample_rate_hz = hz
+
+    def read_ui_curve(self, timeout: float | None = None) -> UiCurve:
+        self._check_diagnostics_firmware("UI curve")
+        # The sweep ramps the corona voltage: whatever the device measures
+        # meanwhile is not air, and it needs an integration time to recover.
+        self._sweep_until = time.time() + UI_COMPUTE_SECONDS + self._integration_time + 2
+        self.write("UI!")
+        time.sleep(UI_COMPUTE_SECONDS)  # without the command lock: queries may go on
+
+        lines = self._read_lines("UI?", fields=(2,), lines=UI_CURVE_POINTS, timeout=timeout)
+        points = sorted((int(u), int(i)) for u, i in lines)  # by voltage, like the gateway
+        return UiCurve(
+            device_type=self.DEVICE_TYPE,
+            serial_number=self._sn or 0,
+            unix_timestamp=int(time.time()),
+            voltages=tuple(u for u, _ in points),
+            currents=tuple(raw_to_nanoamperes(i) for _, i in points),
+        )
+
+    def read_pulse_form(self, timeout: float | None = None) -> PulseForm:
+        self._check_diagnostics_firmware("pulse form")
+        # The line ends with a tab, which split() turns into an empty last field.
+        (line,) = self._read_lines(
+            "pulse?", fields=(PULSE_FORM_VALUES, PULSE_FORM_VALUES + 1), lines=1, timeout=timeout
+        )
+        return PulseForm(
+            device_type=self.DEVICE_TYPE,
+            serial_number=self._sn or 0,
+            unix_timestamp=int(time.time()),
+            currents=tuple(raw_to_nanoamperes(int(v)) for v in line[:PULSE_FORM_VALUES]),
+        )
+
+    def _check_diagnostics_firmware(self, feature: str) -> None:
+        if self.DEVICE_TYPE == DeviceType.P1:
+            raise NotSupportedError(f"A Partector 1 has no {feature}.")
+        check_firmware(self._fw, feature)
+
+    def _read_lines(
+        self, command: str, fields: tuple[int, ...], lines: int, timeout: float | None
+    ) -> list[list[str]]:
+        """Send a command and collect the lines of its answer with the given shape."""
+        if current_thread() is self._reader:
+            raise RuntimeError("A readout cannot be started from the reader thread.")
+
+        capture = _LineCapture(fields, lines)
+        deadline = time.monotonic() + (timeout or READOUT_TIMEOUT_SECONDS)
+        with self._command_lock:
+            self._capture = capture
+            try:
+                self._write(command)
+                while not capture.done.wait(0.2):
+                    if not self._connected:
+                        raise ConnectionError(f"SN{self._sn} is not connected.")
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"SN{self._sn}: {command!r} answered {len(capture.collected)} "
+                            f"of {lines} lines."
+                        )
+            finally:
+                self._capture = None
+        return capture.collected
 
     # == Serial specific API =======================================================================
     @property
@@ -342,6 +440,10 @@ class UsbPartector(PartectorDevice, ABC):
         unix_timestamp = int(time.time() * 1000)  # ms, like every other data source
         fields = line.split("\t")
 
+        capture = self._capture
+        if capture is not None and capture.offer(fields):
+            return
+
         # The protocol has no framing: a verbose line is recognised by its
         # length, everything shorter is the answer to a command.
         layout = self._data_structure
@@ -350,7 +452,7 @@ class UsbPartector(PartectorDevice, ABC):
             self._replies.put(fields)
             return
 
-        if time.time() < self._settled_at:
+        if time.time() < max(self._settled_at, self._sweep_until):
             return
 
         # Legacy mode: the exact layout is unknown, extra columns are cut off.

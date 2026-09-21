@@ -6,6 +6,7 @@ from naneos.ble.partector.manager import PartectorBleManager
 from naneos.cloud.upload import upload_snapshot
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
 from naneos.device import NotSupportedError, PartectorDevice
+from naneos.diagnostics import PulseForm, UiCurve
 from naneos.logger import enable_console_logging, enable_file_logging
 from naneos.manager import NaneosDeviceManager
 from naneos.usb.partector.manager import PartectorSerialManager
@@ -25,6 +26,8 @@ __all__ = [
     "PartectorBleManager",
     "PartectorDevice",
     "PartectorSerialManager",
+    "PulseForm",
+    "UiCurve",
     "enable_console_logging",
     "enable_file_logging",
     "upload_snapshot",

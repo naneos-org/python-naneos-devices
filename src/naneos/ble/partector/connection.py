@@ -16,8 +16,18 @@ from naneos.ble.partector.characteristics import (
     PartectorBleDecoderAuxError,
     PartectorBleDecoderSize,
     PartectorBleDecoderStd,
+    PartectorBleDiagnosticsPackets,
 )
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint, PointListener
+from naneos.diagnostics import (
+    BLE_READOUT_TIMEOUT_SECONDS,
+    PULSE_FORM_VALUES,
+    UI_COMPUTE_SECONDS,
+    UI_CURVE_POINTS,
+    PulseForm,
+    UiCurve,
+    check_firmware,
+)
 from naneos.logger import get_naneos_logger
 
 logger = get_naneos_logger(__name__)
@@ -160,6 +170,13 @@ class PartectorBleConnection:
         self._firmware_version: int | None = None
         self._info_task: asyncio.Task | None = None
 
+        # A diagnostics readout in flight: the packets it waits for, and the
+        # future that gets them once the last packet is in.
+        self._diagnostics_kind: str | None = None  # "ui_curve" / "pulse_form"
+        self._diagnostics_packets: list[bytes] = []
+        self._diagnostics_future: asyncio.Future[list[bytes]] | None = None
+        self._hold_points_until = 0.0  # the data is held back during a UI curve sweep
+
         self._device = device
         self._loop = loop
         self._task: asyncio.Task | None = None
@@ -232,6 +249,80 @@ class PartectorBleConnection:
                 )
             except TimeoutError:
                 raise TimeoutError(f"SN{self.SERIAL_NUMBER}: no answer to {command!r}.") from None
+
+    async def read_ui_curve(self, timeout: float | None = None) -> UiCurve:
+        """See PartectorDevice.read_ui_curve(). Must run on the connection's loop."""
+        check_firmware(self._firmware_version, "UI curve")
+        # The sweep ramps the corona voltage: whatever the device measures
+        # meanwhile is not air, and it needs an integration time to recover.
+        # The integration time is not known over BLE; 16 s is the longest.
+        self._hold_points_until = time.time() + UI_COMPUTE_SECONDS + 16 + 2
+        await self.write("UI!")
+        await asyncio.sleep(UI_COMPUTE_SECONDS)  # without the command lock
+
+        packets = await self._read_packets("UI?", "ui_curve", timeout)
+        points = sorted(
+            point
+            for packet in packets
+            for point in PartectorBleDiagnosticsPackets.ui_curve_points(packet)
+        )[:UI_CURVE_POINTS]
+        return UiCurve(
+            device_type=self._device_type or DeviceType.P2,
+            serial_number=self.SERIAL_NUMBER,
+            unix_timestamp=int(time.time()),
+            voltages=tuple(u for u, _ in points),
+            currents=tuple(i for _, i in points),
+        )
+
+    async def read_pulse_form(self, timeout: float | None = None) -> PulseForm:
+        """See PartectorDevice.read_pulse_form(). Must run on the connection's loop."""
+        check_firmware(self._firmware_version, "pulse form")
+        packets = await self._read_packets("pulse?", "pulse_form", timeout)
+        # The packets overlap by one sample: place every sample by its index.
+        samples = {
+            index: value
+            for packet in packets
+            for index, value in PartectorBleDiagnosticsPackets.pulse_form_values(packet)
+        }
+        return PulseForm(
+            device_type=self._device_type or DeviceType.P2,
+            serial_number=self.SERIAL_NUMBER,
+            unix_timestamp=int(time.time()),
+            currents=tuple(samples[i] for i in range(PULSE_FORM_VALUES) if i in samples),
+        )
+
+    async def _read_packets(self, command: str, kind: str, timeout: float | None) -> list[bytes]:
+        """Send a command and collect the diagnostics packets that answer it."""
+        async with self._command_lock:
+            self._diagnostics_kind = kind
+            self._diagnostics_packets = []
+            self._diagnostics_future = self._loop.create_future()
+            try:
+                await self._write(command)
+                return await asyncio.wait_for(
+                    asyncio.shield(self._diagnostics_future),
+                    timeout or BLE_READOUT_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                raise TimeoutError(
+                    f"SN{self.SERIAL_NUMBER}: {command!r} answered "
+                    f"{len(self._diagnostics_packets)} packets."
+                ) from None
+            finally:
+                self._diagnostics_kind = None
+                self._diagnostics_future = None
+
+    def _on_diagnostics_packet(self, data: bytes) -> None:
+        """A UI curve or pulse form packet on the aux characteristic (event loop thread)."""
+        future = self._diagnostics_future
+        expected_ui = self._diagnostics_kind == "ui_curve"
+        if future is None or future.done():
+            return  # nobody asked: a readout started by a plain write("UI?")
+        if PartectorBleDiagnosticsPackets.is_ui_curve(data) != expected_ui:
+            return  # the other kind, left over from an earlier readout
+        self._diagnostics_packets.append(data)
+        if PartectorBleDiagnosticsPackets.is_last(data):
+            future.set_result(self._diagnostics_packets)
 
     async def _write(self, command: str) -> None:
         """Caller holds the command lock."""
@@ -504,6 +595,9 @@ class PartectorBleConnection:
             connection_type=ConnectionType.CONNECTED,
             firmware_version=self._firmware_version,
         )
+
+        if time.time() < self._hold_points_until:
+            return  # a UI curve sweep is disturbing the measurement
 
         # A P2 Pro reports number concentration and diameter only together with
         # the size distribution they belong to. That stream runs at 1/6 of the
@@ -780,6 +874,9 @@ class PartectorBleConnection:
         Actual decoding happens asynchronously in _decode_routine().
         """
         self._last_aux_data_ts = time.time()
+        if PartectorBleDiagnosticsPackets.is_diagnostics(bytes(data)):
+            self._on_diagnostics_packet(bytes(data))  # never a measurement
+            return
         try:
             self._decode_queue.put_nowait(("aux", bytes(data)))
         except asyncio.QueueFull:

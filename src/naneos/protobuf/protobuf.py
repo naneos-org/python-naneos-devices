@@ -6,10 +6,12 @@ and only the names that differ between frame and schema are listed here.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 from google.protobuf.descriptor import FieldDescriptor
 
+from naneos.diagnostics import PulseForm, UiCurve
 from naneos.frames import device_type_of
 from naneos.logger import get_naneos_logger
 from naneos.protobuf import proto_v2_pb2 as pb
@@ -80,6 +82,39 @@ def _point_fields() -> tuple[_PointField, ...]:
 
 
 POINT_FIELDS = _point_fields()
+
+
+def _scale_of(descriptor: Any, field_name: str) -> float:
+    """The scale option of a schema field; unset reads back as 0 and means 1."""
+    options = descriptor.fields_by_name[field_name].GetOptions()
+    return options.Extensions[pb.scale] or 1.0  # type: ignore[index]
+
+
+def create_ui_curve(curve: UiCurve) -> pb.UiCurve:
+    """One UiCurve message; the currents go on the wire at the scale of the schema."""
+    message = pb.UiCurve()
+    message.type = int(curve.device_type)  # type: ignore[assignment]  # same numbers as pb.DeviceType
+    message.abs_timestamp = curve.unix_timestamp
+    message.serial_number = curve.serial_number
+    message.U_values.extend(max(int(round(u)), 0) for u in curve.voltages)
+    scale = _scale_of(pb.UiCurve.DESCRIPTOR, "I_values")
+    message.I_values.extend(max(int(round(i * scale)), 0) for i in curve.currents)
+    return message
+
+
+def create_pulse_form(form: PulseForm) -> pb.PulseForm:
+    """One PulseForm message.
+
+    The schema calls the field U_values in mV, but what the devices send, and
+    what the backend stores, is the electrometer current in nA at scale 100.
+    """
+    message = pb.PulseForm()
+    message.type = int(form.device_type)  # type: ignore[assignment]  # same numbers as pb.DeviceType
+    message.abs_timestamp = form.unix_timestamp
+    message.serial_number = form.serial_number
+    scale = _scale_of(pb.PulseForm.DESCRIPTOR, "U_values")
+    message.U_values.extend(max(int(round(i * scale)), 0) for i in form.currents)
+    return message
 
 
 def create_combined_entry(devices: list[pb.Device], abs_timestamp: int) -> pb.CombinedData:

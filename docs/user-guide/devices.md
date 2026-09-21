@@ -14,6 +14,7 @@ connection: USB is faster and the only way to change the data rate.
 | default `query()` timeout | 1 s | 2 s (answers take 0.25 s to 1 s) |
 | `set_sample_rate(hz)` | 0, 1, 10, 100 Hz or `None` (the default of the device) | raises `NotSupportedError`, fixed at 1 Hz (`None` is accepted) |
 | `firmware_version`, `device_type` | known on connect | known a moment after the connect |
+| `read_ui_curve()` / `read_pulse_form()` | 10 s sweep + about 1 s | 10 s sweep + about 40 s / about 50 s |
 
 One command is in flight per device; calls from several threads queue up. Answers carry no
 reference to their command, so `query()` must only be used for commands that answer, and
@@ -79,6 +80,40 @@ P2 and P2 Pro on USB run the electrometer gain test and report the pulse diagnos
 Both can be switched off: `NaneosDeviceManager(serial_gain_test=False,
 serial_pulse_diagnostics=False)`. The gain test holds the data of a device back for at least
 10 s after every connect.
+
+## UI curve and pulse form
+
+A P2 or P2 Pro with firmware 418 or newer has two diagnostics that are read on request, over
+USB and BLE alike:
+
+- `read_ui_curve()` makes the device sweep its corona voltage and returns a `UiCurve`: the
+  electrometer current (nA) over the corona voltage (V), 100 points sorted by voltage. The
+  sweep takes 10 s and disturbs the measurement, so the data points of the device are held back
+  until it has settled: about 15 s over USB (the integration time is known there), about 30 s
+  over BLE.
+- `read_pulse_form()` returns a `PulseForm`: the electrometer current (nA) along one charging
+  pulse, 200 samples in time order. The measurement goes on undisturbed.
+
+Both block: over USB the answer comes within a second of the sweep, over BLE the device sends
+one packet every 2 s, so a UI curve takes about 40 s and a pulse form about 50 s after the
+command. Errors: `NotSupportedError` (a P1, or firmware older than 418), `TimeoutError` (the
+readout stayed incomplete, default 30 s over USB and 90 s over BLE), `ConnectionError`.
+
+```python
+curve = manager.read_ui_curve(8617)  # or device.read_ui_curve()
+print(curve.voltages[-1], curve.currents[-1])  # 3735 V, 1.98 nA
+form = manager.read_pulse_form(8617)
+print(max(form.currents))
+```
+
+**On a schedule.** By default the manager reads both of every connected device once an hour,
+at the full hour (`diagnostics_interval_hours=1`, also a property; `None` switches it off,
+`request_diagnostics()` reads now). The devices are read one after the other on a thread of
+the manager, so with several BLE devices a round takes a few minutes. Each result is uploaded
+to the naneos IoT service when the upload is active (`/uicurve` and `/pulseform`, retried
+like the snapshots) and put on the queue given to `register_diagnostics_queue()`, if any.
+The uploader service has the same setting: `naneos-uploader --diagnostics-interval 6`,
+`0` for never.
 
 ## Without the manager
 

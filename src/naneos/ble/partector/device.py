@@ -8,6 +8,7 @@ from typing import Any, TypeVar
 from naneos.ble.partector.connection import PartectorBleConnection
 from naneos.data_point import ConnectionType, DeviceType
 from naneos.device import NotSupportedError, PartectorDevice
+from naneos.diagnostics import BLE_READOUT_TIMEOUT_SECONDS, UI_COMPUTE_SECONDS, PulseForm, UiCurve
 
 T = TypeVar("T")
 
@@ -66,6 +67,16 @@ class BlePartector(PartectorDevice):
         raise NotSupportedError(
             "The data rate is fixed at 1 Hz over BLE; it can only be changed over USB."
         )
+
+    def read_ui_curve(self, timeout: float | None = None) -> UiCurve:
+        """See PartectorDevice. Over BLE the readout takes about 40 s, default timeout 90 s."""
+        timeout = timeout or BLE_READOUT_TIMEOUT_SECONDS
+        return self._run(self._connection.read_ui_curve(timeout), UI_COMPUTE_SECONDS + timeout)
+
+    def read_pulse_form(self, timeout: float | None = None) -> PulseForm:
+        """See PartectorDevice. Over BLE the readout takes about 50 s, default timeout 90 s."""
+        timeout = timeout or BLE_READOUT_TIMEOUT_SECONDS
+        return self._run(self._connection.read_pulse_form(timeout), timeout)
 
     def _run(self, coroutine: Coroutine[Any, Any, T], timeout: float) -> T:
         if threading.get_ident() == self._loop_thread:

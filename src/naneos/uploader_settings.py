@@ -93,6 +93,9 @@ def template() -> str:
 #                         default: any Partector in reach
 #   --ble-max-links N     maximum number of simultaneous Bluetooth links,
 #                         default {PartectorBleManager.DEFAULT_MAX_LINKS}
+#   --diagnostics-interval HOURS
+#                         read and upload the UI curve and pulse form of every
+#                         device this often, 0 for never, default 1
 #   --log-level LEVEL     DEBUG, INFO, WARNING or ERROR, default INFO
 # Example:
 # OPTIONS=--interval 60 --ble-allow 8617,8764 --ble-max-links 2

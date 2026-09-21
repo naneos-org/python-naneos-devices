@@ -9,6 +9,7 @@ distribution packs its channels as 20 bit values and needs its own loop.
 from dataclasses import dataclass
 
 from naneos.data_point import NaneosDeviceDataPoint
+from naneos.diagnostics import raw_to_nanoamperes
 
 
 @dataclass(frozen=True)
@@ -135,3 +136,56 @@ class PartectorBleDecoderSize(PartectorBleDecoderBlueprint):
             f"particle_number_{channel}nm": float((packed >> (cls.BITS_PER_CHANNEL * i)) & mask)
             for i, channel in enumerate(cls.CHANNELS)
         }
+
+
+class PartectorBleDiagnosticsPackets:
+    """The UI curve and the pulse form, which the device streams on the aux
+    characteristic after "UI?" and "pulse?" (firmware 418 or newer).
+
+    Byte 1 tells the kind, byte 0 is 254 on the last packet and 255 before,
+    then the points follow from byte 2. A UI curve packet carries 5 points of
+    uint16 LE voltage in V plus uint8 current in nA * 100 (20 packets). A
+    pulse form packet carries 9 samples of uint8 index plus uint8 current in
+    nA * 100; the packets overlap by one sample (25 packets). The device sends
+    one packet every 2 s; the packet number is in the last byte.
+    """
+
+    KIND_UI_CURVE = 254
+    KIND_PULSE_FORM = 253
+    LAST_PACKET = 254
+    UI_POINTS_PER_PACKET = 5
+    PULSE_VALUES_PER_PACKET = 9
+
+    @classmethod
+    def is_ui_curve(cls, data: bytes) -> bool:
+        return len(data) >= 2 and data[0] in (254, 255) and data[1] == cls.KIND_UI_CURVE
+
+    @classmethod
+    def is_pulse_form(cls, data: bytes) -> bool:
+        return len(data) >= 2 and data[0] in (254, 255) and data[1] == cls.KIND_PULSE_FORM
+
+    @classmethod
+    def is_diagnostics(cls, data: bytes) -> bool:
+        return cls.is_ui_curve(data) or cls.is_pulse_form(data)
+
+    @classmethod
+    def is_last(cls, data: bytes) -> bool:
+        return data[0] == cls.LAST_PACKET
+
+    @classmethod
+    def ui_curve_points(cls, data: bytes) -> list[tuple[int, float]]:
+        """(voltage in V, current in nA) per point."""
+        points = []
+        for i in range(cls.UI_POINTS_PER_PACKET):
+            offset = 2 + 3 * i
+            voltage = int.from_bytes(data[offset : offset + 2], byteorder="little")
+            points.append((voltage, raw_to_nanoamperes(data[offset + 2])))
+        return points
+
+    @classmethod
+    def pulse_form_values(cls, data: bytes) -> list[tuple[int, float]]:
+        """(sample index, current in nA) per sample."""
+        return [
+            (data[2 + 2 * i], raw_to_nanoamperes(data[2 + 2 * i + 1]))
+            for i in range(cls.PULSE_VALUES_PER_PACKET)
+        ]

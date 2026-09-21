@@ -111,6 +111,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="maximum number of simultaneous BLE links (default: %(default)s)",
     )
     parser.add_argument(
+        "--diagnostics-interval",
+        type=float,
+        default=1.0,
+        metavar="HOURS",
+        help="read and upload the UI curve and pulse form of every device this often, "
+        "0 for never (default: %(default)s)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -140,6 +148,7 @@ def run(args: argparse.Namespace) -> None:
         gathering_interval_seconds=args.interval,
         ble_serial_numbers=args.ble_allow,
         ble_max_links=args.ble_max_links,
+        diagnostics_interval_hours=args.diagnostics_interval or None,
     )
     manager.start()
 
