@@ -259,6 +259,20 @@ def test_the_buffer_is_capped_in_bytes_and_the_oldest_data_goes(uploads, caplog)
     assert kept[0] > 0
 
 
+def test_the_first_eviction_is_logged_even_when_the_machine_booted_seconds_ago(
+    monkeypatch, caplog
+) -> None:
+    """time.monotonic() counts from boot on Linux: a CI runner or a Pi may be seconds old."""
+    monkeypatch.setattr(module.time, "monotonic", lambda: 5.0)
+    manager = _manager(upload_buffer_mb=0.01)
+
+    with caplog.at_level("WARNING"):
+        for k in range(10):
+            manager._publish_snapshot(_snapshot(1, k * 700_000))
+
+    assert "Upload buffer is full" in caplog.text
+
+
 def test_a_snapshot_the_upload_cannot_read_is_skipped_without_stopping_the_gathering(
     monkeypatch, uploads, caplog
 ) -> None:

@@ -117,7 +117,7 @@ class NaneosDeviceManager(threading.Thread):
         self._diagnostics_retry_delay = 0
         self._outage_since: float | None = None
         self._evicted = Eviction(0, 0)  # dropped since the last log line
-        self._evicted_logged_at = 0.0
+        self._evicted_logged_at: float | None = None  # monotonic time of the last log line
 
         self._upload_blocked_devices: list[int | None] = []
 
@@ -622,7 +622,7 @@ class NaneosDeviceManager(threading.Thread):
             self._evicted.snapshots + evicted.snapshots, self._evicted.seconds + evicted.seconds
         )
         now = time.monotonic()
-        if now - self._evicted_logged_at < 60:
+        if self._evicted_logged_at is not None and now - self._evicted_logged_at < 60:
             return
         self._evicted_logged_at = now
         logger.warning(
