@@ -3,6 +3,8 @@
 import base64
 import datetime
 import json
+import math
+import time
 
 import numpy as np
 import pandas as pd
@@ -83,7 +85,9 @@ def send_frames(frames: dict[int, pd.DataFrame]) -> requests.Response:
     server was reached but did not answer in time); HTTP errors are reported by
     the returned response.
     """
-    abs_time = int(datetime.datetime.now().timestamp())
+    # ceil, not int: the rows are rounded to the nearest second (to_upload_frame), so a sample
+    # from the second half of the current second lies after int(now), and would get an age of -1.
+    abs_time = math.ceil(time.time())
     rows = sum(len(df) for df in frames.values())
     timeout = min(MAX_TIMEOUT_SECONDS, TIMEOUT_SECONDS + TIMEOUT_SECONDS_PER_ROW * rows)
     return _post(URL_COMBINED_DATA, build_prepared_entry(frames, abs_time), timeout)

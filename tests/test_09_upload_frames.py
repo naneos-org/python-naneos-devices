@@ -1,8 +1,17 @@
 """Hardware-free tests for the frame preparation of the uploader."""
 
+from types import SimpleNamespace
+
 import pandas as pd
 
-from naneos.cloud.upload import build_body, build_combined_entry, to_upload_frame
+from naneos.cloud import upload
+from naneos.cloud.upload import (
+    build_body,
+    build_combined_entry,
+    prepare_frames,
+    send_frames,
+    to_upload_frame,
+)
 
 
 def _ms_frame(*timestamps_ms: int, ldsa: float = 1.0) -> pd.DataFrame:
@@ -95,3 +104,19 @@ def test_body_is_valid_json_with_a_utc_timestamp() -> None:
     assert body["gateway"] == "python_webhook"
     assert body["data"] == "QUJD"
     assert body["published_at"].endswith("+00:00")
+
+
+def test_a_sample_from_the_second_half_of_this_second_is_not_dropped(monkeypatch, caplog) -> None:
+    """The rows are rounded to the nearest second: with abs_time truncated, a sample at
+    x.6 s of the current second landed one second in the future and got an age of -1."""
+    monkeypatch.setattr(upload, "time", SimpleNamespace(time=lambda: 1_700_000_010.8))
+    sent = []
+    monkeypatch.setattr(upload, "_post", lambda url, message, timeout: sent.append(message))
+    frames = prepare_frames({8617: _ms_frame(1_700_000_008_000, 1_700_000_010_600)})
+
+    with caplog.at_level("WARNING"):
+        send_frames(frames)
+
+    points = sent[0].devices[0].device_points
+    assert "Could not convert" not in caplog.text
+    assert sorted(p.timestamp for p in points) == [0, 3]  # both samples, at their own second

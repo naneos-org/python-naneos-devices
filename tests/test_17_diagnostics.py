@@ -432,13 +432,32 @@ def test_manager_schedules_the_readouts_at_the_wall_clock_multiples(monkeypatch)
         manager.diagnostics_interval_hours = 0
 
 
+@pytest.mark.parametrize("hours", [0.5, 1, 24])
+def test_manager_takes_a_diagnostics_interval_from_half_an_hour_to_a_day(hours) -> None:
+    manager = NaneosDeviceManager(use_serial=False, use_ble=False, diagnostics_interval_hours=hours)
+    assert manager.diagnostics_interval_hours == hours
+
+
+@pytest.mark.parametrize("hours", [0, -1, 0.49, 24.1, float("nan"), float("inf")])
+def test_manager_refuses_a_diagnostics_interval_outside_half_an_hour_to_a_day(hours) -> None:
+    with pytest.raises(ValueError, match="0.5 to 24 hours"):
+        NaneosDeviceManager(use_serial=False, use_ble=False, diagnostics_interval_hours=hours)
+
+
 def test_cli_diagnostics_interval_zero_means_never() -> None:
     assert parse_args([]).diagnostics_interval == 1.0
     assert parse_args(["--diagnostics-interval", "0"]).diagnostics_interval == 0
     assert parse_args(["--diagnostics-interval", "6"]).diagnostics_interval == 6.0
 
 
-@pytest.mark.parametrize("value", ["-1", "-0.5", "nan", "inf", "soon"])
+@pytest.mark.parametrize("value", ["0.5", "24"])
+def test_cli_takes_the_ends_of_the_diagnostics_interval_range(value) -> None:
+    assert parse_args(["--diagnostics-interval", value]).diagnostics_interval == float(value)
+
+
+@pytest.mark.parametrize(
+    "value", ["-1", "-0.5", "0.49", "0.1", "24.1", "100", "nan", "inf", "soon"]
+)
 def test_cli_rejects_a_diagnostics_interval_the_manager_would_refuse(value, capsys) -> None:
     with pytest.raises(SystemExit):
         parse_args(["--diagnostics-interval", value])

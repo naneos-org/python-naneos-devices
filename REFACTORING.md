@@ -535,10 +535,10 @@ firmware 418.
 - `naneos/diagnostics.py`: `UiCurve` (V, nA; 100 points sorted by voltage) and `PulseForm`
   (nA; 200 samples in time order) plus the constants. `PartectorDevice.read_ui_curve()` /
   `read_pulse_form()` on both transports, `NaneosDeviceManager.read_ui_curve(sn)` /
-  `read_pulse_form(sn)`, `diagnostics_interval_hours` (default 1, wall clock aligned, one
-  device after the other on a helper thread), `request_diagnostics()`,
+  `read_pulse_form(sn)`, `diagnostics_interval_hours` (default 1, 0.5 to 24, wall clock
+  aligned, one device after the other on a helper thread), `request_diagnostics()`,
   `register_diagnostics_queue()`. Uploads go to `/uicurve` and `/pulseform` with the retry
-  policy of the snapshots. CLI: `--diagnostics-interval HOURS`, 0 for never.
+  policy of the snapshots. CLI: `--diagnostics-interval HOURS` (0.5 to 24), 0 for never.
 - Wire format, USB: `UI!` answers nothing and needs 10 s; `UI?` answers 100 lines of
   `U<TAB>I` (V, nA*100), already sorted; `pulse?` answers one line of 200 values (nA*100) with
   a trailing tab. The reader thread hands such lines to a `_LineCapture` before the layout

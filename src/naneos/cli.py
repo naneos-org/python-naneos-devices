@@ -87,14 +87,16 @@ def installed_from() -> str:
 
 
 def _hours(text: str) -> float:
-    """A number of hours, 0 for never. The manager refuses a negative interval, so it must
-    not get that far: it would stop the service on every start."""
+    """A number of hours, 0 for never. The manager refuses an interval outside its range, so
+    it must not get that far: it would stop the service on every start."""
+    low = NaneosDeviceManager.MIN_DIAGNOSTICS_INTERVAL_HOURS
+    high = NaneosDeviceManager.MAX_DIAGNOSTICS_INTERVAL_HOURS
     try:
         value = float(text)
     except ValueError:
         raise argparse.ArgumentTypeError(f"invalid float value: {text!r}") from None
-    if not math.isfinite(value) or value < 0:
-        raise argparse.ArgumentTypeError("must be 0 (never) or a positive number of hours")
+    if value != 0 and not low <= value <= high:  # also refuses nan and inf
+        raise argparse.ArgumentTypeError(f"must be 0 (never) or {low:g} to {high:g} hours")
     return value
 
 
@@ -141,7 +143,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=1.0,
         metavar="HOURS",
         help="read and upload the UI curve and pulse form of every device this often, "
-        "0 for never (default: %(default)s)",
+        "0.5 to 24 hours, 0 for never (default: %(default)s)",
     )
     parser.add_argument(
         "--upload-buffer-mb",

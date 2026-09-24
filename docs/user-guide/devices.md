@@ -112,8 +112,8 @@ at the full hour (`diagnostics_interval_hours=1`, also a property; `None` switch
 the manager, so with several BLE devices a round takes a few minutes. Each result is uploaded
 to the naneos IoT service when the upload is active (`/uicurve` and `/pulseform`, retried
 like the snapshots) and put on the queue given to `register_diagnostics_queue()`, if any.
-The uploader service has the same setting: `naneos-uploader --diagnostics-interval 6`,
-`0` for never.
+The interval is 0.5 to 24 hours; anything else raises a `ValueError`. The uploader service has
+the same setting: `naneos-uploader --diagnostics-interval 6`, `0` for never.
 
 ## Without the manager
 

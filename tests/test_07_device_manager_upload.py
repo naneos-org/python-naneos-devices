@@ -241,6 +241,35 @@ def test_a_failing_diagnostics_endpoint_does_not_delay_the_snapshots(monkeypatch
     assert manager._diagnostics_retry_at > time.monotonic()
 
 
+def test_the_log_says_what_an_upload_carried(monkeypatch, uploads, caplog) -> None:
+    curve = UiCurve(DeviceType.P2, 8617, 1_700_000_000, (0, 498), (0.0, 0.5))
+    form = PulseForm(DeviceType.P2, 8764, 1_700_000_001, (0.0, 0.06))
+    monkeypatch.setattr(module, "upload_diagnostic", lambda item: FakeResponse(200))
+    manager = _manager()
+    manager._pending_diagnostics.extend([curve, form])
+    uploads.outcomes = [200]
+    manager._publish_snapshot(_snapshot(1, 1000))
+
+    with caplog.at_level("INFO"):
+        manager._drain_uploads()
+
+    assert "Uploaded snapshot: 1 device(s), 1 rows, 1 s" in caplog.text
+    assert "Uploaded UiCurve of SN8617" in caplog.text
+    assert "Uploaded PulseForm of SN8764" in caplog.text
+
+
+def test_the_log_says_when_an_upload_merged_a_backlog(uploads, caplog) -> None:
+    manager = _manager()
+    manager._publish_snapshot(_snapshot(1, 1_000))
+    manager._publish_snapshot(_snapshot(1, 2_000))  # nobody took the first one: they merge
+    uploads.outcomes = [200]
+
+    with caplog.at_level("INFO"):
+        manager._drain_uploads()
+
+    assert "Uploaded snapshot: 1 device(s), 2 rows, 2 s, 2 snapshots merged" in caplog.text
+
+
 def test_the_buffer_is_capped_in_bytes_and_the_oldest_data_goes(uploads, caplog) -> None:
     manager = _manager(upload_buffer_mb=0.01)  # room for two small chunks
 

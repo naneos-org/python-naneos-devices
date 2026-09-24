@@ -95,7 +95,7 @@ def template() -> str:
 #                         default {PartectorBleManager.DEFAULT_MAX_LINKS}
 #   --diagnostics-interval HOURS
 #                         read and upload the UI curve and pulse form of every
-#                         device this often, 0 for never, default 1
+#                         device this often, 0.5 to 24, 0 for never, default 1
 #   --upload-buffer-mb MB
 #                         RAM that keeps the data while the internet is down
 #                         (1-1000), default 100: about 4 days for a P2 and a

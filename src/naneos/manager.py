@@ -30,6 +30,10 @@ class NaneosDeviceManager(threading.Thread):
     # UI curves and pulse forms waiting for their upload: about 1 KB each, so
     # this is days of them. The snapshots wait in a backlog capped in MB.
     MAX_PENDING_DIAGNOSTICS = 500
+    # A sweep holds the data of its device back for 15 to 30 s: more often than every half hour
+    # is too disturbing. Less often than daily is not worth a schedule.
+    MIN_DIAGNOSTICS_INTERVAL_HOURS = 0.5
+    MAX_DIAGNOSTICS_INTERVAL_HOURS = 24
     # The most rows (all devices) in one request. The backend needs ~2.7 ms per data point, so
     # 2000 rows are ~6 s: well inside the timeout, and 7 devices at 600 s (4200 rows) are not.
     MAX_CHUNK_ROWS = 2000
@@ -65,7 +69,8 @@ class NaneosDeviceManager(threading.Thread):
             serial_pulse_diagnostics: let USB devices report the pulse diagnostics.
             sample_rate_hz: the data rate of the USB devices, see the property.
             diagnostics_interval_hours: read the UI curve and the pulse form of every
-                connected device this often, see the property. None switches it off.
+                connected device this often, 0.5 to 24 hours, see the property. None
+                switches it off.
             upload_buffer_mb: what is kept in RAM while the upload does not work, in MB
                 (a P2 at 1 Hz needs about 16 MB per day). The oldest data is dropped
                 when it is full. It is lost when the process ends.
@@ -182,8 +187,8 @@ class NaneosDeviceManager(threading.Thread):
     @property
     def diagnostics_interval_hours(self) -> float | None:
         """How often the UI curve and the pulse form of every connected device are read
-        and uploaded, None for never. The readouts happen at the wall clock multiples
-        of the interval (with 1 h: on the hour), one device after the other, so a
+        and uploaded, 0.5 to 24 hours, None for never. The readouts happen at the wall clock
+        multiples of the interval (with 1 h: on the hour), one device after the other, so a
         change takes effect at the next multiple; request_diagnostics() reads now.
 
         A UI curve sweep disturbs the measurement: the data points of the device are
@@ -193,8 +198,13 @@ class NaneosDeviceManager(threading.Thread):
 
     @diagnostics_interval_hours.setter
     def diagnostics_interval_hours(self, hours: float | None) -> None:
-        if hours is not None and hours <= 0:
-            raise ValueError("The diagnostics interval must be positive, or None for never.")
+        if hours is not None and not (
+            self.MIN_DIAGNOSTICS_INTERVAL_HOURS <= hours <= self.MAX_DIAGNOSTICS_INTERVAL_HOURS
+        ):
+            raise ValueError(
+                f"The diagnostics interval must be {self.MIN_DIAGNOSTICS_INTERVAL_HOURS:g} to "
+                f"{self.MAX_DIAGNOSTICS_INTERVAL_HOURS:g} hours, or None for never."
+            )
         self._diagnostics_interval_hours = hours
         self._last_diagnostics_block = None  # the next multiple counts from now
 
@@ -651,7 +661,7 @@ class NaneosDeviceManager(threading.Thread):
 
         status, detail = backend_status(response)
         if 200 <= status < 300:
-            logger.info("Upload success: True")
+            logger.info(f"Uploaded {NaneosDeviceManager._describe(item)}")
             return "ok"
         if status >= 500 or status in (408, 429):
             logger.warning(f"Upload failed with HTTP {status} {detail}, will retry.")
@@ -659,7 +669,15 @@ class NaneosDeviceManager(threading.Thread):
 
         # A 4xx will not get better by resending the same payload, and a retry
         # would hold up everything queued behind it.
-        kind = type(item).__name__ if isinstance(item, UiCurve | PulseForm) else "snapshot"
+        what = NaneosDeviceManager._describe(item)
         wrapped = f" (inside HTTP {response.status_code})" if status != response.status_code else ""
-        logger.error(f"Upload rejected with HTTP {status}{wrapped} {detail}, dropping {kind}.")
+        logger.error(f"Upload rejected with HTTP {status}{wrapped} {detail}, dropping {what}.")
         return "drop"
+
+    @staticmethod
+    def _describe(item: Chunk | UiCurve | PulseForm) -> str:
+        """What a request carried, for the log: a burst of uploads should say what it is."""
+        if isinstance(item, UiCurve | PulseForm):
+            return f"{type(item).__name__} of SN{item.serial_number}"
+        merged = f", {item.snapshots} snapshots merged" if item.snapshots > 1 else ""
+        return f"snapshot: {len(item.frames)} device(s), {item.rows} rows, {item.seconds} s{merged}"
