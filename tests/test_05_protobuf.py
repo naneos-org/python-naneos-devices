@@ -1,5 +1,9 @@
 """Hardware-free tests for the DataFrame -> protobuf conversion."""
 
+import re
+import tomllib
+from pathlib import Path
+
 import pandas as pd
 
 from naneos.data_point import DeviceType
@@ -112,3 +116,32 @@ def test_negative_readings_are_clamped_and_values_rounded() -> None:
     assert second.status_data.diffusion_current == 1234  # round(1234.5): banker's rounding
     # the column is in centiseconds, the schema in seconds * 100: the same number
     assert second.status_data.diffusion_current_delay_on == 3
+
+
+def test_protobuf_floor_covers_the_generated_code() -> None:
+    """The generated module refuses to import under an older protobuf runtime.
+
+    The installer keeps a protobuf that is already installed and meets the floor, so a
+    Pi upgraded from an older release ends up with a runtime older than the gencode
+    unless pyproject.toml asks for at least the version protoc was run with.
+    """
+
+    def as_tuple(version: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in version.split("."))
+
+    header = Path(proto_v2_pb2.__file__).read_text(encoding="utf-8")
+    gencode = re.search(r"^# Protobuf Python Version: (\d+(?:\.\d+)*)$", header, re.MULTILINE)
+    assert gencode, "no 'Protobuf Python Version' line in proto_v2_pb2.py"
+
+    pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text("utf-8"))
+    floors = [
+        match.group(1)
+        for requirement in pyproject["project"]["dependencies"]
+        if (match := re.fullmatch(r"protobuf>=(\d+(?:\.\d+)*)", requirement))
+    ]
+    assert len(floors) == 1, "expected one 'protobuf>=X.Y.Z' dependency in pyproject.toml"
+
+    assert as_tuple(floors[0]) >= as_tuple(gencode.group(1)), (
+        f"proto_v2_pb2.py was generated for protobuf {gencode.group(1)}, "
+        f"pyproject.toml only asks for >={floors[0]}: raise the floor"
+    )

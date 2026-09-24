@@ -103,6 +103,10 @@ renumber fields). Regenerate the Python module and the stub in that directory wi
 ```bash
 protoc -I=. --python_out=. --pyi_out=. ./proto_v2.proto
 ```
+Then raise the `protobuf` floor in `pyproject.toml` to the `Protobuf Python Version` in the header of
+`proto_v2_pb2.py`. The generated code refuses to import under an older runtime, and the installer
+keeps a protobuf that is already installed as long as it meets the floor. `tests/test_05_protobuf.py`
+checks this.
 
 
 ## Building executables

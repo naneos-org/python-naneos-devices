@@ -1178,7 +1178,7 @@ wheels = [
 
 [[package]]
 name = "naneos-devices"
-version = "2.0.9"
+version = "2.0.10"
 source = { editable = "." }
 dependencies = [
     { name = "bleak" },
@@ -1227,7 +1227,7 @@ requires-dist = [
     { name = "influxdb-client", extras = ["ciso"], marker = "extra == 'download'", specifier = ">=1.50.0" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pandas", specifier = ">=3.0.5" },
-    { name = "protobuf", specifier = ">=7.36.1" },
+    { name = "protobuf", specifier = ">=7.36.2" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "requests", specifier = ">=2.34.2" },
 ]
