@@ -99,6 +99,10 @@ one packet every 2 s, so a UI curve takes about 40 s and a pulse form about 50 s
 command. Errors: `NotSupportedError` (a P1, or firmware older than 418), `TimeoutError` (the
 readout stayed incomplete, default 30 s over USB and 90 s over BLE), `ConnectionError`.
 
+A curve has exactly 100 U and 100 I values and a pulse form exactly 200 I values. Over BLE a
+lost packet can leave a result short, and the readout does not hide it: `is_complete` says
+whether the count is right, `entries` gives the counts as text (`"95 U + 95 I values"`).
+
 ```python
 curve = manager.read_ui_curve(8617)  # or device.read_ui_curve()
 print(curve.voltages[-1], curve.currents[-1])  # 3735 V, 1.98 nA
@@ -112,6 +116,10 @@ at the full hour (`diagnostics_interval_hours=1`, also a property; `None` switch
 the manager, so with several BLE devices a round takes a few minutes. Each result is uploaded
 to the naneos IoT service when the upload is active (`/uicurve` and `/pulseform`, retried
 like the snapshots) and put on the queue given to `register_diagnostics_queue()`, if any.
+Only complete results go that way: one with the wrong number of entries, or none within the
+timeout, is read again, three attempts in all, and dropped with an error in the log if none
+was complete. The log names the counts of every attempt (`SN8617 over BLE: UI curve attempt 1
+of 3 incomplete: 95 U + 95 I values, expected 100 U + 100 I values`).
 The interval is 0.5 to 24 hours; anything else raises a `ValueError`. The uploader service has
 the same setting: `naneos-uploader --diagnostics-interval 6`, `0` for never.
 

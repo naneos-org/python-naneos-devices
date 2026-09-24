@@ -1178,7 +1178,7 @@ wheels = [
 
 [[package]]
 name = "naneos-devices"
-version = "2.0.10"
+version = "2.0.11"
 source = { editable = "." }
 dependencies = [
     { name = "bleak" },

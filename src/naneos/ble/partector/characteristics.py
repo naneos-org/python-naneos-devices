@@ -144,17 +144,20 @@ class PartectorBleDiagnosticsPackets:
 
     Byte 1 tells the kind, byte 0 is 254 on the last packet and 255 before,
     then the points follow from byte 2. A UI curve packet carries 5 points of
-    uint16 LE voltage in V plus uint8 current in nA * 100 (20 packets). A
-    pulse form packet carries 9 samples of uint8 index plus uint8 current in
-    nA * 100; the packets overlap by one sample (25 packets). The device sends
-    one packet every 2 s; the packet number is in the last byte.
+    uint16 LE voltage in V plus uint8 current in nA * 100 (20 packets); its
+    last byte counts the packet, 0 to 19. A pulse form packet carries 8 samples
+    of uint8 index plus uint8 current in nA * 100 (25 packets of 8 make the 200
+    samples, without overlap). Bytes 18 and 19 of a pulse form packet are
+    reserved: the firmware leaves the first sample of the next packet there,
+    which must not be read as a sample of this one. The device sends one packet
+    every 2 s.
     """
 
     KIND_UI_CURVE = 254
     KIND_PULSE_FORM = 253
     LAST_PACKET = 254
     UI_POINTS_PER_PACKET = 5
-    PULSE_VALUES_PER_PACKET = 9
+    PULSE_VALUES_PER_PACKET = 8
 
     @classmethod
     def is_ui_curve(cls, data: bytes) -> bool:

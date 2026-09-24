@@ -94,6 +94,9 @@ class PartectorDevice(ABC):
         measurement is disturbed by the sweep: the data points of the device
         are held back until it has settled again.
 
+        Over BLE a lost packet leaves the curve short: check UiCurve.is_complete.
+        The manager does that and reads again on its own.
+
         Args:
             timeout: for the readout that follows the sweep; default 30 s over USB, 90 s over
                 BLE (the device sends one packet every 2 s).
@@ -108,6 +111,9 @@ class PartectorDevice(ABC):
     def read_pulse_form(self, timeout: float | None = None) -> PulseForm:
         """Read the form of the last charging pulse, 200 samples. Does not disturb
         the measurement.
+
+        Over BLE a lost packet leaves the form short: check PulseForm.is_complete.
+        The manager does that and reads again on its own.
 
         Args:
             timeout: for the readout; default 30 s over USB, 90 s over BLE.

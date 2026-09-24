@@ -544,12 +544,27 @@ firmware 418.
   a trailing tab. The reader thread hands such lines to a `_LineCapture` before the layout
   logic, so a readout runs while the measurement streams on.
 - Wire format, BLE: both come on the aux characteristic, one 20 byte packet every 2 s, byte 1
-  = 254 (UI) / 253 (pulse), byte 0 = 254 on the last packet, packet number in the last byte.
-  UI: 5 points of uint16 LE V + uint8 nA*100, 20 packets (40 s). Pulse: 9 pairs of uint8
-  sample index + uint8 nA*100, consecutive packets overlap by one sample, 25 packets (50 s):
-  the samples are placed by index. The aux callback routes these packets to the readout, or
+  = 254 (UI) / 253 (pulse), byte 0 = 254 on the last packet.
+  UI: 5 points of uint16 LE V + uint8 nA*100 in bytes 2..16, 20 packets (40 s); byte 19 counts
+  the packet (0..19), bytes 17 and 18 are 0. Pulse: 8 pairs of uint8 sample index + uint8
+  nA*100 in bytes 2..17, 25 packets (50 s) of 8 = 200 samples, no overlap; the samples are
+  placed by index. Bytes 18 and 19 are reserved (BLE spec 7.4): the firmware leaves the first
+  pair of the next packet there (24 of 24 packets on SN8617 and SN8764, index 200 in the last
+  one). Until 2026-09-24 they were read as a ninth pair and explained as an overlap; with the
+  same result for a complete transfer, but it would corrupt sample 0 as soon as the firmware
+  fills them differently. The aux callback routes these packets to the readout, or
   drops them; before, a `write("UI?")` over BLE would have decoded them as measurements.
   A `UI!` interrupts a pulse stream in flight, hence the order curve -> pulse per device.
+  The BLE spec sheet lists `pulse!` as "start pulse readout": wrong, `pulse!` does nothing;
+  `pulse?` is the readout (it answers with the frames), and the library only sends that.
+- Entry counts (2026-09-24): a curve must have 100 U + 100 I values and a pulse form 200 I
+  values, but some arrived short in the field. The backend spaces the entries by index, so a
+  short one lands shifted. The BLE reader no longer cuts a curve to 100 points, so a stray packet
+  shows as 105. The manager (`_read_diagnostic`) logs the counts of every attempt, reads again
+  on a wrong count, a timeout or a garbled line (`DIAGNOSTICS_ATTEMPTS = 3`, a UI curve retry
+  sweeps again) and drops the result with an error after the third; `ConnectionError` is not
+  retried. Only complete results are uploaded or put on the diagnostics queue. Direct
+  `read_ui_curve()` / `read_pulse_form()` calls still return what came: check `is_complete`.
 - Schema: `PulseForm.U_values` (mV) was misnamed; the devices send and the backend stores the
   electrometer current in nA at scale 100. Renamed to `I_values` (nA) after 2.0.8; field number 4
   is unchanged, so the wire format is the same. The scale is taken from the descriptor. The

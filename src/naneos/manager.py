@@ -30,6 +30,10 @@ class NaneosDeviceManager(threading.Thread):
     # UI curves and pulse forms waiting for their upload: about 1 KB each, so
     # this is days of them. The snapshots wait in a backlog capped in MB.
     MAX_PENDING_DIAGNOSTICS = 500
+    # A readout that comes back short (over BLE a lost packet) or not at all is read again,
+    # this many attempts in all, before it is dropped: the backend spaces the entries by index,
+    # so an incomplete curve or form would land in the database shifted.
+    DIAGNOSTICS_ATTEMPTS = 3
     # A sweep holds the data of its device back for 15 to 30 s: more often than every half hour
     # is too disturbing. Less often than daily is not worth a schedule.
     MIN_DIAGNOSTICS_INTERVAL_HOURS = 0.5
@@ -233,7 +237,8 @@ class NaneosDeviceManager(threading.Thread):
 
     def register_diagnostics_queue(self, diagnostics_queue: queue.Queue) -> None:
         """Every UiCurve and PulseForm the manager reads is put on this queue, whether
-        it was read on the interval or with request_diagnostics()."""
+        it was read on the interval or with request_diagnostics(). Only complete ones (100
+        U + 100 I values, 200 I values) get here; see DIAGNOSTICS_ATTEMPTS."""
         self._diagnostics_queue = diagnostics_queue
 
     def unregister_diagnostics_queue(self) -> None:
@@ -404,20 +409,67 @@ class NaneosDeviceManager(threading.Thread):
         for device in self.get_devices():
             if self._stop_event.is_set():
                 return
-            for read in (device.read_ui_curve, device.read_pulse_form):
+            # The curve first: a "UI!" interrupts a pulse form that is still streaming.
+            for what, read in (
+                ("UI curve", device.read_ui_curve),
+                ("pulse form", device.read_pulse_form),
+            ):
                 try:
-                    result = read()
+                    result = self._read_diagnostic(device, what, read)
                 except NotSupportedError as e:
                     logger.debug(f"SN{device.serial_number}: no diagnostics: {e}")
                     break
-                except (ConnectionError, TimeoutError, RuntimeError) as e:
-                    logger.warning(f"SN{device.serial_number}: {read.__name__} failed: {e}")
-                    continue
-                except Exception as e:
-                    logger.exception(f"SN{device.serial_number}: {read.__name__} failed: {e}")
-                    continue
-                logger.info(f"SN{device.serial_number}: read the {type(result).__name__}")
-                self._publish_diagnostic(result)
+                if result is not None:
+                    self._publish_diagnostic(result)
+
+    def _read_diagnostic(
+        self, device: PartectorDevice, what: str, read: Callable[[], UiCurve | PulseForm]
+    ) -> UiCurve | PulseForm | None:
+        """Read one UI curve or pulse form that has all its entries.
+
+        A result with too few or too many entries, or none within the timeout, is read again,
+        DIAGNOSTICS_ATTEMPTS attempts in all (a UI curve retry sweeps again). Returns None
+        when no attempt was complete, or when the device failed in a way that a retry does
+        not help (not connected): only complete results are ever published.
+
+        Raises:
+            NotSupportedError: the device has no such diagnostic.
+        """
+        link = "USB" if device.connection_type == ConnectionType.SERIAL else "BLE"
+        who = f"SN{device.serial_number} over {link}"
+        attempts = self.DIAGNOSTICS_ATTEMPTS
+        problem = ""
+
+        for attempt in range(1, attempts + 1):
+            if self._stop_event.is_set():
+                return None
+            try:
+                result = read()
+            except NotSupportedError:
+                raise
+            except (TimeoutError, ValueError) as e:  # the end never came, or a garbled line
+                problem = str(e) or type(e).__name__
+                logger.warning(f"{who}: {what} attempt {attempt} of {attempts} failed: {problem}")
+                continue
+            except (ConnectionError, RuntimeError) as e:
+                logger.warning(f"{who}: {what} failed: {e}")
+                return None
+            except Exception as e:
+                logger.exception(f"{who}: {what} failed: {e}")
+                return None
+
+            if result.is_complete:
+                logger.info(
+                    f"{who}: read the {what}, {result.entries} (attempt {attempt} of {attempts})"
+                )
+                return result
+            problem = f"{result.entries}, expected {type(result).EXPECTED_ENTRIES}"
+            logger.warning(f"{who}: {what} attempt {attempt} of {attempts} incomplete: {problem}")
+
+        logger.error(
+            f"{who}: gave up on the {what} after {attempts} attempts ({problem}), not uploaded."
+        )
+        return None
 
     def _publish_diagnostic(self, diagnostic: UiCurve | PulseForm) -> None:
         """Hand a UI curve or pulse form to the diagnostics queue and the uploader.
@@ -678,6 +730,6 @@ class NaneosDeviceManager(threading.Thread):
     def _describe(item: Chunk | UiCurve | PulseForm) -> str:
         """What a request carried, for the log: a burst of uploads should say what it is."""
         if isinstance(item, UiCurve | PulseForm):
-            return f"{type(item).__name__} of SN{item.serial_number}"
+            return f"{type(item).__name__} of SN{item.serial_number} ({item.entries})"
         merged = f", {item.snapshots} snapshots merged" if item.snapshots > 1 else ""
         return f"snapshot: {len(item.frames)} device(s), {item.rows} rows, {item.seconds} s{merged}"

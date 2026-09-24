@@ -6,6 +6,7 @@ IoT service as a message of its own, apart from the measurement data.
 """
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from naneos.data_point import DeviceType
 
@@ -26,6 +27,8 @@ BLE_READOUT_TIMEOUT_SECONDS = 90.0
 class UiCurve:
     """The electrometer current over the corona voltage, 100 points sorted by voltage."""
 
+    EXPECTED_ENTRIES: ClassVar[str] = f"{UI_CURVE_POINTS} U + {UI_CURVE_POINTS} I values"
+
     device_type: DeviceType
     serial_number: int
     unix_timestamp: int  # seconds, when the curve was read
@@ -36,10 +39,17 @@ class UiCurve:
     def is_complete(self) -> bool:
         return len(self.voltages) == UI_CURVE_POINTS and len(self.currents) == UI_CURVE_POINTS
 
+    @property
+    def entries(self) -> str:
+        """What the curve holds, for the log: "100 U + 100 I values"."""
+        return f"{len(self.voltages)} U + {len(self.currents)} I values"
+
 
 @dataclass(frozen=True)
 class PulseForm:
     """The electrometer current along one charging pulse, 200 samples in time order."""
+
+    EXPECTED_ENTRIES: ClassVar[str] = f"{PULSE_FORM_VALUES} I values"
 
     device_type: DeviceType
     serial_number: int
@@ -49,6 +59,11 @@ class PulseForm:
     @property
     def is_complete(self) -> bool:
         return len(self.currents) == PULSE_FORM_VALUES
+
+    @property
+    def entries(self) -> str:
+        """What the form holds, for the log: "200 I values"."""
+        return f"{len(self.currents)} I values"
 
 
 def raw_to_nanoamperes(raw: int) -> float:

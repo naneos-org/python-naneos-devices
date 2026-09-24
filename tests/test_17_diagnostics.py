@@ -18,7 +18,7 @@ from naneos.ble.partector.connection import PartectorBleConnection
 from naneos.cli import parse_args
 from naneos.cloud import upload as upload_module
 from naneos.cloud.upload import backend_status, upload_pulse_form, upload_ui_curve
-from naneos.data_point import DeviceType
+from naneos.data_point import ConnectionType, DeviceType
 from naneos.device import NotSupportedError
 from naneos.diagnostics import PulseForm, UiCurve
 from naneos.manager import NaneosDeviceManager
@@ -149,17 +149,31 @@ def _ui_packet(points: list[tuple[int, int]], last: bool) -> bytes:
     return data.ljust(20, b"\0")
 
 
-def _pulse_packet(first_index: int, values: list[int], last: bool) -> bytes:
-    """9 (index, value) pairs; the device overlaps consecutive packets by one sample."""
+def _pulse_packet(
+    first_index: int, values: list[int], last: bool, reserved: tuple[int, int] = (0, 0)
+) -> bytes:
+    """8 (index, value) pairs from byte 2, then the 2 reserved bytes 18 and 19."""
+    assert len(values) == 8
     data = bytes([254 if last else 255, 253])
     for i, value in enumerate(values):
         data += bytes([first_index + i, value])
-    return data.ljust(20, b"\0")
+    return data + bytes(reserved)
+
+
+def _pulse_packets(values: list[int]) -> list[bytes]:
+    """The 25 packets of a pulse form. Like the firmware (seen on SN8617 and SN8764) they carry
+    the first pair of the next packet in the reserved bytes; the last one carries index 200."""
+    assert len(values) == 200
+    following = [*values, 0]
+    return [
+        _pulse_packet(i, values[i : i + 8], last=i == 192, reserved=(i + 8, following[i + 8]))
+        for i in range(0, 200, 8)
+    ]
 
 
 def test_ble_packets_are_told_apart_and_decoded() -> None:
     ui = _ui_packet([(498, 0), (3735, 198), (0, 0), (0, 0), (0, 0)], last=False)
-    pulse = _pulse_packet(8, [0, 6, 72, 206, 0, 0, 0, 0, 1], last=True)
+    pulse = _pulse_packet(8, [0, 6, 72, 206, 0, 0, 0, 1], last=True, reserved=(16, 99))
     aux = bytes(20)
     aux_error = b"\xff\xff" + bytes(18)
 
@@ -177,7 +191,9 @@ def test_ble_packets_are_told_apart_and_decoded() -> None:
         (10, 0.72),
         (11, 2.06),
     ]
-    assert PartectorBleDiagnosticsPackets.pulse_form_values(pulse)[-1] == (16, 0.01)
+    # 8 pairs: the reserved bytes 18 and 19 (16, 99) are not a ninth one
+    assert len(PartectorBleDiagnosticsPackets.pulse_form_values(pulse)) == 8
+    assert PartectorBleDiagnosticsPackets.pulse_form_values(pulse)[-1] == (15, 0.01)
 
 
 class _FakeClient:
@@ -248,6 +264,61 @@ def test_ble_ui_curve_is_assembled_from_the_packets_and_the_data_held_back(conne
     asyncio.run(scenario())
 
 
+def test_ble_ui_curve_with_a_lost_or_a_stray_packet_is_left_incomplete(connection) -> None:
+    async def scenario() -> None:
+        connection._loop = asyncio.get_running_loop()
+        await connection._try_connect()
+        points = [(5000 - 50 * i, max(0, 198 - 2 * i)) for i in range(100)]
+        packets = [_ui_packet(points[i : i + 5], last=i == 95) for i in range(0, 100, 5)]
+
+        connection._client.aux_frames = [*packets[:7], *packets[8:]]  # one packet lost
+        curve = await connection.read_ui_curve()
+        assert not curve.is_complete
+        assert curve.entries == "95 U + 95 I values"
+
+        connection._client.aux_frames = [*packets[:-1], packets[0], packets[-1]]  # one too many
+        curve = await connection.read_ui_curve()
+        assert not curve.is_complete  # not cut to 100 any more
+        assert curve.entries == "105 U + 105 I values"
+
+    asyncio.run(scenario())
+
+
+def test_ble_pulse_form_with_a_lost_packet_is_left_short(connection) -> None:
+    async def scenario() -> None:
+        connection._loop = asyncio.get_running_loop()
+        await connection._try_connect()
+        packets = _pulse_packets(list(range(200)))
+
+        # The packet of the samples 80 to 87 is lost. Its first sample sits in the reserved
+        # bytes of the packet before, which are not read: all 8 are missing.
+        connection._client.aux_frames = [*packets[:10], *packets[11:]]
+        form = await connection.read_pulse_form()
+        assert not form.is_complete
+        assert form.entries == "192 I values"
+
+    asyncio.run(scenario())
+
+
+def test_ble_pulse_form_does_not_read_the_reserved_bytes(connection) -> None:
+    async def scenario() -> None:
+        connection._loop = asyncio.get_running_loop()
+        await connection._try_connect()
+        values = list(range(200))
+        # A pair at index 0 in the reserved bytes would overwrite the first sample if it was read.
+        packets = [
+            _pulse_packet(i, values[i : i + 8], last=i == 192, reserved=(0, 99))
+            for i in range(0, 200, 8)
+        ]
+        connection._client.aux_frames = packets
+
+        form = await connection.read_pulse_form()
+        assert form.is_complete
+        assert form.currents == tuple(v / 100 for v in values)
+
+    asyncio.run(scenario())
+
+
 def test_ble_data_is_not_held_back_when_the_sweep_could_not_be_started(
     connection, monkeypatch
 ) -> None:
@@ -268,8 +339,7 @@ def test_ble_pulse_form_is_assembled_and_a_stray_packet_is_ignored(connection) -
     async def scenario() -> None:
         connection._loop = asyncio.get_running_loop()
         await connection._try_connect()
-        values = list(range(200)) + [7]  # the 9th sample of the last packet is off the end
-        packets = [_pulse_packet(i, values[i : i + 9], last=i == 192) for i in range(0, 200, 8)]
+        packets = _pulse_packets(list(range(200)))
         stray = _ui_packet([(1, 1)] * 5, last=True)  # from an earlier readout
         connection._client.aux_frames = [stray, *packets]
 
@@ -345,23 +415,48 @@ def test_backend_status_sees_through_a_wrapped_answer() -> None:
 
 # == Manager =======================================================================================
 class _FakeDevice:
-    def __init__(self, serial_number: int, fails: bool = False, supported: bool = True) -> None:
+    """A device whose readouts follow a script: one entry per attempt, an int is the number
+    of entries the result has (100 / 200 are complete), an exception is raised. What is
+    left after the script is complete."""
+
+    connection_type = ConnectionType.CONNECTED
+
+    def __init__(
+        self,
+        serial_number: int,
+        fails: bool = False,
+        supported: bool = True,
+        ui_script: list[int | Exception] | None = None,
+        pulse_script: list[int | Exception] | None = None,
+    ) -> None:
         self.serial_number = serial_number
-        self.fails = fails
         self.supported = supported
+        self.ui_script = [TimeoutError("nothing")] * 10 if fails else list(ui_script or [])
+        self.pulse_script = list(pulse_script or [])
         self.calls: list[str] = []
+        self.on_call = lambda: None
 
     def read_ui_curve(self, timeout=None) -> UiCurve:
         self.calls.append("ui")
+        self.on_call()
         if not self.supported:
             raise NotSupportedError("too old")
-        if self.fails:
-            raise TimeoutError("nothing")
-        return UiCurve(DeviceType.P2, self.serial_number, 1, (1,), (1.0,))
+        count = self._next(self.ui_script, 100)
+        values = tuple(range(count))
+        return UiCurve(DeviceType.P2, self.serial_number, 1, values, tuple(map(float, values)))
 
     def read_pulse_form(self, timeout=None) -> PulseForm:
         self.calls.append("pulse")
-        return PulseForm(DeviceType.P2, self.serial_number, 1, (1.0,))
+        self.on_call()
+        count = self._next(self.pulse_script, 200)
+        return PulseForm(DeviceType.P2, self.serial_number, 1, tuple(map(float, range(count))))
+
+    @staticmethod
+    def _next(script: list[int | Exception], complete: int) -> int:
+        step = script.pop(0) if script else complete
+        if isinstance(step, Exception):
+            raise step
+        return step
 
 
 def _wait_for(condition, timeout: float = 2.0) -> bool:
@@ -391,7 +486,8 @@ def test_manager_reads_every_device_in_turn_and_hands_the_results_on(monkeypatch
     assert _wait_for(lambda: not manager.diagnostics_in_progress)
 
     assert devices[0].calls == ["ui", "pulse"]
-    assert devices[1].calls == ["ui", "pulse"]  # a failed curve does not stop the pulse form
+    # a curve that never comes is read three times, and does not stop the pulse form
+    assert devices[1].calls == ["ui", "ui", "ui", "pulse"]
     assert devices[2].calls == ["ui"]  # not supported: the device is skipped
     got = [results.get_nowait() for _ in range(3)]
     assert [(type(d).__name__, d.serial_number) for d in got] == [
@@ -404,6 +500,111 @@ def test_manager_reads_every_device_in_turn_and_hands_the_results_on(monkeypatch
     manager._drain_uploads()  # on the sender thread, after the snapshots
     assert uploads == got
     assert manager.pending_diagnostics_count == 0
+
+
+def _diagnostics_manager(monkeypatch, *devices) -> tuple[NaneosDeviceManager, queue.Queue]:
+    manager = NaneosDeviceManager(use_serial=False, use_ble=False, upload_active=True)
+    monkeypatch.setattr(manager, "get_devices", lambda: list(devices))
+    results: queue.Queue = queue.Queue()
+    manager.register_diagnostics_queue(results)
+    return manager, results
+
+
+def _names(results: queue.Queue) -> list[str]:
+    return [type(results.get_nowait()).__name__ for _ in range(results.qsize())]
+
+
+def test_manager_reads_a_short_curve_again_and_only_the_complete_one_goes_on(
+    monkeypatch, caplog
+) -> None:
+    device = _FakeDevice(1, ui_script=[95])
+    manager, results = _diagnostics_manager(monkeypatch, device)
+
+    with caplog.at_level("INFO", logger="naneos"):
+        manager._read_all_diagnostics()
+
+    assert device.calls == ["ui", "ui", "pulse"]
+    got = [results.get_nowait() for _ in range(2)]
+    assert [type(d).__name__ for d in got] == ["UiCurve", "PulseForm"]
+    assert all(d.is_complete for d in got)
+    assert results.empty()
+    assert manager.pending_diagnostics_count == 2
+    assert (
+        "SN1 over BLE: UI curve attempt 1 of 3 incomplete: "
+        "95 U + 95 I values, expected 100 U + 100 I values"
+    ) in caplog.text
+    assert "SN1 over BLE: read the UI curve, 100 U + 100 I values (attempt 2 of 3)" in caplog.text
+    assert "SN1 over BLE: read the pulse form, 200 I values (attempt 1 of 3)" in caplog.text
+
+
+def test_manager_drops_a_readout_that_is_still_wrong_after_three_attempts(
+    monkeypatch, caplog
+) -> None:
+    device = _FakeDevice(1, ui_script=[95, 105, 99], pulse_script=[199, 0, 201])
+    manager, results = _diagnostics_manager(monkeypatch, device)
+
+    with caplog.at_level("INFO", logger="naneos"):
+        manager._read_all_diagnostics()
+
+    assert device.calls == ["ui", "ui", "ui", "pulse", "pulse", "pulse"]
+    assert results.empty()
+    assert manager.pending_diagnostics_count == 0
+    assert "UI curve attempt 2 of 3 incomplete: 105 U + 105 I values, expected" in caplog.text
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert errors == [
+        "SN1 over BLE: gave up on the UI curve after 3 attempts "
+        "(99 U + 99 I values, expected 100 U + 100 I values), not uploaded.",
+        "SN1 over BLE: gave up on the pulse form after 3 attempts "
+        "(201 I values, expected 200 I values), not uploaded.",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("error", "retried"),
+    [
+        (TimeoutError("no last packet"), True),
+        (ValueError("garbled line"), True),
+        (ConnectionError("not connected"), False),
+        (RuntimeError("wrong thread"), False),
+    ],
+)
+def test_manager_reads_again_after_a_timeout_or_a_garbled_line_not_after_a_lost_link(
+    monkeypatch, error, retried
+) -> None:
+    device = _FakeDevice(1, ui_script=[error])
+    manager, results = _diagnostics_manager(monkeypatch, device)
+
+    manager._read_all_diagnostics()
+
+    assert device.calls == (["ui", "ui", "pulse"] if retried else ["ui", "pulse"])
+    assert _names(results) == (["UiCurve", "PulseForm"] if retried else ["PulseForm"])
+
+
+def test_manager_does_not_start_another_attempt_once_it_is_stopping(monkeypatch) -> None:
+    device = _FakeDevice(1, ui_script=[95, 95, 95])
+    manager, results = _diagnostics_manager(monkeypatch, device)
+    device.on_call = manager._stop_event.set
+
+    manager._read_all_diagnostics()
+
+    assert device.calls == ["ui"]
+    assert results.empty()
+
+
+def test_the_counts_of_a_curve_and_a_form_are_told_and_checked() -> None:
+    assert UiCurve.EXPECTED_ENTRIES == "100 U + 100 I values"
+    assert PulseForm.EXPECTED_ENTRIES == "200 I values"
+    assert CURVE.entries == "3 U + 3 I values"
+    assert not CURVE.is_complete
+
+    uneven = UiCurve(DeviceType.P2, 1, 1, (1,) * 100, (1.0,) * 99)
+    assert uneven.entries == "100 U + 99 I values"
+    assert not uneven.is_complete
+    assert PulseForm(DeviceType.P2, 1, 1, (0.0,) * 200).is_complete
+    assert not PulseForm(DeviceType.P2, 1, 1, (0.0,) * 201).is_complete
+
+    assert NaneosDeviceManager._describe(CURVE) == "UiCurve of SN8764 (3 U + 3 I values)"
+    assert NaneosDeviceManager._describe(FORM) == "PulseForm of SN8617 (3 I values)"
 
 
 def test_manager_schedules_the_readouts_at_the_wall_clock_multiples(monkeypatch) -> None:

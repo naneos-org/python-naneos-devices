@@ -16,7 +16,6 @@ from naneos.diagnostics import (
     BLE_READOUT_TIMEOUT_SECONDS,
     PULSE_FORM_VALUES,
     UI_COMPUTE_SECONDS,
-    UI_CURVE_POINTS,
     PulseForm,
     UiCurve,
     check_firmware,
@@ -74,11 +73,13 @@ class BleDiagnosticsReader:
         await asyncio.sleep(UI_COMPUTE_SECONDS)  # without the command lock
 
         packets = await self._read_packets("UI?", "ui_curve", timeout)
+        # 20 packets of 5 points make exactly 100: a different count is a lost or a stray
+        # packet, and is left for is_complete to show instead of being cut to size.
         points = sorted(
             point
             for packet in packets
             for point in PartectorBleDiagnosticsPackets.ui_curve_points(packet)
-        )[:UI_CURVE_POINTS]
+        )
         return UiCurve(
             device_type=self._device_type_or_p2(),
             serial_number=self._serial_number,
@@ -91,7 +92,8 @@ class BleDiagnosticsReader:
         """See PartectorDevice.read_pulse_form()."""
         check_firmware(self._firmware_version(), "pulse form")
         packets = await self._read_packets("pulse?", "pulse_form", timeout)
-        # The packets overlap by one sample: place every sample by its index.
+        # Every sample goes to its index: a lost packet leaves a gap that is_complete shows,
+        # and does not shift the samples behind it.
         samples = {
             index: value
             for packet in packets
