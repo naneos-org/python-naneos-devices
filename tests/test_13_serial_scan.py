@@ -72,8 +72,16 @@ def test_a_pro_that_answers_one_question_late_is_still_a_pro(monkeypatch, stalle
     )
 
 
+def test_the_name_a_device_gives_tells_its_type_the_same_way_on_usb_and_ble() -> None:
+    assert DeviceType.from_name("P2") is DeviceType.P2  # 0: must not be mistaken for "unknown"
+    assert DeviceType.from_name("P2pro") is DeviceType.P2PRO
+    assert DeviceType.from_name("") is None
+    assert DeviceType.from_name("P2 Pro") is None  # a cut off or unknown answer is not guessed
+
+
 def test_an_unknown_firmware_still_asks_for_the_name(monkeypatch) -> None:
     transport = FakeTransport(8764, 424, "P2pro")
     del transport.answers["f?"]
 
-    assert _scan(monkeypatch, transport) == scan.FoundDevice(8764, "/dev/fake", DeviceType.P2PRO, 0)
+    found = _scan(monkeypatch, transport)
+    assert found == scan.FoundDevice(8764, "/dev/fake", DeviceType.P2PRO, None)

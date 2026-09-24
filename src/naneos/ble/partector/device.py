@@ -5,6 +5,7 @@ import threading
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
+from naneos.ble.partector.commands import BleCommandChannel
 from naneos.ble.partector.connection import PartectorBleConnection
 from naneos.data_point import ConnectionType, DeviceType
 from naneos.device import NotSupportedError, PartectorDevice
@@ -55,10 +56,10 @@ class BlePartector(PartectorDevice):
         return 1
 
     def write(self, command: str) -> None:
-        self._run(self._connection.write(command), PartectorBleConnection.QUERY_TIMEOUT_SECONDS)
+        self._run(self._connection.write(command), BleCommandChannel.QUERY_TIMEOUT_SECONDS)
 
     def query(self, command: str, timeout: float | None = None) -> list[str]:
-        timeout = timeout or PartectorBleConnection.QUERY_TIMEOUT_SECONDS
+        timeout = timeout or BleCommandChannel.QUERY_TIMEOUT_SECONDS
         return self._run(self._connection.query(command, timeout), timeout)
 
     def set_sample_rate(self, hz: int | None) -> None:

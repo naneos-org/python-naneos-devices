@@ -139,6 +139,17 @@ manager.gathering_interval_seconds = 45  # 10 to 600 s
 print(manager.seconds_until_next_snapshot, manager.pending_upload_count)
 ```
 
+## When the internet is down
+The upload runs on a thread of its own, so a missing connection never holds up the gathering.
+Until it works again the manager keeps the snapshots in RAM, up to `upload_buffer_mb`
+(`NaneosDeviceManager(upload_buffer_mb=100)`, the default): about 4 days for a P2 and a P2 Pro
+at 1 Hz, see the [Raspberry Pi guide](https://naneos-org.github.io/python-naneos-devices/user-guide/raspberry-pi-setup/#when-the-internet-is-down)
+for more. When the connection is back the data is sent oldest first, in requests of up to
+10 minutes (and about 2000 rows) each, and lands at its own time on the server. When the buffer is full the oldest data is
+dropped, and everything is lost when the process ends: nothing is written to disk.
+`manager.pending_upload_count` (snapshots), `pending_upload_seconds` and `pending_upload_bytes`
+show what is waiting.
+
 ## Talk to a device: commands and data rate
 Example: [`examples/device_commands.py`](https://github.com/naneos-org/python-naneos-devices/blob/master/examples/device_commands.py)
 

@@ -103,17 +103,13 @@ def create_ui_curve(curve: UiCurve) -> pb.UiCurve:
 
 
 def create_pulse_form(form: PulseForm) -> pb.PulseForm:
-    """One PulseForm message.
-
-    The schema calls the field U_values in mV, but what the devices send, and
-    what the backend stores, is the electrometer current in nA at scale 100.
-    """
+    """One PulseForm message; the currents go on the wire at the scale of the schema."""
     message = pb.PulseForm()
     message.type = int(form.device_type)  # type: ignore[assignment]  # same numbers as pb.DeviceType
     message.abs_timestamp = form.unix_timestamp
     message.serial_number = form.serial_number
-    scale = _scale_of(pb.PulseForm.DESCRIPTOR, "U_values")
-    message.U_values.extend(max(int(round(i * scale)), 0) for i in form.currents)
+    scale = _scale_of(pb.PulseForm.DESCRIPTOR, "I_values")
+    message.I_values.extend(max(int(round(i * scale)), 0) for i in form.currents)
     return message
 
 

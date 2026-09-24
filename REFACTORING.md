@@ -1,6 +1,8 @@
 # Refactoring & cleanup overview
 
-Snapshot of the codebase as of 2026-09-11 (branch `dev_improve_raspi_ble`, started at v1.1.17, released as v1.2.0).
+Snapshot of the codebase as of 2026-09-24 (v2.0.8 plus the cleanup pass of section 8). First written on
+2026-09-11 at v1.1.17 (branch `dev_improve_raspi_ble`, released as v1.2.0); sections 1 to 5 keep the
+file names of that time, the layout since 2.0.0 is in 7.6.
 Goal: simplify the repo and fix known bugs **before** new features are built.
 
 Legend: `[ ]` open, `[x]` done. Priorities: **P0** bug / data loss, **P1** requested cleanup,
@@ -12,14 +14,14 @@ Legend: `[ ]` open, `[x]` done. Priorities: **P0** bug / data loss, **P1** reque
 
 | Metric | Value |
 |---|---|
-| Source lines (`src/`, without generated `_pb2`) | ~4 900 at the start; Python 3.11-3.14, bleak 3, pandas 3, protobuf 7 since 1.2.0 |
-| Largest files | `partector_ble_connection.py` 731, `_data_structure.py` 565, `_partector_blueprint.py` 541, `partector_ble_manager.py` 415 |
+| Source lines (`src/`, without generated `_pb2`) | ~6 400 (~4 900 at the start of 1.2.0, before the P2 diagnostics, the Pi uploader settings and updater); Python 3.11-3.14, bleak 3, pandas 3, protobuf 7 |
+| Largest files | `ble/partector/connection.py` 690 (895 before section 8), `usb/partector/device.py` 685, `manager.py` 657, `uploader_settings.py` 550, `ble/partector/manager.py` 445 |
 | `ruff check` | clean with `E, F, I, B, UP` |
 | `ruff format --check` | clean (`[tool.ruff]` with line length 100 in `pyproject.toml`) |
-| `mypy src` | clean |
-| Tests runnable without hardware | 53; the 9 hardware and 2 network tests are marked and skipped by default |
+| `mypy` | clean |
+| Tests runnable without hardware | 237; the 9 hardware and 2 network tests are marked and skipped by default |
 | `__main__` demo blocks inside library modules | none, runnable scripts live in `examples/` |
-| CI | `ci.yml`: ruff, mypy, pytest on 3.10-3.13 (hardware tests excluded via marker) |
+| CI | `ci.yml`: ruff and mypy on 3.11, pytest on 3.11-3.14 (hardware tests excluded via marker); `documentation.yml` builds the docs from the `docs` group of `uv.lock` |
 
 ---
 
@@ -290,9 +292,10 @@ before releasing, the Windows-only branches in the connection are untested here.
 
 ## 6. Decisions needed from you
 
-- Keep `DEV_TYPE` numeric values as an `IntEnum` with `3` reserved, or just drop 3?
-- Are the 10 Hz / 100 Hz serial modes (`verb_freq` 2 / 3) still used by anyone? If not, the
-  P2 mode handling and `MAX_ROWS_PER_DEVICE` can be simplified further.
+- ~~Keep `DEV_TYPE` numeric values as an `IntEnum` with `3` reserved, or just drop 3?~~ Decided: `DeviceType` is an
+  `IntEnum` and `3` stays reserved (`data_point.py`), the backend still knows it.
+- ~~Are the 10 Hz / 100 Hz serial modes (`verb_freq` 2 / 3) still used by anyone?~~ Decided 2026-09-17: they
+  stay, 100 Hz for testing (7.0). The row cap became a time cap (7.1).
 - ~~Is `iotweb/download` (InfluxDB) still in use?~~ Now the optional extra `download`, see 7.5.
 
 ---
@@ -407,9 +410,10 @@ uploaded rows, never more than one per second.
 - [x] After every connect the link asks `f?` and `name?`: BLE points now carry
   `firmware_version`, and a P2 Pro is known as one right away instead of only after its first
   size distribution frame.
-- [ ] Share the command layer between both transports. Left open on purpose: what is shared today
-  is the interface; the only duplicated knowledge is the `name?` -> device type table (scan and
-  BLE connection). Not worth a module yet.
+- [x] Share the command layer between both transports. Left open on purpose at first: what is shared
+  is the interface, the only duplicated knowledge was the `name?` -> device type table. That is
+  `DeviceType.from_name()` since 8.2; the rest differs by nature (a reader thread on USB, one
+  asyncio loop on BLE) and stays two implementations of one interface.
 
 ### 7.5 P2 - Drop or simplify (done 2026-09-17, released as 2.0.0)
 
@@ -546,8 +550,10 @@ firmware 418.
   the samples are placed by index. The aux callback routes these packets to the readout, or
   drops them; before, a `write("UI?")` over BLE would have decoded them as measurements.
   A `UI!` interrupts a pulse stream in flight, hence the order curve -> pulse per device.
-- Schema: `PulseForm.U_values` is misnamed; the devices send and the backend stores the
-  electrometer current in nA at scale 100. The scale is taken from the descriptor.
+- Schema: `PulseForm.U_values` (mV) was misnamed; the devices send and the backend stores the
+  electrometer current in nA at scale 100. Renamed to `I_values` (nA) after 2.0.8; field number 4
+  is unchanged, so the wire format is the same. The scale is taken from the descriptor. The
+  backend and the tracker gateway still have the old name in their copy of the proto.
 - **Backend:** the dev lambda answered the UI curve with "Wrote 100 data point(s)" but the
   pulse form with the `no_data` body (HTTP 200 wrapping a 404): the deployed lambda does not
   route `/proto/v2/pulseform`, although `upload-timeseries` has it since #59 (2026-07-29).
@@ -555,6 +561,159 @@ firmware 418.
 
 ### 7.11 What is left
 
-Nothing from this section. Still open from earlier sections: the `[ ]` item in 7.4 (shared
-command layer, left open on purpose) and the hardware check of the Windows-only BLE branches
-(3.3).
+Nothing from section 7 itself. Open, and not doable from this repo:
+
+- [ ] Redeploy the dev lambda so that `/proto/v2/pulseform` is routed (7.10), then check that a
+  pulse form lands in influx as `pulse_form`.
+- [ ] Rename `U_values` to `I_values` in the backend's copy of the proto (`upload-timeseries`;
+  `data_handling.py` reads `U_values` and stores it as `u_value`) and in the tracker gateway's.
+  The wire format does not change, so there is no hurry.
+- [ ] Check that the backend reads `electrometer_amplitude` (7.7).
+- [ ] Two questions for naneos: the four columns marked "check with martin" in
+  `usb/partector/layouts.py`, and the unit of the electrometer gain (`data_point.py` says mV
+  because `proto_v2.proto` does; no device has confirmed it).
+- [ ] Hardware check of the Windows-only BLE branches (3.3).
+- [ ] `cloud/upload.py` posts to the AWS `/dev` stage. Intended for production?
+
+---
+
+## 8. Cleanup pass (2026-09-24, branch `refactor/open-points`)
+
+Found by reading the whole repo (sweeps of USB / core, BLE, and manager / cloud / tooling). Every
+finding was checked against the code before it was touched; one commit per item. Verified with the
+205 hardware-free tests and, for the device paths, on SN8617 (P2 FW422) and SN8764 (P2 Pro FW424)
+over USB and BLE.
+
+### 8.1 Bugs
+
+- [x] `PulseForm.U_values` (mV) is `I_values` (nA), see 7.10. Same bytes on the wire (compared with
+  the old generated module).
+- [x] Upload: an HTTP 200 that wraps `{"statusCode": 404, ...}` counted as a success, which is how the
+  pulse forms of 7.10 vanished. `cloud.upload.backend_status()` reads the inner status: any 2xx is
+  done, 5xx / 408 / 429 are retried, other 4xx are dropped with an error that names the item.
+  Different from the first plan (retry): a rejected diagnostic at the head of the queue would hold
+  up every diagnostic behind it, so it is dropped, loudly.
+- [x] `--diagnostics-interval -1` passed the settings check and then stopped the service on every
+  start. The parser refuses it (also nan and inf).
+- [x] USB: an unknown firmware is `None`, not 0 (log line, "not known yet", uploaded points).
+- [x] BLE: no hold on the data after a failed `UI!`; the point buffer of the BLE manager is locked
+  against the `get_data()` swap. USB: the queue of command answers is bounded (100) and warns once.
+- Checked and left alone: USB `is_settling` does not include a UI sweep. It feeds the upload
+  blocklist, which drops the whole snapshot of a device, and the device holds its own invalid points
+  back already.
+
+### 8.2 Refactors
+
+- [x] `DeviceType.from_name()` replaces the two `name?` tables (closes the item in 7.4).
+- [x] `ble/partector/connection.py` 895 -> 690 lines: `commands.py` (`BleCommandChannel`: write /
+  query, framing, and `accept` to skip a late answer to an earlier command), `readout.py`
+  (`BleDiagnosticsReader`), `reconnect.py` (`ReconnectPolicy`: backoff, GATT error count, RSSI gate,
+  no I/O). The GATT service check is one retry loop. Found on the way: the post-connect `f?` /
+  `name?` pair could take a stale answer for the wrong question, and left the firmware unknown.
+- [x] The advertisement decoder returns the advertisement payload only (checked against the old one on
+  50 000 generated advertisements; it had no tests, now it has).
+- [x] USB: `Partector2Family` holds what the P2 and P2 Pro share, `_connect` picks the class from
+  `DEVICE_CLASSES`, the rates of the manager come from `SAMPLE_RATE_CODES`.
+- [x] Dead code and stale comments: two BLE fields, `scanner.is_passive`, `get_rssi(max_age_seconds)`,
+  "Windows cache" log messages on every platform, the timeout in two docstrings.
+
+### 8.3 Pi uploader and repository
+
+- [x] Settings: a file that cannot be written is a rejection (in both files, the password leaves the
+  card) and not a crash, which also aborted the installer (`set -e`). `apply()` is split. The options
+  list of the template stays hand written, with a test that fails when it drifts from the options of
+  the uploader: generating it needed argparse internals and changed the wording customers read.
+- [x] Updater: no fallback to the installer of `master`. The release workflow tags after it has
+  published to PyPI, so a release has no installer for a short while; the update then waits for the
+  next run of the timer instead of running an installer that may belong to the next release.
+- [x] `documentation.yml` runs `uv sync --only-group docs` (the versions of `uv.lock`); `noxfile.py`
+  and the nox dev dependency are gone, CI already runs 3.11-3.14.
+
+### 8.4 Found on the way
+
+- `tests/test_02_02_ble_connection.py::test_connection_with_context_manager` (hardware) fails now and
+  then on `master` as well: SN8617 is heard within its 5 s scan window or it is not.
+
+---
+
+## 9. Upload backlog in RAM (2026-09-24, branch `feature/upload-backlog`)
+
+Goal (user): keep about a day of data through an internet outage, in RAM only (no SD card
+writes on the Pi), capped at about 100 MB, uploaded by a background thread. Before: the last
+`MAX_PENDING_UPLOADS = 20` snapshots (~10 min at 30 s), replayed synchronously inside the manager
+loop.
+
+### 9.1 What it does
+
+- `NaneosDeviceManager(upload_buffer_mb=100)`, `naneos-uploader --upload-buffer-mb N` (1-1000, also
+  in the SD card template). `_publish_snapshot` only prepares the frames and puts them into an
+  `UploadBacklog` (`cloud/backlog.py`); a `naneos-upload` thread (`manager._sender_loop`) does all
+  network work. Online, every snapshot is sent as it arrives, as before.
+- The backlog holds 1 Hz frames with only the columns the wire has (`upload.prepare_frames`), merged
+  into chunks of up to 600 s (the largest `--interval`). When the network is back the sender takes
+  chunks of up to 600 s, oldest first: a day of two devices is ~144 requests of at most 145 KB
+  instead of 2880. The protobuf is built per chunk at send time (`abs_time = now`, points are
+  relative, the backend has no age check).
+- A failed chunk goes back to the head; waits 5, 10, 20, 40, 60 s. A server answer (5xx, 408, 429) to
+  a chunk longer than one interval halves the chunk size (doubling again with each success); a
+  network error does not. UI curves and pulse forms use the same thread with a pause of their own.
+- A request holds at most `MAX_CHUNK_ROWS` = 2000 rows of all devices together (`take(max_rows)`),
+  and `send_frames` gives it 10 s + 5 ms per row (at most 30 s). A `requests.ReadTimeout` counts as
+  a server that is too slow and halves the chunk, a connection error does not (9.3).
+- Full buffer: the oldest chunks go, at most one log line a minute. The newest chunk always stays,
+  so the cap is soft by one chunk.
+
+### 9.2 Measured (Mac, real P2 / P2 Pro rows through the device classes)
+
+| | |
+|---|---|
+| P2 at 1 Hz | 22 columns, 108 B/row, ~10 MB per day incl. overhead |
+| P2 Pro over BLE at 1 Hz | 37 columns, 168 B/row, ~15 MB per day |
+| what the 100 MB cap holds | 1 P2 10 days, P2 + P2 Pro 4 days, 7 P2 1.4 days, 7 P2 Pro 22 h |
+| memory at the cap | 1.15x the counted bytes (5 KB fixed per frame), so ~115 MB at 100 |
+| publishing one 30 s snapshot of two devices | 8 ms (a Pi Zero 2 W is about 6x slower) |
+| backend time per request | ~0.35 s + 2.7 ms per data point (real dev endpoint: 13 points 0.35 s, 690 points 2.2 s) |
+| draining a day of two devices | 144 requests, ~12 s CPU here, ~75 s on a Pi Zero 2 W (estimate) |
+
+### 9.3 Found on the way
+
+- The frames the manager gathers use pandas' nullable dtypes (`Float32`, `Int32`): every column is a
+  block of its own with ~1.4 KB of objects around it. Kept as gathered, a day took 1.67x the counted
+  bytes (46.8 MB live for 28.1 MB counted). `prepare_frames` stores plain numpy columns (float32
+  where it was float32, else float64): 1.23x, 30.7 MB for the same day. The 1 Hz frame of the
+  collection buffers has the same overhead; not touched here.
+- The first exactness test compared `prepare_frames` with itself (`build_combined_entry` goes through
+  it). It now compares with the old pipeline; a second test uses values at rounding edges.
+- `build_combined_entry` must not get a prepared frame: `to_upload_frame` would round the index to
+  seconds a second time and every row would fail to convert (the warning is logged, the message
+  comes out empty).
+- The first real 600 s chunk worked (9.4) but its latency showed that the cost is per data point:
+  seven devices at 600 s (4200 rows) would take ~12 s, longer than the 10 s timeout, and a timeout
+  was classified as a network error, so the same request would have been retried for ever. Requests
+  are now capped by rows, the timeout scales, and a read timeout halves the chunk.
+- macOS compresses idle pages, so `ps` RSS says less than the process holds. tracemalloc is the
+  number to trust; on a Pi check `top`.
+
+### 9.4 Checked
+
+- 237 hardware-free tests, including two threaded ones (25 repeated runs, no failure).
+- Outage simulation, 7 days for two devices with the real conversion and a stubbed POST: 94.7 h
+  kept at the 100 MB cap, oldest data evicted, then a drain of 568 requests, none above 145 KB.
+- Real devices (SN8617 P2 FW422, SN8764 P2 Pro FW424, USB and BLE), manager with a simulated 100 s
+  outage and a stubbed POST: the backlog filled (13 snapshots, 39 KB), the sender retried at 5, 10,
+  20, 40, 60 s, the outage was logged, the 130 s of data went out as one request without gap or
+  duplicate, then one request per interval.
+- Real dev endpoint (2026-09-24, user's go): the manager gathered 11 min from SN8617 and SN8764 with
+  the network simulated down, then sent for real. The 600 s chunk (591 rows P2 + 99 rows P2 Pro,
+  60 KB protobuf) got HTTP 200, no inner error, "Wrote 690 data point(s) to influxdb" in 2.22 s;
+  the first chunk (6 rows) and the rest (97 rows) too, all counts equal the rows sent, no gap. Then
+  one request per 10 s interval at ~0.4 s each.
+
+### 9.5 Not done
+
+- [ ] Check on a Pi Zero that the BLE links stay up while a large backlog drains (the sender shares
+  the GIL with the BLE loop), and that the process fits next to the OS with the default 100 MB.
+- [ ] Optional, if RAM gets tight: keep the frames as the exact wire integers (int32, scaled)
+  instead of float32; about half the memory again. Not needed for the 1 day target.
+- [ ] Not built, on purpose: compression (1.2-1.5x per snapshot), thinning of old data, newest-first
+  replay (asked; oldest first was chosen).

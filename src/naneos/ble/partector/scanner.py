@@ -134,12 +134,7 @@ class PartectorBleScanner:
         self._stop_event.clear()
         self._task = self._loop.create_task(self.scan())
 
-    @property
-    def is_passive(self) -> bool:
-        """True while the scanner runs (or will run) in passive mode."""
-        return self._passive
-
-    def get_rssi(self, address: str, max_age_seconds: float | None = None) -> int | None:
+    def get_rssi(self, address: str) -> int | None:
         """Returns the recent median RSSI for the given address.
 
         The median over the last few advertisements is used instead of the latest
@@ -148,22 +143,19 @@ class PartectorBleScanner:
 
         Args:
             address (str): BLE address of the device.
-            max_age_seconds (float | None): Only readings younger than this are
-                considered. Defaults to RSSI_MAX_AGE_SECONDS.
 
         Returns:
             The median RSSI in dBm, or None if the device has not advertised
-            within max_age_seconds (i.e. it is out of range).
+            within RSSI_MAX_AGE_SECONDS (i.e. it is out of range).
         """
-        if max_age_seconds is None:
-            max_age_seconds = self.RSSI_MAX_AGE_SECONDS
-
         history = self._rssi.get(address)
         if not history:
             return None
 
         now = time.monotonic()
-        recent = [rssi for timestamp, rssi in history if now - timestamp <= max_age_seconds]
+        recent = [
+            rssi for timestamp, rssi in history if now - timestamp <= self.RSSI_MAX_AGE_SECONDS
+        ]
         if not recent:
             return None
 
@@ -295,7 +287,7 @@ class PartectorBleScanner:
         if not adv_data:
             return
 
-        serial_number = PartectorBleDecoderStd.get_serial_number(adv_data[0])
+        serial_number = PartectorBleDecoderStd.get_serial_number(adv_data)
         if not serial_number:
             return
 

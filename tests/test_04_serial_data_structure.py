@@ -7,7 +7,7 @@ import pytest
 from fake_transport import FakeTransport
 
 from naneos.data_point import ConnectionType, DeviceType
-from naneos.device import PartectorDevice
+from naneos.device import NotSupportedError, PartectorDevice
 from naneos.usb.partector import layouts as ds
 from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro
 
@@ -166,6 +166,46 @@ def test_old_p2_firmware_gets_no_diagnostics() -> None:
         assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE_V265_V275
         assert "opd01!" not in transport.written
         assert not device.is_settling
+    finally:
+        device.close()
+
+
+def test_a_device_that_does_not_tell_its_firmware_has_none_and_not_zero(caplog) -> None:
+    transport = FakeTransport()
+    del transport.answers["f?"]
+    with caplog.at_level("WARNING"):
+        device = Partector2(  # type: ignore[arg-type]
+            transport=transport, gain_test_active=False, output_pulse_diagnostics=False
+        )
+    try:
+        assert device.firmware_version is None
+        assert device._legacy_data_structure
+        assert "an unknown firmware" in caplog.text
+        assert "FW0" not in caplog.text
+
+        transport.emit(len(device._data_structure) - 1)
+        assert _wait_for(lambda: len(device._points) == 1)
+        assert device.get_data()[0].firmware_version is None  # not 0
+
+        with pytest.raises(NotSupportedError, match="not known yet"):
+            device.read_ui_curve()
+    finally:
+        device.close()
+
+
+def test_lines_shorter_than_the_layout_do_not_pile_up(caplog) -> None:
+    device, transport = _p2()
+    try:
+        short = len(device._data_structure) - 5
+        with caplog.at_level("WARNING"):
+            for _ in range(3 * device.REPLY_QUEUE_MAXSIZE):
+                transport.emit(short)
+            assert _wait_for(lambda: transport._lines.empty())
+            time.sleep(0.1)  # the reader is done with the last line
+
+        assert device._replies.qsize() <= device.REPLY_QUEUE_MAXSIZE
+        assert caplog.text.count("do not fit the data layout") == 1  # once, not per line
+        assert device.query("f?") == ["422"]  # commands still get their answer
     finally:
         device.close()
 

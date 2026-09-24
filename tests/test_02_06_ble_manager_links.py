@@ -1,6 +1,7 @@
 """Hardware-free tests for the link bookkeeping of PartectorBleManager."""
 
 import asyncio
+import threading
 import time
 
 from naneos.ble.partector.manager import BleLink, PartectorBleManager
@@ -57,6 +58,27 @@ def test_points_from_the_links_are_buffered_per_device() -> None:
 
     assert list(manager.get_data()[5]["ldsa"]) == [1.0]
     assert manager.get_data() == {}
+
+
+def test_buffering_waits_while_get_data_swaps_the_buffer() -> None:
+    manager = PartectorBleManager()
+    point = NaneosDeviceDataPoint(
+        unix_timestamp=1000,
+        serial_number=5,
+        connection_type=ConnectionType.CONNECTED,
+        device_type=DeviceType.P2,
+        ldsa=1.0,
+    )
+    buffered = threading.Event()
+    writer = threading.Thread(target=lambda: (manager._buffer_points([point]), buffered.set()))
+
+    with manager._points_lock:  # what get_data() holds while it swaps
+        writer.start()
+        assert not buffered.wait(0.1)  # a point must not land in the buffer being taken away
+    assert buffered.wait(2)
+    writer.join()
+
+    assert list(manager.get_data()[5]["ldsa"]) == [1.0]  # and it is not lost
 
 
 def test_finished_tasks_are_forgotten() -> None:

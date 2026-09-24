@@ -11,6 +11,7 @@ from bleak.backends.device import BLEDevice
 
 from naneos.ble.partector.connection import PartectorBleConnection
 from naneos.ble.partector.device import BlePartector
+from naneos.ble.partector.reconnect import MIN_RSSI_CONNECT_DBM
 from naneos.ble.partector.scanner import PartectorBleScanner
 from naneos.data_point import NaneosDeviceDataPoint, PointListener
 from naneos.device import PartectorDevice
@@ -104,12 +105,15 @@ class PartectorBleManager(threading.Thread):
         # also services the BLE notifications, which on a Raspberry Pi Zero 2 W is
         # enough to stall the links themselves.
         self._points: dict[int, list[NaneosDeviceDataPoint]] = {}
+        self._points_lock = threading.Lock()  # get_data() swaps the buffer under the loop's feet
 
     # == Public API (any thread) ===================================================================
     def get_data(self) -> dict[int, pd.DataFrame]:
         """Returns the collected data as DataFrames and clears the buffer."""
-        # Swap first: the BLE thread keeps appending while we convert.
-        points, self._points = self._points, {}
+        # Swap first: the BLE thread keeps appending while we convert. Only the swap
+        # is locked, so the conversion never holds up the event loop.
+        with self._points_lock:
+            points, self._points = self._points, {}
 
         return {
             serial: df
@@ -339,13 +343,14 @@ class PartectorBleManager(threading.Thread):
 
     def _buffer_points(self, points: list[NaneosDeviceDataPoint]) -> None:
         """Append data points to the per-device buffer, keeping the newest ones."""
-        for point in points:
-            if point.serial_number is None:
-                continue
-            buffered = self._points.setdefault(point.serial_number, [])
-            buffered.append(point)
-            if len(buffered) > MAX_ROWS_PER_DEVICE:
-                del buffered[:-MAX_ROWS_PER_DEVICE]
+        with self._points_lock:
+            for point in points:
+                if point.serial_number is None:
+                    continue
+                buffered = self._points.setdefault(point.serial_number, [])
+                buffered.append(point)
+                if len(buffered) > MAX_ROWS_PER_DEVICE:
+                    del buffered[:-MAX_ROWS_PER_DEVICE]
 
     async def _scanner_queue_routine(self) -> None:
         """Drain the scanner queue and start a link for every new device that qualifies."""
@@ -365,10 +370,10 @@ class PartectorBleManager(threading.Thread):
                 continue
 
             rssi = self._get_rssi(device.address)
-            if rssi is not None and rssi < PartectorBleConnection.MIN_RSSI_CONNECT_DBM:
+            if rssi is not None and rssi < MIN_RSSI_CONNECT_DBM:
                 logger.info(
                     f"Ignoring serial={serial} ({device.address}): RSSI {rssi} dBm is below "
-                    f"{PartectorBleConnection.MIN_RSSI_CONNECT_DBM} dBm."
+                    f"{MIN_RSSI_CONNECT_DBM} dBm."
                 )
                 continue
 

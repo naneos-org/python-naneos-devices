@@ -1,5 +1,8 @@
 """Hardware-free tests for the settings files on the SD card (naneos-uploader-settings)."""
 
+import contextlib
+import io
+import re
 import stat
 from datetime import UTC, datetime
 from importlib.metadata import entry_points
@@ -7,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from naneos.cli import parse_args as parse_uploader_args
 from naneos.uploader_settings import (
     CHANGE_FILE,
     CURRENT_FILE,
@@ -346,6 +350,13 @@ def test_validate_options_normalizes_whitespace() -> None:
         validate_options("--interval")
 
 
+def test_validate_options_refuses_a_diagnostics_interval_that_would_stop_the_service() -> None:
+    assert validate_options("--diagnostics-interval 0") == "--diagnostics-interval 0"
+    assert validate_options("--diagnostics-interval 0.5") == "--diagnostics-interval 0.5"
+    with pytest.raises(SettingsError, match="diagnostics-interval"):
+        validate_options("--diagnostics-interval -1")
+
+
 def test_systemctl_override_is_reported(boot: Path, env_file: Path, nm_dir: Path) -> None:
     override_dir = boot / "override.d"
     override_dir.mkdir()
@@ -374,3 +385,64 @@ def test_main_prints_the_outcome(boot: Path, env_file: Path, capsys: pytest.Capt
     main(["--boot-dir", str(boot), "--env-file", str(env_file)])
 
     assert f"{CHANGE_FILE}: applied '--no-upload'" in capsys.readouterr().out
+
+
+def test_a_wifi_profile_that_cannot_be_written_is_reported_and_the_password_leaves_the_card(
+    boot: Path, env_file: Path, tmp_path: Path
+) -> None:
+    nm_file = tmp_path / "nm"
+    nm_file.write_text("not a directory")  # the profile cannot be created below it
+    (boot / CHANGE_FILE).write_text(
+        "OPTIONS=--interval 60\nWIFI_SSID=Lab\nWIFI_PASSWORD=hunter2hunter2\n"
+    )
+
+    result = run(boot, env_file, nm_file)  # must not raise: the installer runs this with set -e
+
+    assert result.error is not None
+    assert "could not write the settings" in result.error
+    assert "the options were applied" in result.error
+    assert env_file.read_text() == f"{ENV_KEY}=--interval 60\n"  # what was written stays
+    assert result.current == "--interval 60"
+    for name in (CHANGE_FILE, CURRENT_FILE):
+        text = (boot / name).read_text()
+        assert "hunter2hunter2" not in text
+        assert "could not write the settings" in text
+    assert "WIFI_PASSWORD=****" in (boot / CHANGE_FILE).read_text()
+
+
+def test_options_that_cannot_be_written_are_reported_without_claiming_they_were_applied(
+    boot: Path, tmp_path: Path, nm_dir: Path
+) -> None:
+    (tmp_path / "etc").write_text("not a directory")  # the environment file cannot go below it
+    (boot / CHANGE_FILE).write_text("OPTIONS=--interval 60\n")
+
+    result = run(boot, tmp_path / "etc" / "options.env", nm_dir)
+
+    assert result.error is not None
+    assert "could not write the settings" in result.error
+    assert "were applied" not in result.error
+    assert result.applied is None and result.current == ""
+    assert "!!" in (boot / CURRENT_FILE).read_text()
+
+
+def test_the_template_describes_every_option_of_the_uploader_and_nothing_else() -> None:
+    help_text = io.StringIO()
+    with contextlib.redirect_stdout(help_text), pytest.raises(SystemExit):
+        parse_uploader_args(["--help"])
+    in_cli = set(re.findall(r"(?<![\w-])--[a-z][a-z-]*", help_text.getvalue()))
+    in_cli -= {"--help", "--version"}  # not settings, see validate_options()
+
+    described = set(re.findall(r"^#   (--[a-z][a-z-]*)", template(), re.MULTILINE))
+
+    assert described == in_cli, "a new uploader option needs a line in template()"
+
+
+def test_the_upload_buffer_is_a_setting_between_1_and_1000_mb() -> None:
+    assert parse_uploader_args([]).upload_buffer_mb == 100
+    assert parse_uploader_args(["--upload-buffer-mb", "1"]).upload_buffer_mb == 1
+    assert parse_uploader_args(["--upload-buffer-mb", "250.5"]).upload_buffer_mb == 250.5
+    assert validate_options("--upload-buffer-mb 50") == "--upload-buffer-mb 50"
+
+    for bad in ("0", "0.5", "-5", "1001", "100000", "nan", "inf", "lots"):
+        with pytest.raises(SettingsError, match="upload-buffer-mb"):
+            validate_options(f"--upload-buffer-mb {bad}")

@@ -49,16 +49,16 @@ class UiCurve(_message.Message):
     def __init__(self, type: _Optional[_Union[DeviceType, str]] = ..., abs_timestamp: _Optional[int] = ..., serial_number: _Optional[int] = ..., U_values: _Optional[_Iterable[int]] = ..., I_values: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class PulseForm(_message.Message):
-    __slots__ = ("type", "abs_timestamp", "serial_number", "U_values")
+    __slots__ = ("type", "abs_timestamp", "serial_number", "I_values")
     TYPE_FIELD_NUMBER: _ClassVar[int]
     ABS_TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
     SERIAL_NUMBER_FIELD_NUMBER: _ClassVar[int]
-    U_VALUES_FIELD_NUMBER: _ClassVar[int]
+    I_VALUES_FIELD_NUMBER: _ClassVar[int]
     type: DeviceType
     abs_timestamp: int
     serial_number: int
-    U_values: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, type: _Optional[_Union[DeviceType, str]] = ..., abs_timestamp: _Optional[int] = ..., serial_number: _Optional[int] = ..., U_values: _Optional[_Iterable[int]] = ...) -> None: ...
+    I_values: _containers.RepeatedScalarFieldContainer[int]
+    def __init__(self, type: _Optional[_Union[DeviceType, str]] = ..., abs_timestamp: _Optional[int] = ..., serial_number: _Optional[int] = ..., I_values: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class CombinedData(_message.Message):
     __slots__ = ("abs_timestamp", "devices", "uplink", "position_points")

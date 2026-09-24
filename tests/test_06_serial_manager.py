@@ -3,7 +3,10 @@
 import pytest
 
 from naneos.data_point import ConnectionType, DeviceType, NaneosDeviceDataPoint
+from naneos.usb.partector import manager as manager_module
+from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro
 from naneos.usb.partector.manager import PartectorSerialManager
+from naneos.usb.partector.scan import FoundDevice
 
 
 class _FakeDevice:
@@ -84,3 +87,45 @@ def test_sample_rate_setting_is_applied_to_every_device_by_the_loop() -> None:
         manager.sample_rate_hz = 2
     with pytest.raises(ValueError):
         PartectorSerialManager(sample_rate_hz=5)
+
+
+def test_connect_builds_the_class_of_the_kind_and_only_the_p2_family_gets_the_diagnostics(
+    monkeypatch,
+) -> None:
+    built: list[tuple[str, dict]] = []
+
+    class _Records:
+        def __init__(self, **kwargs) -> None:  # no port, no thread: only note the call
+            built.append((type(self).__name__, kwargs))
+
+    class RecordedP1(_Records, Partector1): ...
+
+    class RecordedP2(_Records, Partector2): ...
+
+    class RecordedPro(_Records, Partector2Pro): ...
+
+    monkeypatch.setattr(
+        manager_module,
+        "DEVICE_CLASSES",
+        {DeviceType.P1: RecordedP1, DeviceType.P2: RecordedP2, DeviceType.P2PRO: RecordedPro},
+    )
+    manager = PartectorSerialManager(gain_test_active=False, sample_rate_hz=10)
+
+    for kind in (DeviceType.P1, DeviceType.P2, DeviceType.P2PRO):
+        manager._connect(FoundDevice(1, "/dev/x", kind, 422))
+
+    assert [name for name, _ in built] == ["RecordedP1", "RecordedP2", "RecordedPro"]
+    p1, p2, pro = (kwargs for _, kwargs in built)
+    assert p1 == {"port": "/dev/x", "sample_rate_hz": 10, "point_listener": None}
+    for kwargs in (p2, pro):
+        assert kwargs["gain_test_active"] is False
+        assert kwargs["output_pulse_diagnostics"] is True
+        assert kwargs["sample_rate_hz"] == 10
+
+
+def test_the_valid_manager_rates_are_the_rates_of_a_device_without_off() -> None:
+    check = PartectorSerialManager.check_sample_rate
+    assert [check(hz) for hz in (None, 1, 10, 100)] == [None, 1, 10, 100]
+    for bad in (0, 5, 1000):  # 0 switches one device off; a manager always reads
+        with pytest.raises(ValueError, match=r"\[1, 10, 100\]"):
+            check(bad)

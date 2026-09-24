@@ -217,6 +217,36 @@ journalctl -u naneos_uploader_update.service
 sudo ~/naneos-uploader/.venv/bin/naneos-uploader-update --check
 ```
 
+## When the internet is down
+
+The uploader keeps what it gathers while the upload does not work and sends it when the
+connection is back. It keeps it in **RAM**, never on the SD card, which protects the card but
+means: the data is lost when the service restarts (also for an automatic update) or the Pi loses
+power during the outage.
+
+The buffer is `--upload-buffer-mb` (default 100). What that holds at 1 Hz, measured with real
+device data (all columns of the device present):
+
+| Devices | Data per day | Covered by 100 MB |
+|---|---|---|
+| 1 P2 | 10 MB | 10 days |
+| 1 P2 Pro over Bluetooth (1 Hz) | 15 MB | 6 days |
+| 1 P2 + 1 P2 Pro | 25 MB | 4 days |
+| 7 P2 (the Bluetooth link limit) | 70 MB | 1.4 days |
+| 7 P2 Pro over Bluetooth | 106 MB | 22 hours |
+
+A P2 Pro on USB in size distribution mode gives one row every 6 s and needs a sixth of that.
+The rate of a USB device does not matter: 10 and 100 Hz are reduced to 1 Hz before they are kept.
+The process takes about 15 % more RAM than the setting, so 100 MB is about 115 MB of a Pi
+with 512 MB, on top of the ~80 MB the uploader needs anyway. Lower it for a Pi Zero that runs
+other things: `OPTIONS=--upload-buffer-mb 50`.
+
+When the buffer is full the oldest data is dropped and the log says so (at most once a
+minute). When the connection is back the backlog is sent oldest first, in requests of up to 10
+minutes of data each (at most about 2000 rows of all devices together, so fewer minutes with
+many devices), while new data goes into the same queue: a day of data takes a few minutes. During that time the newest data reaches the cloud with a delay. The log says when an
+outage starts and how long it lasted.
+
 ## Running it by hand
 
 Stop the service first, then run the command with the options you need, for example to

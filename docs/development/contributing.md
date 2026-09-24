@@ -17,9 +17,9 @@ uv run pytest -m hardware
 IOT_GUEST_TOKEN=... uv run pytest -m network
 ```
 
-Testing every supported python version:
+CI runs the tests on every supported Python version (3.11 to 3.14). To try another one locally:
 ```bash
-nox -s tests
+uv run --python 3.13 pytest
 ```
 
 Lint, format and type checks (also run in CI):

@@ -95,7 +95,8 @@ class PartectorDevice(ABC):
         are held back until it has settled again.
 
         Args:
-            timeout: for the readout that follows the sweep; default 30 s.
+            timeout: for the readout that follows the sweep; default 30 s over USB, 90 s over
+                BLE (the device sends one packet every 2 s).
 
         Raises:
             NotSupportedError: a P1, or firmware older than 418.
@@ -109,7 +110,7 @@ class PartectorDevice(ABC):
         the measurement.
 
         Args:
-            timeout: for the readout; default 30 s.
+            timeout: for the readout; default 30 s over USB, 90 s over BLE.
 
         Raises:
             NotSupportedError: a P1, or firmware older than 418.

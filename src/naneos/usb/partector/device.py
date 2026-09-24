@@ -84,6 +84,8 @@ class UsbPartector(PartectorDevice, ABC):
     QUERY_RETRIES = 3
     # Parsed points waiting for get_data(): ten seconds at 100 Hz.
     DATA_QUEUE_MAXSIZE = 1000
+    # Answers to commands; only one is awaited at a time, see _put_reply().
+    REPLY_QUEUE_MAXSIZE = 100
     # A silent device is asked for its serial number to see if it is still there.
     # Device specific: see _silence_before_probe_seconds().
     SILENCE_BEFORE_PROBE_SECONDS = 10.0
@@ -116,7 +118,7 @@ class UsbPartector(PartectorDevice, ABC):
         """
         self._point_listener = point_listener
         self._sn: int | None = None
-        self._fw: int = 0
+        self._fw: int | None = None  # None until the device answered f?
         self._integration_time: int = 0
         self._sample_rate_hz: float | None = 0
         self._connected = False
@@ -132,7 +134,8 @@ class UsbPartector(PartectorDevice, ABC):
         self._capture: _LineCapture | None = None  # a diagnostics readout in flight
 
         self._points: deque[NaneosDeviceDataPoint] = deque(maxlen=self.DATA_QUEUE_MAXSIZE)
-        self._replies: queue.Queue[list[str]] = queue.Queue()
+        self._replies: queue.Queue[list[str]] = queue.Queue(maxsize=self.REPLY_QUEUE_MAXSIZE)
+        self._replies_overflow_logged = False
         self._command_lock = Lock()
         self._stop_event = Event()
         self._last_line_at = time.monotonic()
@@ -167,8 +170,12 @@ class UsbPartector(PartectorDevice, ABC):
         return self.DEVICE_TYPE
 
     @property
-    def firmware_version(self) -> int:
+    def firmware_version(self) -> int | None:
         return self._fw
+
+    @property
+    def _fw_text(self) -> str:
+        return "an unknown firmware" if self._fw is None else f"FW{self._fw}"
 
     @property
     def connection_type(self) -> ConnectionType:
@@ -449,7 +456,7 @@ class UsbPartector(PartectorDevice, ABC):
         layout = self._data_structure
         columns = len(fields) + 1  # the layout starts with the timestamp
         if not layout or columns < len(layout):
-            self._replies.put(fields)
+            self._put_reply(fields, len(layout))
             return
 
         if time.time() < max(self._settled_at, self._sweep_until):
@@ -510,6 +517,29 @@ class UsbPartector(PartectorDevice, ABC):
             raise ConnectionError(f"SN{self._sn} is not connected.")
         self._transport.write(command)
 
+    def _put_reply(self, fields: list[str], layout_columns: int) -> None:
+        """Queue the answer to a command, dropping the oldest when nobody collects them.
+
+        Only one answer is ever awaited. If they pile up, the device sends lines
+        shorter than the data layout, which would fill the queue at the output
+        rate (up to 100 lines per second) for as long as the device runs.
+        """
+        while True:
+            try:
+                self._replies.put_nowait(fields)
+                return
+            except queue.Full:
+                if layout_columns and not self._replies_overflow_logged:
+                    self._replies_overflow_logged = True
+                    logger.warning(
+                        f"SN{self._sn}: lines of {len(fields) + 1} columns do not fit the data "
+                        f"layout of {layout_columns}; they are dropped. Wrong firmware layout?"
+                    )
+                try:
+                    self._replies.get_nowait()
+                except queue.Empty:
+                    pass
+
     def _drain_replies(self) -> None:
         try:
             while True:
@@ -545,8 +575,8 @@ class Partector1(UsbPartector):
         self._legacy_data_structure = True
 
 
-class Partector2(UsbPartector):
-    DEVICE_TYPE = DeviceType.P2
+class Partector2Family(UsbPartector):
+    """What the P2 and the P2 Pro share: the optional gain test and pulse diagnostics."""
 
     def __init__(
         self,
@@ -563,6 +593,14 @@ class Partector2(UsbPartector):
         self._want_pulse_diagnostics = output_pulse_diagnostics
         super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
 
+    def _apply_settings(self) -> None:
+        self.write("A0002!")  # activates antispikes
+        self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
+
+
+class Partector2(Partector2Family):
+    DEVICE_TYPE = DeviceType.P2
+
     def _configure(self) -> None:
         if self._fw in [265, 275]:
             self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE_V265_V275)
@@ -570,22 +608,21 @@ class Partector2(UsbPartector):
         elif self._fw in [295, 297, 298]:
             self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE)
             self._log_old_firmware("V295/297/298")
-        elif self._fw >= 320:
-            self.write("A0002!")  # activates antispikes
-            self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
+        elif self._fw is not None and self._fw >= 320:
+            self._apply_settings()
             self._data_structure = {**PARTECTOR2_DATA_STRUCTURE, **self._diagnostic_columns()}
         else:
             self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE)
             self._legacy_data_structure = True
-            logger.warning(f"SN{self._sn} has FW{self._fw}. -> Unofficial firmware version.")
+            logger.warning(f"SN{self._sn} has {self._fw_text}. -> Unofficial firmware version.")
             logger.warning("Using legacy data structure. Contact naneos for a FW update.")
 
     def _log_old_firmware(self, layout: str) -> None:
-        logger.info(f"SN{self._sn} has FW{self._fw}. -> Using {layout} data structure.")
+        logger.info(f"SN{self._sn} has {self._fw_text}. -> Using {layout} data structure.")
         logger.info("Contact naneos for a firmware update to get the latest features.")
 
 
-class Partector2Pro(UsbPartector):
+class Partector2Pro(Partector2Family):
     """The P2 Pro has two output modes, selected with set_sample_rate().
 
     Size distribution (None, the default): one line with the size distribution
@@ -600,21 +637,7 @@ class Partector2Pro(UsbPartector):
 
     MIN_FIRMWARE_P2_MODE = 311
 
-    def __init__(
-        self,
-        serial_number: int | None = None,
-        port: str | None = None,
-        sample_rate_hz: int | None = None,
-        gain_test_active: bool = True,
-        output_pulse_diagnostics: bool = True,
-        transport: SerialTransport | None = None,
-        point_listener: PointListener | None = None,
-    ) -> None:
-        """See UsbPartector."""
-        self._p2_mode = False  # True once the device was switched to the plain P2 mode
-        self._want_gain_test = gain_test_active
-        self._want_pulse_diagnostics = output_pulse_diagnostics
-        super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
+    _p2_mode = False  # True once the device was switched to the plain P2 mode
 
     def set_sample_rate(self, hz: int | None) -> None:
         if hz is None:
@@ -637,14 +660,11 @@ class Partector2Pro(UsbPartector):
             return max(self.SILENCE_BEFORE_PROBE_SECONDS, 2.0 * self._integration_time + 10.0)
         return self.SILENCE_BEFORE_PROBE_SECONDS
 
-    def _apply_settings(self) -> None:
-        self.write("A0002!")  # activates antispikes
-        self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
-
     def _enter_p2_mode(self) -> None:
-        if self._fw < self.MIN_FIRMWARE_P2_MODE:
+        if self._fw is None or self._fw < self.MIN_FIRMWARE_P2_MODE:
             raise NotSupportedError(
-                f"The P2 mode needs firmware {self.MIN_FIRMWARE_P2_MODE} or newer."
+                f"The P2 mode needs firmware {self.MIN_FIRMWARE_P2_MODE} or newer, "
+                f"this device has {self._fw_text}."
             )
         self.write("M0000!")  # deactivates size dist mode
         self._apply_settings()
@@ -654,7 +674,7 @@ class Partector2Pro(UsbPartector):
     def _enter_size_dist_mode(self) -> None:
         base = (
             PARTECTOR2_PRO_DATA_STRUCTURE_V336
-            if self._fw >= 336
+            if self._fw is not None and self._fw >= 336
             else PARTECTOR2_PRO_DATA_STRUCTURE_V311
         )
         self.write("X0006!")  # verbose output of the size dist mode

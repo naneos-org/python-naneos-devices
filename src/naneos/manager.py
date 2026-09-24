@@ -6,9 +6,11 @@ from collections.abc import Callable, Iterable
 from typing import TypeVar
 
 import pandas as pd
+from requests.exceptions import ReadTimeout
 
 from naneos.ble.partector.manager import PartectorBleManager
-from naneos.cloud.upload import upload_diagnostic, upload_snapshot
+from naneos.cloud.backlog import CHUNK_SECONDS, Chunk, Eviction, UploadBacklog
+from naneos.cloud.upload import backend_status, prepare_frames, send_frames, upload_diagnostic
 from naneos.data_point import ConnectionType, NaneosDeviceDataPoint
 from naneos.device import NotSupportedError, PartectorDevice
 from naneos.diagnostics import PulseForm, UiCurve
@@ -25,12 +27,16 @@ class NaneosDeviceManager(threading.Thread):
     """Connects to every Partector on USB and BLE, gathers their data in snapshots
     and hands each snapshot to the output queue and / or the naneos upload."""
 
-    # Snapshots whose upload failed are kept and retried on the next upload
-    # tick, oldest first. With the default 30 s interval this covers a network
-    # outage of about 10 minutes; older snapshots are dropped.
-    MAX_PENDING_UPLOADS = 20
-    # UI curves and pulse forms waiting for their upload, same policy.
-    MAX_PENDING_DIAGNOSTICS = 20
+    # UI curves and pulse forms waiting for their upload: about 1 KB each, so
+    # this is days of them. The snapshots wait in a backlog capped in MB.
+    MAX_PENDING_DIAGNOSTICS = 500
+    # The most rows (all devices) in one request. The backend needs ~2.7 ms per data point, so
+    # 2000 rows are ~6 s: well inside the timeout, and 7 devices at 600 s (4200 rows) are not.
+    MAX_CHUNK_ROWS = 2000
+    # The sender waits this long after a failed upload, growing to the last value.
+    RETRY_DELAYS_SECONDS = (5, 10, 20, 40, 60)
+    # A running sender is given this long to finish the request it is in.
+    SENDER_JOIN_SECONDS = 12
 
     def __init__(
         self,
@@ -44,6 +50,7 @@ class NaneosDeviceManager(threading.Thread):
         serial_pulse_diagnostics: bool = True,
         sample_rate_hz: int | None = None,
         diagnostics_interval_hours: float | None = 1.0,
+        upload_buffer_mb: float = 100,
     ) -> None:
         """
         Args:
@@ -59,7 +66,12 @@ class NaneosDeviceManager(threading.Thread):
             sample_rate_hz: the data rate of the USB devices, see the property.
             diagnostics_interval_hours: read the UI curve and the pulse form of every
                 connected device this often, see the property. None switches it off.
+            upload_buffer_mb: what is kept in RAM while the upload does not work, in MB
+                (a P2 at 1 Hz needs about 16 MB per day). The oldest data is dropped
+                when it is full. It is lost when the process ends.
         """
+        if not upload_buffer_mb > 0:
+            raise ValueError("upload_buffer_mb must be positive.")
         super().__init__(daemon=True)
         self._use_serial = use_serial
         self._use_ble = use_ble
@@ -84,6 +96,7 @@ class NaneosDeviceManager(threading.Thread):
         self._pending_diagnostics: deque[UiCurve | PulseForm] = deque(
             maxlen=self.MAX_PENDING_DIAGNOSTICS
         )
+        self._diagnostics_lock = threading.Lock()  # the readout thread appends, the sender pops
 
         self._stop_event = threading.Event()
 
@@ -91,9 +104,20 @@ class NaneosDeviceManager(threading.Thread):
         self._manager_ble: PartectorBleManager | None = None
 
         self._data: dict[int, pd.DataFrame] = {}
-        self._pending_uploads: deque[dict[int, pd.DataFrame]] = deque(
-            maxlen=self.MAX_PENDING_UPLOADS
-        )
+
+        # The upload runs on a thread of its own, so a slow or missing network never
+        # holds up the gathering: the loop puts snapshots into the backlog, the
+        # sender takes them out.
+        self._backlog = UploadBacklog(int(upload_buffer_mb * 1_000_000))
+        self._sender: threading.Thread | None = None
+        self._wake_sender = threading.Event()
+        self._chunk_seconds = CHUNK_SECONDS  # halved when a server chokes on a big request
+        self._retry_delay = 0
+        self._diagnostics_retry_at = 0.0
+        self._diagnostics_retry_delay = 0
+        self._outage_since: float | None = None
+        self._evicted = Eviction(0, 0)  # dropped since the last log line
+        self._evicted_logged_at = 0.0
 
         self._upload_blocked_devices: list[int | None] = []
 
@@ -176,8 +200,21 @@ class NaneosDeviceManager(threading.Thread):
 
     @property
     def pending_upload_count(self) -> int:
-        """Number of snapshots waiting to be uploaded, including retries."""
-        return len(self._pending_uploads)
+        """Number of snapshots waiting to be uploaded, including retries.
+
+        The request that is being sent right now is not counted.
+        """
+        return self._backlog.snapshots
+
+    @property
+    def pending_upload_seconds(self) -> int:
+        """Seconds of data waiting to be uploaded (per chunk, devices in parallel)."""
+        return self._backlog.seconds
+
+    @property
+    def pending_upload_bytes(self) -> int:
+        """RAM the data waiting to be uploaded takes, of upload_buffer_mb."""
+        return self._backlog.size_bytes
 
     @property
     def pending_diagnostics_count(self) -> int:
@@ -268,6 +305,8 @@ class NaneosDeviceManager(threading.Thread):
             pass
 
     def run(self) -> None:
+        self._sender = threading.Thread(target=self._sender_loop, name="naneos-upload", daemon=True)
+        self._sender.start()
         self._loop()
 
         # graceful shutdown in any case
@@ -275,9 +314,11 @@ class NaneosDeviceManager(threading.Thread):
         self._loop_serial_manager()
         self._use_ble = False
         self._loop_ble_manager()
+        self._sender.join(timeout=self.SENDER_JOIN_SECONDS)
 
     def stop(self) -> None:
         self._stop_event.set()
+        self._wake_sender.set()
 
     def get_devices(self) -> list[PartectorDevice]:
         """One handle per connected device, to write to it, query it and set its rate.
@@ -374,7 +415,9 @@ class NaneosDeviceManager(threading.Thread):
         if isinstance(self._diagnostics_queue, queue.Queue):
             self._diagnostics_queue.put(diagnostic)
         if self._upload_active:
-            self._pending_diagnostics.append(diagnostic)
+            with self._diagnostics_lock:
+                self._pending_diagnostics.append(diagnostic)
+            self._wake_sender.set()
 
     def _loop_serial_manager(self) -> None:
         if self._manager_serial is not None and self._manager_serial.is_alive():
@@ -454,62 +497,169 @@ class NaneosDeviceManager(threading.Thread):
                 logger.exception(f"DeviceManager loop exception: {e}")
 
     def _publish_snapshot(self, snapshot: dict[int, pd.DataFrame]) -> None:
-        """Hand a gathered snapshot to the output queue and the uploader."""
+        """Hand a gathered snapshot to the output queue and the uploader.
+
+        The upload never runs here: the snapshot goes into the backlog, and the
+        sender thread takes it from there.
+        """
         if isinstance(self._out_queue, queue.Queue):
             self._out_queue.put(snapshot)
 
         if not self._upload_active:
             return
 
-        if snapshot:
-            self._pending_uploads.append(snapshot)
-        self._upload_pending()
+        try:
+            evicted = self._backlog.add(prepare_frames(snapshot))
+        except Exception as e:  # a frame the upload cannot read must not stop the gathering
+            logger.exception(f"Could not keep a snapshot for the upload: {e}")
+            return
+        self._log_eviction(evicted)
+        self._wake_sender.set()
 
-    def _upload_pending(self) -> None:
-        """Upload queued snapshots oldest first, then the queued diagnostics; stop at
-        the first failure.
+    def _sender_loop(self) -> None:
+        """The thread that talks to the network, until the manager stops."""
+        while not self._stop_event.is_set():
+            try:
+                done = self._drain_uploads()
+            except Exception as e:
+                logger.exception(f"Upload thread exception: {e}")
+                done = False
 
-        The point timestamps are absolute, so a snapshot uploaded a few
-        intervals late lands at the right time on the server.
+            if done:
+                self._retry_delay = 0
+                if self._wake_sender.wait(timeout=1.0):
+                    self._wake_sender.clear()
+            else:
+                delays = self.RETRY_DELAYS_SECONDS
+                later = [delay for delay in delays if delay > self._retry_delay]
+                self._retry_delay = later[0] if later else delays[-1]
+                self._stop_event.wait(self._retry_delay)
+
+    def _drain_uploads(self) -> bool:
+        """Send what is waiting, oldest data first: the snapshots, then the diagnostics.
+
+        The point timestamps are relative to the moment of sending, so data that
+        waited for hours lands at its own time on the server. While the backlog is
+        long, requests carry up to CHUNK_SECONDS of data.
+
+        Returns False when a snapshot could not be sent and should be tried again
+        later (it stays in the backlog), True otherwise.
         """
-        while self._pending_uploads:
-            outcome = self._try_upload(self._pending_uploads[0])
-            if outcome == "retry":
-                logger.warning(
-                    f"Upload failed, keeping {len(self._pending_uploads)} snapshot(s) for retry."
-                )
-                return
-            self._pending_uploads.popleft()
+        if not self._upload_active:
+            return True
 
-        while self._pending_diagnostics:
-            outcome = self._try_upload(self._pending_diagnostics[0])
-            if outcome == "retry":
+        while not self._stop_event.is_set():
+            chunk = self._backlog.take(self._chunk_seconds, self.MAX_CHUNK_ROWS)
+            if chunk is None:
+                break
+            outcome = self._try_upload(chunk)
+            if outcome in ("retry", "server"):
+                self._snapshot_failed(chunk, outcome)
+                return False
+            self._snapshot_sent(chunk)
+
+        self._drain_diagnostics()
+        return True
+
+    def _snapshot_failed(self, chunk: Chunk, outcome: str) -> None:
+        self._log_eviction(self._backlog.restore(chunk))
+        if self._outage_since is None:
+            self._outage_since = time.time()
+
+        smallest = self._gathering_interval_seconds
+        if outcome == "server" and chunk.seconds > smallest:
+            self._chunk_seconds = max(smallest, self._chunk_seconds // 2)
+            logger.warning(
+                f"The server refused a request, trying {self._chunk_seconds} s at a time."
+            )
+        logger.warning(
+            f"Upload failed, keeping {self._backlog.snapshots} snapshot(s) "
+            f"({self._backlog.size_bytes / 1e6:.1f} MB) for retry."
+        )
+
+    def _snapshot_sent(self, chunk: Chunk) -> None:
+        if self._chunk_seconds < CHUNK_SECONDS:
+            self._chunk_seconds = min(CHUNK_SECONDS, self._chunk_seconds * 2)
+        if self._outage_since is not None:
+            minutes = (time.time() - self._outage_since) / 60
+            logger.info(
+                f"Upload works again after {minutes:.0f} min, "
+                f"{self._backlog.snapshots} snapshot(s) still to send."
+            )
+            self._outage_since = None
+
+    def _drain_diagnostics(self) -> None:
+        """Send the UI curves and pulse forms. A failing endpoint has a pause of its own,
+        so that it does not delay the snapshots."""
+        while not self._stop_event.is_set() and time.monotonic() >= self._diagnostics_retry_at:
+            with self._diagnostics_lock:
+                item = self._pending_diagnostics[0] if self._pending_diagnostics else None
+            if item is None:
+                return
+
+            outcome = self._try_upload(item)
+            if outcome in ("retry", "server"):
+                delays = self.RETRY_DELAYS_SECONDS
+                later = [d for d in delays if d > self._diagnostics_retry_delay]
+                self._diagnostics_retry_delay = later[0] if later else delays[-1]
+                self._diagnostics_retry_at = time.monotonic() + self._diagnostics_retry_delay
                 logger.warning(
-                    f"Upload failed, keeping {len(self._pending_diagnostics)} "
-                    "diagnostic(s) for retry."
+                    f"Upload failed, keeping {len(self._pending_diagnostics)} diagnostic(s) "
+                    "for retry."
                 )
                 return
-            self._pending_diagnostics.popleft()
+
+            self._diagnostics_retry_delay = 0
+            with self._diagnostics_lock:
+                if self._pending_diagnostics and self._pending_diagnostics[0] is item:
+                    self._pending_diagnostics.popleft()
+
+    def _log_eviction(self, evicted: Eviction | None) -> None:
+        """Say that a full buffer dropped data, at most once a minute."""
+        if evicted is None:
+            return
+        self._evicted = Eviction(
+            self._evicted.snapshots + evicted.snapshots, self._evicted.seconds + evicted.seconds
+        )
+        now = time.monotonic()
+        if now - self._evicted_logged_at < 60:
+            return
+        self._evicted_logged_at = now
+        logger.warning(
+            f"Upload buffer is full ({self._backlog.size_bytes / 1e6:.0f} MB): dropped the oldest "
+            f"{self._evicted.snapshots} snapshot(s), about {self._evicted.seconds / 60:.0f} min "
+            "of data."
+        )
+        self._evicted = Eviction(0, 0)
 
     @staticmethod
-    def _try_upload(item: dict[int, pd.DataFrame] | UiCurve | PulseForm) -> str:
-        """Returns "ok", "retry" (network / server problem) or "drop" (rejected)."""
+    def _try_upload(item: Chunk | UiCurve | PulseForm) -> str:
+        """Returns "ok", "drop" (rejected), "retry" (no answer, the network) or "server"
+        (an answer that says try again later, or none in time: the server is too slow for
+        a request of this size)."""
         try:
             if isinstance(item, UiCurve | PulseForm):
                 response = upload_diagnostic(item)
             else:
-                response = upload_snapshot(item)
+                response = send_frames(item.frames)
+        except ReadTimeout as e:
+            logger.warning(f"Upload timed out, the server did not answer: {e}")
+            return "server"
         except Exception as e:
             logger.warning(f"Upload failed: {e}")
             return "retry"
 
-        if response.status_code == 200:
+        status, detail = backend_status(response)
+        if 200 <= status < 300:
             logger.info("Upload success: True")
             return "ok"
-        if response.status_code >= 500:
-            logger.warning(f"Upload failed with HTTP {response.status_code}, will retry.")
-            return "retry"
+        if status >= 500 or status in (408, 429):
+            logger.warning(f"Upload failed with HTTP {status} {detail}, will retry.")
+            return "server"
 
-        # A 4xx will not get better by resending the same payload.
-        logger.error(f"Upload rejected with HTTP {response.status_code}, dropping snapshot.")
+        # A 4xx will not get better by resending the same payload, and a retry
+        # would hold up everything queued behind it.
+        kind = type(item).__name__ if isinstance(item, UiCurve | PulseForm) else "snapshot"
+        wrapped = f" (inside HTTP {response.status_code})" if status != response.status_code else ""
+        logger.error(f"Upload rejected with HTTP {status}{wrapped} {detail}, dropping {kind}.")
         return "drop"

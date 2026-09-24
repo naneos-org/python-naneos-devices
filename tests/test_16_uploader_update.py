@@ -107,20 +107,23 @@ def test_update_runs_the_installer_of_the_release_tag(capsys: pytest.CaptureFixt
     assert "installer from v2.0.6" in capsys.readouterr().out
 
 
-def test_update_falls_back_to_master_when_the_tag_is_missing() -> None:
+def test_update_waits_for_the_tag_instead_of_running_the_installer_of_master(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    fetched: list[str] = []
+
     def fetch_text(url: str) -> str:
+        fetched.append(url)
         if "/v2.0.6/" in url:
-            raise OSError("404")
+            raise OSError("404")  # released on PyPI, tag not there yet
         return "echo master\n"
 
-    args_seen: list[list[str]] = []
-
     def run(script: Path, args: list[str]) -> int:
-        args_seen.append(args)
-        return 0
+        raise AssertionError("must not run")
 
-    assert update("pi", Plan("2.0.5", "PyPI", latest="2.0.6"), fetch_text_=fetch_text, run=run) == 0
-    assert args_seen == [["--version", "2.0.6", "--user", "pi"]]
+    assert update("pi", Plan("2.0.5", "PyPI", latest="2.0.6"), fetch_text_=fetch_text, run=run) == 1
+    assert fetched == [INSTALLER_URL.format(ref="v2.0.6")]  # master is never asked
+    assert "trying again tomorrow" in capsys.readouterr().out
 
 
 def test_update_reports_a_download_failure() -> None:

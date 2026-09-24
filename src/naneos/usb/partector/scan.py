@@ -19,9 +19,6 @@ _P1_MAX_SERIAL_NUMBER = 1000
 # Firmware from which a P2 answers the "name?" query that tells P2 and P2 Pro apart.
 _FW_WITH_NAME_QUERY = 310
 
-# Answers to the "name?" query.
-_DEVICE_NAMES: dict[str, DeviceType] = {"P2": DeviceType.P2, "P2pro": DeviceType.P2PRO}
-
 # USB identifiers of the Partector serial interface.
 _PARTECTOR_VID = 65535
 _PARTECTOR_PID = 5
@@ -42,7 +39,7 @@ class FoundDevice:
     serial_number: int
     port: str
     kind: DeviceType
-    firmware: int
+    firmware: int | None  # None: the device did not answer f?
 
 
 def scan_serial_ports(ports_exclude: list[str] | None = None) -> list[FoundDevice]:
@@ -111,7 +108,7 @@ def _scan_port(port: str) -> FoundDevice | None:
 
         firmware = _ask_int(transport, "f?")
         kind = _classify(transport, serial_number, firmware)
-        return FoundDevice(serial_number, port, kind, firmware or 0)
+        return FoundDevice(serial_number, port, kind, firmware)
     except ConnectionError as e:
         logger.debug(f"Scanning {port} failed: {e}")
         return None
@@ -130,9 +127,10 @@ def _classify(transport: SerialTransport, serial_number: int, firmware: int | No
     # Only a known name counts: a late or cut off line must not turn a P2 Pro
     # into a P2, which would then be read with the wrong line layout.
     for _ in range(_ASK_RETRIES):
-        name = _ask(transport, "name?", lambda answer: answer in _DEVICE_NAMES)
-        if name is not None:
-            return _DEVICE_NAMES[name]
+        name = _ask(transport, "name?", lambda answer: DeviceType.from_name(answer) is not None)
+        kind = DeviceType.from_name(name) if name is not None else None
+        if kind is not None:
+            return kind
     logger.warning(f"SN{serial_number} did not tell its name, treating it as a P2.")
     return DeviceType.P2
 

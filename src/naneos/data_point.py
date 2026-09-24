@@ -13,6 +13,15 @@ class DeviceType(IntEnum):
     P2PRO = 2
     # 3 is reserved: it was the P2 Pro CS, which the backend still knows.
 
+    @classmethod
+    def from_name(cls, name: str) -> "DeviceType | None":
+        """The type a device names itself in answer to "name?" (same over USB and BLE)."""
+        return _DEVICE_NAMES.get(name)
+
+
+# Answers to the "name?" query. A P1 has no such query, see usb/partector/scan.py.
+_DEVICE_NAMES = {"P2": DeviceType.P2, "P2pro": DeviceType.P2PRO}
+
 
 class ConnectionType(StrEnum):
     """How a data point reached us. Ordered by trust: serial > connected."""
@@ -53,8 +62,8 @@ class NaneosDeviceDataPoint:
     hires_adc2: float | None = None  # instantaneous value electrometer 2
     electrometer_1_amplitude: float | None = None  # mV
     electrometer_2_amplitude: float | None = None  # mV
-    electrometer_1_gain: float | None = None  # mV #TODO: check this unit
-    electrometer_2_gain: float | None = None  # mV #TODO: check this unit
+    electrometer_1_gain: float | None = None  # mV as in proto_v2.proto; TODO: confirm on a device
+    electrometer_2_gain: float | None = None  # mV as in proto_v2.proto; TODO: confirm on a device
     temperature: float | None = None  # Celsius
     relative_humidity: float | None = None  # percent 0-100
     deposition_voltage: float | None = None  # V

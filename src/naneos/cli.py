@@ -9,6 +9,7 @@ can also be started by hand, for example to test a Pi without uploading:
 import argparse
 import json
 import logging
+import math
 import shutil
 import signal
 import subprocess
@@ -85,6 +86,30 @@ def installed_from() -> str:
         return "unknown source"
 
 
+def _hours(text: str) -> float:
+    """A number of hours, 0 for never. The manager refuses a negative interval, so it must
+    not get that far: it would stop the service on every start."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid float value: {text!r}") from None
+    if not math.isfinite(value) or value < 0:
+        raise argparse.ArgumentTypeError("must be 0 (never) or a positive number of hours")
+    return value
+
+
+def _megabytes(text: str) -> float:
+    """A RAM budget in MB. Below 1 MB not even one chunk of data fits, and a typo like
+    100000 would let a Pi run out of memory during an outage instead of dropping data."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid float value: {text!r}") from None
+    if not math.isfinite(value) or not 1 <= value <= 1000:
+        raise argparse.ArgumentTypeError("must be between 1 and 1000 MB")
+    return value
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="naneos-uploader",
@@ -112,11 +137,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--diagnostics-interval",
-        type=float,
+        type=_hours,
         default=1.0,
         metavar="HOURS",
         help="read and upload the UI curve and pulse form of every device this often, "
         "0 for never (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--upload-buffer-mb",
+        type=_megabytes,
+        default=100,
+        metavar="MB",
+        help="RAM that keeps the data while the upload does not work, the oldest is dropped "
+        "when it is full and all is lost when the service stops (default: %(default)s)",
     )
     parser.add_argument(
         "--log-level",
@@ -149,6 +182,7 @@ def run(args: argparse.Namespace) -> None:
         ble_serial_numbers=args.ble_allow,
         ble_max_links=args.ble_max_links,
         diagnostics_interval_hours=args.diagnostics_interval or None,
+        upload_buffer_mb=args.upload_buffer_mb,
     )
     manager.start()
 

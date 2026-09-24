@@ -7,7 +7,13 @@ from naneos.data_point import DeviceType, NaneosDeviceDataPoint, PointListener
 from naneos.device import NotSupportedError, PartectorDevice
 from naneos.frames import add_data_points_to_dict
 from naneos.logger import get_naneos_logger
-from naneos.usb.partector.device import Partector1, Partector2, Partector2Pro, UsbPartector
+from naneos.usb.partector.device import (
+    Partector1,
+    Partector2,
+    Partector2Family,
+    Partector2Pro,
+    UsbPartector,
+)
 from naneos.usb.partector.scan import FoundDevice, scan_serial_ports
 
 logger = get_naneos_logger(__name__)
@@ -81,8 +87,10 @@ class PartectorSerialManager(threading.Thread):
 
     @staticmethod
     def check_sample_rate(hz: int | None) -> int | None:
-        if hz not in (None, 1, 10, 100):
-            raise ValueError("Sample rate must be 1, 10 or 100 Hz, or None for the default.")
+        # The rates a device takes, without 0: that switches one device off.
+        rates = sorted(rate for rate in UsbPartector.SAMPLE_RATE_CODES if rate)
+        if hz is not None and hz not in rates:
+            raise ValueError(f"Sample rate must be one of {rates} Hz, or None for the default.")
         return hz
 
     def run(self) -> None:
@@ -167,18 +175,18 @@ class PartectorSerialManager(threading.Thread):
                 logger.warning(f"Could not connect to SN{device.serial_number}: {e}")
 
     def _connect(self, found: FoundDevice) -> UsbPartector:
-        if found.kind == DeviceType.P1:
-            return Partector1(
+        cls = DEVICE_CLASSES[found.kind]
+        if issubclass(cls, Partector2Family):
+            return cls(
                 port=found.port,
                 sample_rate_hz=self._sample_rate_hz,
+                gain_test_active=self._gain_test_active,
+                output_pulse_diagnostics=self._output_pulse_diagnostics,
                 point_listener=self._point_listener,
             )
-        cls = Partector2Pro if found.kind == DeviceType.P2PRO else Partector2
         return cls(
             port=found.port,
             sample_rate_hz=self._sample_rate_hz,
-            gain_test_active=self._gain_test_active,
-            output_pulse_diagnostics=self._output_pulse_diagnostics,
             point_listener=self._point_listener,
         )
 

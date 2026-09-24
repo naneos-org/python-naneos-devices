@@ -96,6 +96,11 @@ def template() -> str:
 #   --diagnostics-interval HOURS
 #                         read and upload the UI curve and pulse form of every
 #                         device this often, 0 for never, default 1
+#   --upload-buffer-mb MB
+#                         RAM that keeps the data while the internet is down
+#                         (1-1000), default 100: about 4 days for a P2 and a
+#                         P2 Pro. The oldest data goes first when it is full,
+#                         and all of it is lost when the Pi restarts.
 #   --log-level LEVEL     DEBUG, INFO, WARNING or ERROR, default INFO
 # Example:
 # OPTIONS=--interval 60 --ble-allow 8617,8764 --ble-max-links 2
@@ -382,40 +387,7 @@ def apply(
     if not change_file.exists():
         change_file.write_text(template(), encoding="utf-8")
     else:
-        # utf-8-sig drops the BOM Notepad may add; splitlines handles CRLF.
-        text = change_file.read_text(encoding="utf-8-sig", errors="replace")
-        try:
-            settings = read_settings(text)
-            result.rejected = [
-                f"{key}={'****' if key == 'WIFI_PASSWORD' else value}"
-                for key, value in settings.items()
-            ]
-            # Validate everything first: either the whole file is applied or nothing.
-            options = settings.get("OPTIONS")
-            validated = validate_options(options) if options is not None else None
-            wifi = validate_wifi(settings)
-            auto_update = validate_auto_update(settings)
-            if validated is not None:
-                write_env(env_file, validated)
-                result.current = result.applied = validated
-            if wifi is not None:
-                write_wifi_profile(nm_dir, *wifi)
-                result.wifi = wifi[0]
-                warning = nm_reload()
-                if warning is not None:
-                    result.warnings.append(warning)
-            if auto_update is not None:
-                warning = set_auto_update(auto_update)
-                if warning is None:
-                    result.auto_update = auto_update
-                else:
-                    result.warnings.append(warning)
-            result.rejected = []
-            if validated is not None or wifi is not None or auto_update is not None:
-                change_file.write_text(template(), encoding="utf-8")
-        except SettingsError as e:
-            result.error = str(e)
-            change_file.write_text(_with_error(template(), result), encoding="utf-8")
+        _consume_change_file(change_file, env_file, nm_dir, nm_reload, set_auto_update, result)
 
     warning = override_warning(override_dir)
     if warning is not None:
@@ -424,6 +396,84 @@ def apply(
     result.auto_update_state = auto_update_state()
     (boot_dir / CURRENT_FILE).write_text(_current_text(result, now), encoding="utf-8")
     return result
+
+
+def _consume_change_file(
+    change_file: Path,
+    env_file: Path,
+    nm_dir: Path,
+    nm_reload: Callable[[], str | None],
+    set_auto_update: Callable[[bool], str | None],
+    result: Result,
+) -> None:
+    """Validate and apply the change file, then reset it.
+
+    A change that cannot be applied is recorded in result.error and in the file
+    (which is reset too, so a WiFi password never stays on the card).
+    """
+    # utf-8-sig drops the BOM Notepad may add; splitlines handles CRLF.
+    text = change_file.read_text(encoding="utf-8-sig", errors="replace")
+    try:
+        settings = read_settings(text)
+        result.rejected = [
+            f"{key}={'****' if key == 'WIFI_PASSWORD' else value}"
+            for key, value in settings.items()
+        ]
+        # Validate everything first: a bad line applies nothing.
+        options = settings.get("OPTIONS")
+        validated = validate_options(options) if options is not None else None
+        wifi = validate_wifi(settings)
+        auto_update = validate_auto_update(settings)
+
+        _write_settings(
+            validated, wifi, auto_update, env_file, nm_dir, nm_reload, set_auto_update, result
+        )
+
+        result.rejected = []
+        if validated is not None or wifi is not None or auto_update is not None:
+            change_file.write_text(template(), encoding="utf-8")
+    except SettingsError as e:
+        result.error = str(e)
+        change_file.write_text(_with_error(template(), result), encoding="utf-8")
+
+
+def _write_settings(
+    options: str | None,
+    wifi: tuple[str, str] | None,
+    auto_update: bool | None,
+    env_file: Path,
+    nm_dir: Path,
+    nm_reload: Callable[[], str | None],
+    set_auto_update: Callable[[bool], str | None],
+    result: Result,
+) -> None:
+    """Write what the validated change holds, in the order options, WiFi, updates.
+
+    Raises SettingsError if a file cannot be written. What was applied before
+    stays applied and stays in result: there is no undoing a written file.
+    """
+    try:
+        if options is not None:
+            write_env(env_file, options)
+            result.current = result.applied = options
+        if wifi is not None:
+            write_wifi_profile(nm_dir, *wifi)
+            result.wifi = wifi[0]
+            warning = nm_reload()
+            if warning is not None:
+                result.warnings.append(warning)
+    except OSError as e:
+        done = ", the options were applied" if result.applied is not None else ""
+        raise SettingsError(
+            f"could not write the settings ({e.strerror or type(e).__name__}){done}"
+        ) from e
+
+    if auto_update is not None:
+        warning = set_auto_update(auto_update)
+        if warning is None:
+            result.auto_update = auto_update
+        else:
+            result.warnings.append(warning)
 
 
 def _error_lines(result: Result) -> list[str]:

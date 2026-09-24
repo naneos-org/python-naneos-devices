@@ -1,6 +1,5 @@
 .idea
 .mypy_cache
-.nox
 .pytest_cache
 dist
 build

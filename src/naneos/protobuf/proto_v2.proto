@@ -31,7 +31,7 @@ message PulseForm {
   DeviceType type = 1;
   uint32 abs_timestamp = 2 [(unit) = "s"];
   uint32 serial_number = 3;
-  repeated uint32 U_values = 4 [(scale) = 100, (unit) = "mV"];
+  repeated uint32 I_values = 4 [(scale) = 100, (unit) = "nA"];
 }
 
 // goes to /proto/v2/combined_data endpoint

@@ -12,6 +12,7 @@ from bleak.backends.device import BLEDevice
 
 from naneos.ble.partector import connection as module
 from naneos.ble.partector.connection import PartectorBleConnection
+from naneos.data_point import DeviceType
 
 
 class _FakeServices:
@@ -73,16 +74,16 @@ def connection(monkeypatch) -> PartectorBleConnection:
 
 
 def test_connect_attempt_subscribes_and_resets_the_failure_counters(connection) -> None:
-    connection._reconnect_attempt = 3
-    connection._gatt_error_count = 2
+    connection._policy.attempt = 3
+    connection._policy.gatt_errors = 2
 
     asyncio.run(connection._try_connect())
 
     client = connection._client
     assert client.is_connected
     assert client.calls == ["connect", "notify:80", "notify:81", "notify:84", "notify:83"]
-    assert connection._reconnect_attempt == 0
-    assert connection._gatt_error_count == 0
+    assert connection._policy.attempt == 0
+    assert connection._policy.gatt_errors == 0
 
 
 def test_watchdog_drops_a_link_reported_dead_by_the_callback(connection) -> None:
@@ -93,7 +94,7 @@ def test_watchdog_drops_a_link_reported_dead_by_the_callback(connection) -> None
 
     assert dropped
     assert not connection._client.is_connected
-    assert connection._backoff_remaining == 5  # first backoff step
+    assert connection._policy.backoff_remaining == 5  # first backoff step
     assert connection._disconnected_flag is False
 
 
@@ -111,21 +112,21 @@ def test_connect_errors_back_off_and_recreate_the_client_when_needed(connection)
     first_client = connection._client
 
     asyncio.run(connection._handle_connect_error(TimeoutError()))
-    assert connection._backoff_remaining == 5
+    assert connection._policy.backoff_remaining == 5
     assert connection._client is first_client
 
     asyncio.run(connection._handle_connect_error(RuntimeError("GATT failure")))
-    assert connection._gatt_error_count == 1
+    assert connection._policy.gatt_errors == 1
     assert connection._client is first_client  # recreated only from the second GATT error
 
     asyncio.run(connection._handle_connect_error(RuntimeError("device unreachable")))
-    assert connection._gatt_error_count == 2
+    assert connection._policy.gatt_errors == 2
     assert connection._client is not first_client
 
     recreated = connection._client
     asyncio.run(connection._handle_connect_error(RuntimeError("something else")))
     assert connection._client is not recreated  # unknown errors always start fresh
-    assert connection._backoff_remaining == 30  # capped at MAX_BACKOFF_SECONDS
+    assert connection._policy.backoff_remaining == 30  # capped at MAX_BACKOFF_SECONDS
 
 
 def test_disconnect_stops_every_notification_once(connection) -> None:
@@ -195,5 +196,132 @@ def test_firmware_version_is_read_after_the_connect_and_put_on_the_points(connec
         connection._emit_data_point()
         connection._queue.get_nowait()
         assert connection._queue.get_nowait().firmware_version == 424
+
+    asyncio.run(scenario())
+
+
+def _services(*, service: bool = True, missing_char: str | None = None):
+    """Discovered services with the parts a test wants to be missing."""
+
+    class Services:
+        def get_service(self, uuid):
+            return object() if service else None
+
+        def get_characteristic(self, uuid):
+            if uuid == PartectorBleConnection.CHAR_UUIDS.get(missing_char or ""):
+                raise KeyError(uuid)
+            return object()
+
+    return Services()
+
+
+def _count_sleeps(monkeypatch) -> list[float]:
+    sleeps: list[float] = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(module.asyncio, "sleep", sleep)
+    return sleeps
+
+
+def test_gatt_services_are_verified_at_once_when_all_are_there(connection, monkeypatch) -> None:
+    sleeps = _count_sleeps(monkeypatch)
+
+    assert asyncio.run(connection._verify_gatt_services()) is True
+    assert sleeps == []
+
+
+@pytest.mark.parametrize(
+    "services",
+    [
+        None,
+        _services(service=False),
+        _services(missing_char="aux"),
+    ],
+    ids=["no services", "no service", "no characteristic"],
+)
+def test_missing_gatt_services_are_retried_three_times_then_reported(
+    connection, monkeypatch, services
+) -> None:
+    sleeps = _count_sleeps(monkeypatch)
+    connection._client.services = services
+
+    assert asyncio.run(connection._verify_gatt_services()) is False
+    assert sleeps == [0.5, 0.5, 0.5]
+
+
+def test_gatt_services_that_show_up_late_are_accepted(connection, monkeypatch) -> None:
+    sleeps: list[float] = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+        connection._client.services = _services()  # discovery finishes during the pause
+
+    monkeypatch.setattr(module.asyncio, "sleep", sleep)
+    connection._client.services = None
+
+    assert asyncio.run(connection._verify_gatt_services()) is True
+    assert sleeps == [0.5]
+
+
+def test_an_error_while_looking_at_the_services_counts_as_an_attempt(
+    connection, monkeypatch
+) -> None:
+    sleeps = _count_sleeps(monkeypatch)
+
+    class Broken:
+        @property
+        def services(self):
+            raise RuntimeError("stack not ready")
+
+    connection._client = Broken()
+
+    assert asyncio.run(connection._verify_gatt_services()) is False
+    assert sleeps == [0.5, 0.5, 0.5]
+
+
+def _frame(text: str) -> bytes:
+    """One 20 byte answer frame: the text, a line end, padding."""
+    return f"{text}\r\n".encode().ljust(20, b" ")
+
+
+def test_query_takes_the_first_answer_unless_the_caller_says_what_it_expects(connection) -> None:
+    async def scenario() -> None:
+        await connection._try_connect()
+        # the answer to an earlier command arrives after this one was written
+        connection._client.answer = [_frame("424"), _frame("P2pro")]
+
+        assert await connection.query("name?") == ["424"]  # no way to know it is stale
+
+        skip_numbers = lambda fields: not fields[0].isdigit()  # noqa: E731
+        assert await connection.query("name?", accept=skip_numbers) == ["P2pro"]
+
+    asyncio.run(scenario())
+
+
+def test_query_times_out_when_only_answers_it_does_not_accept_arrive(connection) -> None:
+    async def scenario() -> None:
+        await connection._try_connect()
+        connection._client.answer = [_frame("424"), _frame("425")]
+
+        with pytest.raises(TimeoutError, match="no answer to 'name\\?'"):
+            await connection.query("name?", timeout=0.05, accept=lambda f: not f[0].isdigit())
+
+    asyncio.run(scenario())
+
+
+def test_the_device_info_query_survives_a_stale_answer_in_front_of_each_answer(connection) -> None:
+    async def scenario() -> None:
+        connection._firmware_version = None
+        connection._loop = asyncio.get_running_loop()
+        # every command is answered with the name first and the firmware after it,
+        # so each question meets an answer that belongs to the other one
+        connection._client.answer = [_frame("P2pro"), _frame("424")]
+        await connection._try_connect()
+        await connection._info_task
+
+        assert connection.firmware_version == 424
+        assert connection.device_type == DeviceType.P2PRO
 
     asyncio.run(scenario())

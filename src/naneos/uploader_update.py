@@ -123,18 +123,17 @@ def update(
 ) -> int:
     """Download the installer of the newest release and run it. Returns its exit code."""
     assert plan.latest is not None
-    refs = [f"v{plan.latest}", "master"]
-    script_text: str | None = None
-    for ref in refs:
-        try:
-            script_text = fetch_text_(INSTALLER_URL.format(ref=ref))
-            print(f"installer from {ref}")
-            break
-        except Exception as e:
-            print(f"no installer at {ref} ({e})")
-    if script_text is None:
-        print("could not download the installer, trying again tomorrow")
+    ref = f"v{plan.latest}"
+    try:
+        script_text = fetch_text_(INSTALLER_URL.format(ref=ref))
+    except Exception as e:
+        # The release workflow creates the tag after the release is on PyPI, so for a
+        # short while there is a release without its installer. The installer of
+        # master is no substitute: it may already belong to the next release and
+        # write unit files the installed version does not understand.
+        print(f"could not download the installer of {ref} ({e}), trying again tomorrow")
         return 1
+    print(f"installer from {ref}")
     with tempfile.TemporaryDirectory(prefix="naneos-update-") as tmp:
         script = Path(tmp) / "install.sh"
         script.write_text(script_text, encoding="utf-8")

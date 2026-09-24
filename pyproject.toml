@@ -1,6 +1,6 @@
 [project]
 name = "naneos-devices"
-version = "2.0.8"
+version = "2.0.9rc1"
 description = "naneos particle solutions gmbh python backend"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Mario Huegi", email = "mario.huegi@naneos.com" }]
@@ -52,16 +52,19 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = [
-    "influxdb-client[ciso]>=1.50.0",
-    "matplotlib>=3.11.2",
+# What `mkdocs build` needs: the documentation workflow installs only this group.
+docs = [
     "mkdocs-api-autonav>=0.2.1",
     "mkdocs-gen-files>=0.6.1",
     "mkdocs-literate-nav>=0.6.3",
     "mkdocs-material>=9.7.7",
     "mkdocstrings[python]>=1.0.6",
+]
+dev = [
+    { include-group = "docs" },
+    "influxdb-client[ciso]>=1.50.0",
+    "matplotlib>=3.11.2",
     "mypy>=2.3.1",
-    "nox>=2026.8.17",
     "pandas-stubs>=3.0.5.260730",
     "pytest>=9.1.1",
     "pytest-timeout>=2.4.0",

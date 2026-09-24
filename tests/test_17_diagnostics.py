@@ -8,15 +8,16 @@ from types import SimpleNamespace
 
 import pytest
 from bleak.backends.device import BLEDevice
+from fake_response import FakeResponse, wrapped
 from fake_transport import FakeTransport
 
 from naneos import manager as manager_module
-from naneos.ble.partector import connection as connection_module
+from naneos.ble.partector import readout as readout_module
 from naneos.ble.partector.characteristics import PartectorBleDiagnosticsPackets
 from naneos.ble.partector.connection import PartectorBleConnection
 from naneos.cli import parse_args
 from naneos.cloud import upload as upload_module
-from naneos.cloud.upload import upload_pulse_form, upload_ui_curve
+from naneos.cloud.upload import backend_status, upload_pulse_form, upload_ui_curve
 from naneos.data_point import DeviceType
 from naneos.device import NotSupportedError
 from naneos.diagnostics import PulseForm, UiCurve
@@ -211,7 +212,7 @@ class _FakeClient:
 def connection(monkeypatch) -> PartectorBleConnection:
     monkeypatch.setattr(PartectorBleConnection, "_new_client", lambda self: _FakeClient())
     # The device gets 10 s to compute the curve; the fake needs none.
-    monkeypatch.setattr(connection_module, "UI_COMPUTE_SECONDS", 0)
+    monkeypatch.setattr(readout_module, "UI_COMPUTE_SECONDS", 0)
     loop = asyncio.new_event_loop()
     device = BLEDevice("AA:BB:CC:DD:EE:FF", "P2", None)
     conn = PartectorBleConnection(
@@ -240,11 +241,27 @@ def test_ble_ui_curve_is_assembled_from_the_packets_and_the_data_held_back(conne
 
         connection._emit_data_point()
         assert connection._queue.empty()  # held back during the sweep
-        connection._hold_points_until = 0
+        connection._readout.hold_points_until = 0
         connection._emit_data_point()
         assert connection._queue.get_nowait().serial_number == 8617
 
     asyncio.run(scenario())
+
+
+def test_ble_data_is_not_held_back_when_the_sweep_could_not_be_started(
+    connection, monkeypatch
+) -> None:
+    async def refuse(command: str) -> None:
+        raise ConnectionError("not connected")
+
+    monkeypatch.setattr(connection, "write", refuse)
+
+    async def scenario() -> None:
+        with pytest.raises(ConnectionError):
+            await connection.read_ui_curve()
+
+    asyncio.run(scenario())
+    assert connection._readout.hold_points_until == 0.0
 
 
 def test_ble_pulse_form_is_assembled_and_a_stray_packet_is_ignored(connection) -> None:
@@ -300,7 +317,7 @@ def test_diagnostics_go_on_the_wire_at_the_scale_of_the_schema() -> None:
 
     form = pb.PulseForm.FromString(create_pulse_form(FORM).SerializeToString())
     assert form.type == DeviceType.P2
-    assert list(form.U_values) == [0, 6, 206]  # nA * 100, whatever the field is called
+    assert list(form.I_values) == [0, 6, 206]  # nA * 100
 
 
 def test_diagnostics_are_posted_to_their_own_endpoints(monkeypatch) -> None:
@@ -308,14 +325,22 @@ def test_diagnostics_are_posted_to_their_own_endpoints(monkeypatch) -> None:
     monkeypatch.setattr(
         upload_module.requests,
         "post",
-        lambda url, headers, data, timeout: (
-            posts.append((url, data)) or SimpleNamespace(status_code=200)
-        ),
+        lambda url, headers, data, timeout: posts.append((url, data)) or FakeResponse(200),
     )
     upload_ui_curve(CURVE)
     upload_pulse_form(FORM)
     assert [url.rsplit("/", 1)[1] for url, _ in posts] == ["uicurve", "pulseform"]
     assert '"gateway": "python_webhook"' in posts[0][1]
+
+
+def test_backend_status_sees_through_a_wrapped_answer() -> None:
+    assert backend_status(FakeResponse(200, "not json")) == (200, "")
+    assert backend_status(FakeResponse(200, '{"message": "no status here"}')) == (200, "")
+    assert backend_status(FakeResponse(503, "busy")) == (503, "")
+    assert backend_status(wrapped(200, "Wrote 100 data point(s)"))[0] == 200
+    status, detail = backend_status(wrapped(404, "No data points found in your request"))
+    assert status == 404
+    assert "No data points found" in detail
 
 
 # == Manager =======================================================================================
@@ -353,7 +378,7 @@ def test_manager_reads_every_device_in_turn_and_hands_the_results_on(monkeypatch
     monkeypatch.setattr(
         manager_module,
         "upload_diagnostic",
-        lambda item: uploads.append(item) or SimpleNamespace(status_code=200),
+        lambda item: uploads.append(item) or FakeResponse(200),
     )
     manager = NaneosDeviceManager(use_serial=False, use_ble=False, upload_active=True)
     devices = [_FakeDevice(1), _FakeDevice(2, fails=True), _FakeDevice(3, supported=False)]
@@ -376,7 +401,7 @@ def test_manager_reads_every_device_in_turn_and_hands_the_results_on(monkeypatch
     ]
     assert manager.pending_diagnostics_count == 3
 
-    manager._upload_pending()  # on the manager thread, with the snapshots
+    manager._drain_uploads()  # on the sender thread, after the snapshots
     assert uploads == got
     assert manager.pending_diagnostics_count == 0
 
@@ -411,3 +436,10 @@ def test_cli_diagnostics_interval_zero_means_never() -> None:
     assert parse_args([]).diagnostics_interval == 1.0
     assert parse_args(["--diagnostics-interval", "0"]).diagnostics_interval == 0
     assert parse_args(["--diagnostics-interval", "6"]).diagnostics_interval == 6.0
+
+
+@pytest.mark.parametrize("value", ["-1", "-0.5", "nan", "inf", "soon"])
+def test_cli_rejects_a_diagnostics_interval_the_manager_would_refuse(value, capsys) -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--diagnostics-interval", value])
+    assert "--diagnostics-interval" in capsys.readouterr().err
