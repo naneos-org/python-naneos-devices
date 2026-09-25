@@ -59,6 +59,13 @@ class PartectorBleConnection:
     WINDOWS_DISCOVERY_DELAY_SECONDS = 2.5
     WINDOWS_DISCOVERY_DELAY_MAX_SECONDS = 5.0
 
+    # Written after every connect to a P2 Pro, see _apply_p2pro_mode(). M0004! switches the
+    # device into size distribution mode. Measured over BLE (SN8134, FW420, 2026-09-25): a device
+    # in the plain P2 mode sends its first size distribution point 2-8 s later, the link stays up,
+    # and writing it again in the mode changes nothing. The USB connect also sends X0006!, the
+    # format of the serial line, which does not exist over BLE.
+    P2PRO_MODE_COMMANDS = ("M0004!",)
+
     SERVICE_UUID = "0bd51666-e7cb-469b-8e4d-2742f1ba77cc"
     CHAR_UUIDS = {
         "std": "e7add780-b042-4876-aae1-112855353cc1",
@@ -88,6 +95,8 @@ class PartectorBleConnection:
         rssi_provider: Callable[[], int | None] | None = None,
         device_provider: Callable[[], BLEDevice | None] | None = None,
         point_listener: PointListener | None = None,
+        p2pro_mode: bool = True,
+        p2pro_mode_guard: Callable[[int], bool] | None = None,
     ) -> None:
         """
         Initializes the BLE connection with the given device, event loop, and queue.
@@ -106,6 +115,10 @@ class PartectorBleConnection:
                 at construction time is reused for every attempt.
             point_listener (Callable | None): Called with every data point as it is
                 published, on the event loop. Must be quick and must not block.
+            p2pro_mode (bool): Put a P2 Pro into size distribution mode after every
+                connect, as the USB connect does. False leaves the mode alone.
+            p2pro_mode_guard (Callable | None): Called with the serial number before that
+                switch; returning False skips it (USB decides the mode of this device).
         """
         self.SERIAL_NUMBER = serial_number
         # Unknown until the device reveals it: a size distribution frame means P2 Pro.
@@ -135,6 +148,9 @@ class PartectorBleConnection:
         )
         self._firmware_version: int | None = None
         self._info_task: asyncio.Task | None = None
+        self._p2pro_mode = p2pro_mode
+        self._p2pro_mode_guard = p2pro_mode_guard
+        self._mode_task: asyncio.Task | None = None
 
         self._readout = BleDiagnosticsReader(
             serial_number, self._commands, lambda: self._firmware_version, lambda: self._device_type
@@ -258,6 +274,7 @@ class PartectorBleConnection:
         except Exception as e:
             logger.exception(f"SN{self.SERIAL_NUMBER}: _run task failed: {e}")
         finally:
+            await self._stop_mode_task()
             await self._disconnect_gracefully()
             await self._stop_decode_task()
 
@@ -384,6 +401,7 @@ class PartectorBleConnection:
 
         if self._firmware_version is None and (self._info_task is None or self._info_task.done()):
             self._info_task = self._loop.create_task(self._read_device_info())
+        self._start_p2pro_mode()
 
     async def _read_device_info(self) -> None:
         """Ask for what the data frames do not tell: the firmware and the device family.
@@ -401,6 +419,55 @@ class PartectorBleConnection:
                 self._device_type = DeviceType.from_name(name)
         except (ConnectionError, TimeoutError, ValueError, IndexError) as e:
             logger.debug(f"SN{self.SERIAL_NUMBER}: could not read the device info: {e}")
+
+    def _start_p2pro_mode(self) -> None:
+        """Runs after every connect (unlike the device info, which is read once)."""
+        if not self._p2pro_mode:
+            return
+        if self._mode_task is not None and not self._mode_task.done():
+            self._mode_task.cancel()  # a leftover of the previous link
+        self._mode_task = asyncio.create_task(
+            self._apply_p2pro_mode()
+        )  # runs inside _subscribe(): the connection's loop
+
+    async def _apply_p2pro_mode(self) -> None:
+        """Put a P2 Pro into size distribution mode, like the USB connect does.
+
+        The device has no mode query, so nothing is checked first: the switch is sent on every
+        connect and is harmless in the mode already. The device family comes from the name?
+        query on the first connect and is remembered afterwards. A failure only costs the mode,
+        never the link, and is tried again at the next connect.
+        """
+        try:
+            info = self._info_task
+            if info is not None and not info.done():
+                await asyncio.wait(
+                    {info}
+                )  # not `await info`: cancelling this task must not cancel that one
+            if self._device_type != DeviceType.P2PRO:
+                return
+            guard = self._p2pro_mode_guard
+            if guard is not None and not guard(self.SERIAL_NUMBER):
+                logger.debug(f"SN{self.SERIAL_NUMBER}: the mode of the P2 Pro is left to USB")
+                return
+            for command in self.P2PRO_MODE_COMMANDS:
+                await self.write(command)
+            logger.info(f"SN{self.SERIAL_NUMBER}: P2 Pro put into size distribution mode")
+        except Exception as e:
+            logger.warning(
+                f"SN{self.SERIAL_NUMBER}: could not put the P2 Pro into size distribution mode: "
+                f"{type(e).__name__}: {e}"
+            )
+
+    async def _stop_mode_task(self) -> None:
+        task = self._mode_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
     async def _handle_connect_error(self, error: Exception) -> None:
         """Classifies a failed attempt, cleans up and starts the backoff."""

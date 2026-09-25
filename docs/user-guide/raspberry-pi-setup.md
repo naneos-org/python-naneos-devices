@@ -120,6 +120,9 @@ OPTIONS=--ble-allow 8617,8764 --ble-max-links 2
 Put the card back and switch the Pi on. `OPTIONS=` with nothing after the `=` restores the
 defaults. The file lists all options with a short explanation.
 
+A Partector 2 Pro is put into size distribution mode after every Bluetooth connect, as it is over
+USB. `--no-ble-p2pro-mode` switches that off, for a Pi that must never change the mode of a device.
+
 The same file adds a WiFi network, for example before the Pi moves to another site:
 
 ```ini

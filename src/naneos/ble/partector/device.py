@@ -64,7 +64,9 @@ class BlePartector(PartectorDevice):
 
     def set_sample_rate(self, hz: int | None) -> None:
         if hz is None:
-            return  # 1 Hz is the default over BLE
+            # 1 Hz is the default over BLE. A P2 Pro is put into size distribution mode when
+            # the link is made, see PartectorBleConnection._apply_p2pro_mode.
+            return
         raise NotSupportedError(
             "The data rate is fixed at 1 Hz over BLE; it can only be changed over USB."
         )

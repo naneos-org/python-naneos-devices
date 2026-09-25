@@ -53,6 +53,7 @@ want, uploads them to the naneos IoT service.
 
 - 🔌 USB and BLE, each can be switched on and off, also while running
 - 🎯 Optional BLE allow-list (`ble_serial_numbers`) and link limit (`ble_max_links`, default 7)
+- 🔬 A Partector 2 Pro is put into size distribution mode on every connect, over USB and BLE
 - ⏱️ Gathering interval of 10 to 600 s
 - 📤 Optional upload to the naneos IoT service (always at 1 Hz)
 - 📦 Snapshots as `dict[int, pandas.DataFrame]` on a queue, for your own processing
@@ -207,8 +208,11 @@ manager.sample_rate_hz = 10  # also NaneosDeviceManager(sample_rate_hz=10)
 - Your queue receives the data at the rate you set. **The upload to naneos is always limited to
   1 Hz.** 100 Hz is meant for tests.
 - A rate set on one device is not remembered: a device that reconnects gets `manager.sample_rate_hz`.
-- A Partector 2 Pro on USB starts in size distribution mode, where it sets its own pace
-  (`sample_rate_hz` is `None`); a rate switches it to the plain P2 line. See the
+- A Partector 2 Pro starts in size distribution mode, where it sets its own pace
+  (`sample_rate_hz` is `None`). It is switched into it on every connect, over USB and over BLE.
+  Over USB a rate switches it to the plain P2 line; BLE leaves a device alone that is connected
+  over USB, and all devices while `manager.sample_rate_hz` is set. `ble_p2pro_mode=False`
+  (`naneos-uploader --no-ble-p2pro-mode`) never touches the mode over BLE. See the
   [documentation](https://naneos-org.github.io/python-naneos-devices/user-guide/devices/) for the details.
 
 # Logging

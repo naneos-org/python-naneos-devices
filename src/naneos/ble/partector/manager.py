@@ -2,7 +2,7 @@ import asyncio
 import sys
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 import pandas as pd
@@ -48,6 +48,10 @@ class PartectorBleManager(threading.Thread):
             still retrying). BlueZ handles about seven reliably.
         point_listener: Called with every data point as it arrives, in addition to
             get_data(). Runs on the BLE event loop: must be quick and must not block.
+        p2pro_mode: Put a P2 Pro into size distribution mode after every connect, like
+            the USB connect does. False leaves the mode of the device alone.
+        p2pro_mode_guard: Called with the serial number before that switch, on the BLE
+            thread; returning False skips it for this connect.
     """
 
     # How often the manager drains its queues. The queues are bounded and the
@@ -85,9 +89,13 @@ class PartectorBleManager(threading.Thread):
         serial_numbers: Iterable[int] | None = None,
         max_links: int = DEFAULT_MAX_LINKS,
         point_listener: PointListener | None = None,
+        p2pro_mode: bool = True,
+        p2pro_mode_guard: Callable[[int], bool] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._point_listener = point_listener
+        self._p2pro_mode = p2pro_mode
+        self._p2pro_mode_guard = p2pro_mode_guard
         self._allowed_serials: frozenset[int] | None = (
             frozenset(serial_numbers) if serial_numbers is not None else None
         )
@@ -279,6 +287,8 @@ class PartectorBleManager(threading.Thread):
             rssi_provider=lambda: self._get_rssi(device.address),
             device_provider=lambda: self._get_device(device.address),
             point_listener=self._point_listener,
+            p2pro_mode=self._p2pro_mode,
+            p2pro_mode_guard=self._p2pro_mode_guard,
         )
         link = self._links.get(serial)
         if link is not None:

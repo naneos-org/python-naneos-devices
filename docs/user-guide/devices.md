@@ -14,6 +14,7 @@ connection: USB is faster and the only way to change the data rate.
 | default `query()` timeout | 1 s | 2 s (answers take 0.25 s to 1 s) |
 | `set_sample_rate(hz)` | 0, 1, 10, 100 Hz or `None` (the default of the device) | raises `NotSupportedError`, fixed at 1 Hz (`None` is accepted) |
 | `firmware_version`, `device_type` | known on connect | known a moment after the connect |
+| P2 Pro size distribution mode | switched into it on every connect | switched into it on every connect (`M0004!`), unless USB decides the mode, see below |
 | `read_ui_curve()` / `read_pulse_form()` | 10 s sweep + about 1 s | 10 s sweep + about 40 s / about 50 s |
 
 One command is in flight per device; calls from several threads queue up. Answers carry no
@@ -56,7 +57,7 @@ without limit, at 100 Hz by about 200 kB per second and device.
 A P2 Pro in size distribution mode delivers one point per inversion cycle (6–21 s, depending
 on its integration time), also on the live queue.
 
-## Partector 2 Pro modes (USB)
+## Partector 2 Pro modes
 
 A P2 Pro on USB starts in **size distribution mode**: one line with the size distribution per
 inversion cycle (6–21 s, depending on the integration time), paced by the device, and
@@ -73,6 +74,18 @@ pro.set_sample_rate(None)  # back to the size distribution
 
 With the gain test active (the default), every mode switch holds the data of the device back
 for at least 10 s while it settles.
+
+**Over BLE** the rate cannot be changed, but the mode can be set: a P2 Pro is put into size
+distribution mode after every BLE connect (the command `M0004!`), so a device that was left in
+the plain P2 mode, for example after a USB run at 10 Hz, delivers its size distribution again
+a few seconds after it is linked. The device has no mode query, so nothing is checked first: the
+command is sent on every connect and is harmless in the mode already. Over BLE a P2 Pro in the
+plain P2 mode has no size distribution and loses its number concentration and mean diameter.
+
+USB decides the mode where it can: BLE does not switch a device that is connected over USB
+at that moment, and switches no device while `manager.sample_rate_hz` is set (a rate means the
+plain P2 mode). To never touch the mode over BLE use `NaneosDeviceManager(ble_p2pro_mode=False)`,
+`PartectorBleManager(p2pro_mode=False)` or `naneos-uploader --no-ble-p2pro-mode`.
 
 ## Gain test and pulse diagnostics (USB)
 
