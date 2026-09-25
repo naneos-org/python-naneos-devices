@@ -39,6 +39,10 @@ On Windows an option needs the script as a script block:
 powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm <url>))) -Version 2.1.0 -NoStart"
 ```
 
+The plain `irm <url> | iex` form cannot take arguments, so it also reads the environment
+variables `NANEOS_VERSION`, `NANEOS_REF` and `NANEOS_PYTHON` (set them in the same PowerShell
+window before the command).
+
 | macOS and Linux | Windows | Effect |
 |---|---|---|
 | `--version X.Y.Z` | `-Version X.Y.Z` | install this release instead of the latest one |

@@ -260,6 +260,13 @@ fi
 
 [ -x "$TOOL_PY" ] || die "the installation finished but $TOOL_PY does not exist"
 
+# An old release installs without an error: uv only warns that it has no extra "gui". The tray
+# app first ships in 2.1.0, so say what is wrong instead of failing on the next command.
+if ! "$TOOL_PY" -c 'import naneos.gui.app' </dev/null >/dev/null 2>&1; then
+    INSTALLED=$("$TOOL_PY" -c 'import importlib.metadata as m; print(m.version("naneos-devices"))' </dev/null 2>/dev/null || echo "?")
+    die "the installed $PACKAGE $INSTALLED does not contain the tray app (it first ships in 2.1.0). Either that release is not published yet, or --version is too old. To install a branch from GitHub instead, use --ref BRANCH."
+fi
+
 "$TOOL_PY" -m naneos.gui --integration install </dev/null
 if [ "$AUTOSTART" -eq 1 ] && [ "$KEEP_AUTOSTART_OFF" -eq 0 ]; then
     "$TOOL_PY" -m naneos.gui --autostart on </dev/null

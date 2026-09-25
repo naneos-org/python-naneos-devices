@@ -142,6 +142,21 @@ mkdir -p "$HOME"
 NANEOS_REQUIREMENT="naneos-devices[gui] @ file://$PWD" sh installers/install-desktop.sh --no-start
 ```
 
+**A branch on GitHub**, before it is released (PyPI does not have the tray app yet, so a plain
+install would get an old release and stop with a message saying so). macOS and Linux:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/naneos-org/python-naneos-devices/BRANCH/installers/install-desktop.sh | sh -s -- --ref BRANCH
+```
+
+Windows, in PowerShell (`irm | iex` cannot take arguments, so the branch goes in an environment
+variable; remove it afterwards with `Remove-Item Env:NANEOS_REF`):
+
+```powershell
+$env:NANEOS_REF = 'BRANCH'
+irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/BRANCH/installers/install-desktop.ps1 | iex
+```
+
 `installers/install.sh` belongs to the Raspberry Pi and is downloaded by path by
 `naneos-uploader-update`: never move or rename it. The desktop installers are separate files.
 

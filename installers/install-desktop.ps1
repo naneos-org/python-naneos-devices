@@ -18,6 +18,11 @@ powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/nan
 powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install-desktop.ps1))) -Version 2.1.0 -NoStart"
 
 .EXAMPLE
+# Install a branch from GitHub (to test it before it is released). With `irm | iex` the options
+# are read from environment variables: NANEOS_REF, NANEOS_VERSION, NANEOS_PYTHON.
+powershell -ExecutionPolicy ByPass -c "$env:NANEOS_REF = 'branch-name'; irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/branch-name/installers/install-desktop.ps1 | iex"
+
+.EXAMPLE
 # Uninstall (uv and the log files stay)
 powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install-desktop.ps1))) -Uninstall"
 
@@ -102,6 +107,20 @@ function Install-NaneosDesktop {
         try {
             $text = & $File @Arguments 2>$null
             return ($text -join "`n")
+        }
+        finally {
+            $ErrorActionPreference = $old
+        }
+    }
+
+    # Like Get-NativeOutput, but returns only the exit code and keeps quiet.
+    function Get-NativeExitCode {
+        param([string]$File, [string[]]$Arguments)
+        $old = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & $File @Arguments 2>$null | Out-Null
+            return $LASTEXITCODE
         }
         finally {
             $ErrorActionPreference = $old
@@ -210,18 +229,27 @@ function Install-NaneosDesktop {
     if ($code -ne 0) { throw "uv could not install $requirement (exit code $code)." }
     if (-not (Test-Path $toolPython)) { throw "The installation finished but $toolPython does not exist." }
 
+    # An old release installs without an error: uv only warns that it has no extra "gui". The tray
+    # app first ships in 2.1.0, so say what is wrong instead of failing later on an empty value.
+    if ((Get-NativeExitCode $toolPython @('-c', 'import naneos.gui.app')) -ne 0) {
+        $installedVersion = (Get-NativeOutput $toolPython @('-c', 'import importlib.metadata as m; print(m.version(''naneos-devices''))')).Trim()
+        throw ("The installed $package $installedVersion does not contain the tray app (it first ships in 2.1.0). " +
+            'Either that release is not published yet, or -Version is too old. To install a branch from GitHub ' +
+            "instead, run  `$env:NANEOS_REF = 'branch-name'  first and then this command again.")
+    }
+
     # The path of the launcher and the icon come from the installed package.
     $guiExe = (Get-NativeOutput $toolPython @('-c', 'from naneos.gui.integration import entry_point; print(entry_point())')).Trim()
     # (No double quotes in these arguments: Windows PowerShell 5.1 strips them.)
     $icon = (Get-NativeOutput $toolPython @('-c', 'from naneos.gui.integration import icon_file; print(icon_file(''ico''))')).Trim()
-    if (-not (Test-Path $guiExe)) { throw "The installation finished but $guiExe does not exist." }
+    if (-not $guiExe -or -not (Test-Path $guiExe)) { throw "The installation finished but the app '$guiExe' does not exist." }
 
     # Start Menu entry, so the app can be started again after Quit.
     $wsh = New-Object -ComObject WScript.Shell
     $link = $wsh.CreateShortcut($shortcut)
     $link.TargetPath = $guiExe
     $link.Description = 'Shows and uploads the data of your naneos Partector devices'
-    if (Test-Path $icon) { $link.IconLocation = $icon }
+    if ($icon -and (Test-Path $icon)) { $link.IconLocation = $icon }
     $link.Save()
 
     if (-not $NoAutostart -and -not $keepAutostartOff) {
