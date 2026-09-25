@@ -10,6 +10,7 @@ explains the device manager, which is all most applications need, and links the 
 ## User guide
 
 * [Devices and commands](user-guide/devices.md): device handles, data rate, Partector 2 Pro modes.
+* [Desktop App (Tray Icon)](user-guide/desktop-app.md): Windows, macOS and Linux computers as uploaders, one command to install.
 * [Raspberry Pi Setup](user-guide/raspberry-pi-setup.md): a Pi as an always-on uploader.
 * [Logging](user-guide/logging.md)
 * [Migrating from 1.x to 2.0](user-guide/migration-2.0.md)

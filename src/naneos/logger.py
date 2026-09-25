@@ -7,6 +7,7 @@ common cases one call: enable_console_logging() and enable_file_logging().
 """
 
 import logging
+import logging.handlers
 from logging import CRITICAL as LEVEL_CRITICAL
 from logging import DEBUG as LEVEL_DEBUG
 from logging import ERROR as LEVEL_ERROR
@@ -64,8 +65,12 @@ class _NaneosConsoleHandler(logging.StreamHandler):
     """Marker subclass so enable_console_logging() can find its own handler."""
 
 
-class _NaneosFileHandler(logging.FileHandler):
-    """Marker subclass so enable_file_logging() can find its own handler."""
+class _NaneosFileHandler(logging.handlers.RotatingFileHandler):
+    """Marker subclass so enable_file_logging() can find its own handler.
+
+    With the default maxBytes=0 it never rotates, so it behaves like a plain
+    FileHandler.
+    """
 
 
 def get_naneos_logger(name: str, level: int | None = None) -> logging.Logger:
@@ -102,12 +107,21 @@ def enable_console_logging(level: int = logging.INFO, colored: bool = True) -> l
     return root
 
 
-def enable_file_logging(path: str | Path, level: int = logging.INFO) -> logging.Logger:
+def enable_file_logging(
+    path: str | Path,
+    level: int = logging.INFO,
+    max_bytes: int = 0,
+    backup_count: int = 0,
+) -> logging.Logger:
     """Append naneos log messages of at least `level` to a file.
 
     `path` may be a directory, in which case naneos-devices.log is created in
     it. Calling it again replaces the previous file handler. Returns the
     "naneos" logger.
+
+    The file grows without limit unless `max_bytes` is set: then it is moved to
+    naneos-devices.log.1 (and so on, up to `backup_count` files) once it would
+    exceed that size. A long-running application should set both.
     """
     path = Path(path).resolve()
     if path.is_dir():
@@ -120,7 +134,9 @@ def enable_file_logging(path: str | Path, level: int = logging.INFO) -> logging.
             handler.close()
             root.removeHandler(handler)
 
-    handler = _NaneosFileHandler(str(path))
+    handler = _NaneosFileHandler(
+        str(path), maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
     handler.setLevel(level)
     handler.setFormatter(CustomFormatter(terminal=False))
     root.addHandler(handler)

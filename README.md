@@ -19,11 +19,31 @@ Python package for the [naneos particle solutions](https://naneos.ch) measuremen
 
 # Installation
 
-Python 3.11 to 3.14 is supported.
+**As a library**, for your own Python code (Python 3.11 to 3.14):
 
 ```bash
 pip install naneos-devices
 ```
+
+**As a desktop app** on Windows, macOS or Linux: a tray icon that reads every Partector in
+reach, uploads the data and starts at login. One command installs
+[uv](https://docs.astral.sh/uv/) if needed, the app, and the autostart. macOS and Linux:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install-desktop.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install-desktop.ps1 | iex"
+```
+
+Run the same command again to update. See the
+[desktop app guide](https://naneos-org.github.io/python-naneos-devices/user-guide/desktop-app/).
+
+**On a Raspberry Pi** as an always-on uploader without a screen, see the
+[Raspberry Pi setup](https://naneos-org.github.io/python-naneos-devices/user-guide/raspberry-pi-setup/).
 
 # The device manager
 

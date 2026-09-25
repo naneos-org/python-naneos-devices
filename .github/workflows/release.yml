@@ -58,6 +58,11 @@ jobs:
           reported="$(uv run --isolated --no-project --with dist/*.whl naneos-uploader --version)"
           echo "$reported"
           test "$reported" = "naneos-devices ${{ needs.check.outputs.version }}"
+          # The gui extra must resolve, and naneos-gui must start (--version does not need Qt).
+          wheel="$(realpath dist/*.whl)"
+          reported="$(uv run --isolated --no-project --with "naneos-devices[gui] @ file://$wheel" naneos-gui --version)"
+          echo "$reported"
+          test "$reported" = "naneos-gui ${{ needs.check.outputs.version }}"
       - uses: actions/upload-artifact@v7
         with:
           name: dist

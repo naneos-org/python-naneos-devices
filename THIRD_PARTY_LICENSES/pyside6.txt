@@ -1,0 +1,27 @@
+PySide6 (Qt for Python) and Shiboken6
+
+Used by the optional tray app `naneos-gui` (`pip install "naneos-devices[gui]"`). Not needed by
+the library, the `naneos-uploader` command or the Raspberry Pi installation, and not included in
+the naneos-devices package: it is installed as the separate PyPI packages `PySide6-Essentials`
+and `shiboken6`, from the Qt Company, unmodified.
+
+License declared by both packages (version 6.11.2, checked when this file was written):
+
+    LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+
+naneos-devices uses PySide6 under the GNU Lesser General Public License, version 3 (LGPLv3).
+Because the package is installed on its own and imported dynamically, you can replace it with
+another version of PySide6 (one that meets the requirement in pyproject.toml) at any time.
+
+Source code of PySide6 and Qt:
+
+    https://code.qt.io/cgit/pyside/pyside-setup.git/
+    https://download.qt.io/official_releases/qt/
+
+License texts and information:
+
+    https://pyside.org
+    https://www.gnu.org/licenses/lgpl-3.0.html
+    https://doc.qt.io/qt-6/lgpl.html
+
+Qt is a registered trademark of The Qt Company Ltd.

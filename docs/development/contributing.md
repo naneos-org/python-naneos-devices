@@ -109,6 +109,42 @@ keeps a protobuf that is already installed as long as it meets the floor. `tests
 checks this.
 
 
+## Desktop app
+
+The tray app (`naneos-gui`, see the [user guide](../user-guide/desktop-app.md)) lives in
+`src/naneos/gui/`. Only `tray.py`, `instance.py` and the Qt part of `app.py` import PySide6;
+`naneos/__init__.py` and everything the Raspberry Pi uploader loads never import the package.
+`tests/test_22_gui_app.py` checks that.
+
+Run it from a checkout, without uploading:
+
+```bash
+uv run naneos-gui --no-upload
+```
+
+The tests need no display: the Qt ones run with `QT_QPA_PLATFORM=offscreen`. They also run in CI
+on macOS and Windows, because the code that registers the autostart differs per OS.
+
+**The macOS launcher.** `src/naneos/gui/resources/macos/naneos-launcher` is a small compiled
+program (source: `launcher.c`) that is the executable of `Naneos Devices.app`. macOS asks for
+Bluetooth access in the name of the app at the top of a process chain, so the launcher starts
+Python as its child. The binary is committed and built with `scripts/build-macos-launcher.sh`.
+**Do not rebuild it for a small change:** the Bluetooth permission is tied to the code signature
+of the bundle, and every new binary makes every user see the permission question again. After a
+real change to `launcher.c`, bump `LAUNCHER_VERSION` in `src/naneos/gui/integration.py`.
+
+**Trying the installers** on a checkout, in a scratch home directory so that nothing of your own
+is touched (the sandbox needs a real `uv` on the `PATH`):
+
+```bash
+export HOME=/tmp/naneos-home UV_TOOL_DIR=/tmp/naneos-home/uvtools UV_TOOL_BIN_DIR=/tmp/naneos-home/bin
+mkdir -p "$HOME"
+NANEOS_REQUIREMENT="naneos-devices[gui] @ file://$PWD" sh installers/install-desktop.sh --no-start
+```
+
+`installers/install.sh` belongs to the Raspberry Pi and is downloaded by path by
+`naneos-uploader-update`: never move or rename it. The desktop installers are separate files.
+
 ## Building executables
 Sometimes you want to build an executable for a customer with your custom script.
 The build must happen on the same OS as the target OS.

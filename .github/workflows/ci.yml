@@ -29,6 +29,43 @@ jobs:
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: ${{ matrix.python-version }}
+      # What Qt needs to start, also without a display (the tray app tests run offscreen).
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
       - run: uv sync --group dev
       # Hardware tests (marker "hardware") are excluded by the pytest config.
       - run: uv run pytest
+
+  # The tray app has code for each OS (Run key, LaunchAgent, macOS app bundle, named pipe):
+  # its tests also run where that code runs. The Linux run is the test job above.
+  gui-platforms:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.13"
+      - run: uv sync --group dev
+      - run: uv run pytest tests/test_20_gui_model.py tests/test_21_gui_integration.py tests/test_22_gui_app.py tests/test_23_gui_qt.py
+
+  # The desktop installers are not run here (they install into a real home directory),
+  # only checked. installers/install.sh belongs to the Raspberry Pi and is not part of this.
+  installers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck -s sh installers/install-desktop.sh
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          # Excluded: Write-Host (the messages are for the person running the installer),
+          # Invoke-Expression (how uv documents its own installer), and ShouldProcess on
+          # helpers that are not cmdlets.
+          $findings = Invoke-ScriptAnalyzer -Path installers/install-desktop.ps1 -ExcludeRule `
+            PSAvoidUsingWriteHost, PSAvoidUsingInvokeExpression, PSUseShouldProcessForStateChangingFunctions
+          $findings | Format-Table RuleName, Severity, Line, Message -AutoSize -Wrap
+          if ($findings) { exit 1 }
