@@ -91,8 +91,9 @@ While the tray app runs, a script of your own cannot open the same device: quit 
 The installer creates `~/Applications/Naneos Devices.app`. The app has to be a bundle because
 macOS asks for Bluetooth access in the name of an application, and only a bundle can carry the
 text of that question. The first time the app starts, macOS asks whether **Naneos Devices** may
-use Bluetooth: choose **Allow**. Until you answer, USB devices work but Bluetooth ones do not,
-and Quit takes the full 25 seconds.
+use Bluetooth: choose **Allow**. Until you answer, USB devices work but Bluetooth ones do not
+(after 10 seconds the log says "Still waiting for the Bluetooth adapter"). Quit works in the
+meantime.
 
 The permission is kept when the app is updated. macOS may ask again if the installation moves
 to another folder (a different uv tool folder). You can change your answer in System Settings →

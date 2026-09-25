@@ -60,6 +60,12 @@ class PartectorBleManager(threading.Thread):
     # running; `bluetoothctl` is only used to decide when it is safe to restart.
     ADAPTER_LOST_AFTER_SECONDS = 30.0
     ADAPTER_CHECK_INTERVAL_SECONDS = 3.0
+    # A check that takes this long is logged once. On macOS it does not return until the
+    # user has answered the Bluetooth permission dialog, and nothing else would say so.
+    ADAPTER_CHECK_SLOW_SECONDS = 10.0
+    # While waiting for an adapter the stop event is looked at this often. It is a
+    # threading.Event, so it cannot be awaited.
+    STOP_POLL_SECONDS = 0.2
 
     # A link that is down makes its device advertise again, so a scanner that
     # hears no Partector at all for this long while a link waits to reconnect
@@ -302,16 +308,57 @@ class PartectorBleManager(threading.Thread):
 
     # == Adapter ===================================================================================
     async def _wait_for_bluetooth_adapter(self) -> None:
+        """Returns when an adapter is ready, or when stop() was called.
+
+        The check may never return (macOS waits for the Bluetooth permission dialog to be
+        answered), so both the check and the pause between two checks give way to stop().
+        """
         while not self._stop_event.is_set():
-            if await self._adapter_available():
+            if await self._check_adapter_unless_stopped():
                 logger.info("Bluetooth adapter is available and ready.")
+                return
+            if self._stop_event.is_set():
                 return
 
             logger.info(
                 "Bluetooth adapter not available. "
                 f"Retrying in {self.ADAPTER_CHECK_INTERVAL_SECONDS} seconds..."
             )
-            await asyncio.sleep(self.ADAPTER_CHECK_INTERVAL_SECONDS)
+            await self._sleep_unless_stopped(self.ADAPTER_CHECK_INTERVAL_SECONDS)
+
+    async def _check_adapter_unless_stopped(self) -> bool:
+        """True if the adapter is ready. False if it is not, or if stop() came first."""
+        check = asyncio.ensure_future(self._adapter_available())
+        started = time.monotonic()
+        reported = False
+        try:
+            while not check.done():
+                if self._stop_event.is_set():
+                    return False
+                await asyncio.wait({check}, timeout=self.STOP_POLL_SECONDS)
+                if (
+                    not reported
+                    and not check.done()
+                    and time.monotonic() - started >= self.ADAPTER_CHECK_SLOW_SECONDS
+                ):
+                    reported = True
+                    logger.info(
+                        "Still waiting for the Bluetooth adapter. On macOS this means the "
+                        "Bluetooth permission dialog has not been answered."
+                    )
+            return check.result()
+        finally:
+            if not check.done():
+                check.cancel()
+                await asyncio.wait({check}, timeout=1.0)  # let it clean up, but do not hang on it
+
+    async def _sleep_unless_stopped(self, seconds: float) -> None:
+        deadline = time.monotonic() + seconds
+        while not self._stop_event.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(self.STOP_POLL_SECONDS, remaining))
 
     @staticmethod
     async def _adapter_available() -> bool:
