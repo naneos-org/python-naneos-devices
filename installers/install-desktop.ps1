@@ -18,9 +18,10 @@ powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/nan
 powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/master/installers/install-desktop.ps1))) -Version 2.1.0 -NoStart"
 
 .EXAMPLE
-# Install a branch from GitHub (to test it before it is released). With `irm | iex` the options
-# are read from environment variables: NANEOS_REF, NANEOS_VERSION, NANEOS_PYTHON.
-powershell -ExecutionPolicy ByPass -c "$env:NANEOS_REF = 'branch-name'; irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/branch-name/installers/install-desktop.ps1 | iex"
+# Install a branch from GitHub, to test it before it is released. -Ref is a normal parameter,
+# so this is one line and needs no environment variable. (The plain `irm | iex` form takes no
+# arguments; it reads NANEOS_REF, NANEOS_VERSION and NANEOS_PYTHON from the environment.)
+powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/branch-name/installers/install-desktop.ps1))) -Ref branch-name"
 
 .EXAMPLE
 # Uninstall (uv and the log files stay)
@@ -235,7 +236,8 @@ function Install-NaneosDesktop {
         $installedVersion = (Get-NativeOutput $toolPython @('-c', 'import importlib.metadata as m; print(m.version(''naneos-devices''))')).Trim()
         throw ("The installed $package $installedVersion does not contain the tray app (it first ships in 2.1.0). " +
             'Either that release is not published yet, or -Version is too old. To install a branch from GitHub ' +
-            "instead, run  `$env:NANEOS_REF = 'branch-name'  first and then this command again.")
+            'instead, run the script with -Ref branch-name, see the second example at the top of the script: ' +
+            '& ([scriptblock]::Create((irm <script url>))) -Ref branch-name')
     }
 
     # The path of the launcher and the icon come from the installed package.

@@ -39,6 +39,13 @@ On Windows an option needs the script as a script block:
 powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm <url>))) -Version 2.1.0 -NoStart"
 ```
 
+For example, this one full line installs the branch `feature/desktop-gui` from GitHub before it is
+released, without setting an environment variable:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/feature/desktop-gui/installers/install-desktop.ps1))) -Ref feature/desktop-gui"
+```
+
 The plain `irm <url> | iex` form cannot take arguments, so it also reads the environment
 variables `NANEOS_VERSION`, `NANEOS_REF` and `NANEOS_PYTHON` (set them in the same PowerShell
 window before the command).

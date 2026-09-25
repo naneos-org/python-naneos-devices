@@ -149,12 +149,11 @@ install would get an old release and stop with a message saying so). macOS and L
 curl -LsSf https://raw.githubusercontent.com/naneos-org/python-naneos-devices/BRANCH/installers/install-desktop.sh | sh -s -- --ref BRANCH
 ```
 
-Windows, in PowerShell (`irm | iex` cannot take arguments, so the branch goes in an environment
-variable; remove it afterwards with `Remove-Item Env:NANEOS_REF`):
+Windows, in PowerShell, also on one line (the script takes `-Ref` as a parameter, no environment
+variable needed):
 
 ```powershell
-$env:NANEOS_REF = 'BRANCH'
-irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/BRANCH/installers/install-desktop.ps1 | iex
+powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/naneos-org/python-naneos-devices/BRANCH/installers/install-desktop.ps1))) -Ref BRANCH"
 ```
 
 `installers/install.sh` belongs to the Raspberry Pi and is downloaded by path by
