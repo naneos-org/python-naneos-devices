@@ -23,7 +23,7 @@ jobs:
       release: ${{ steps.version.outputs.release }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: astral-sh/setup-uv@v10.2.0
       - id: version
         run: |
           version="$(uv version --short)"
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.11"
       - run: uv build --no-sources
@@ -73,7 +73,7 @@ jobs:
     steps:
       # No checkout here, the job only uploads the built files: nothing to cache,
       # and the empty working directory is intended.
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: false
           ignore-empty-workdir: true
