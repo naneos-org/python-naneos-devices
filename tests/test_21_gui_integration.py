@@ -226,10 +226,11 @@ def test_macos_bundle_has_what_bluetooth_needs(fake_launcher, tools, tmp_path) -
 
     launcher = app / "Contents" / "MacOS" / "naneos-launcher"
     assert launcher.read_bytes() == b"launcher v1"
-    assert launcher.stat().st_mode & 0o111
     script = app / "Contents" / "Resources" / "launch.sh"
     assert script.read_text() == '#!/bin/sh\nexec /tool/bin/naneos-gui "$@"\n'
-    assert script.stat().st_mode & 0o111
+    if sys.platform != "win32":  # Windows has no exec bits
+        assert launcher.stat().st_mode & 0o111
+        assert script.stat().st_mode & 0o111
 
 
 def test_macos_launch_script_quotes_the_command(fake_launcher, tools, tmp_path) -> None:

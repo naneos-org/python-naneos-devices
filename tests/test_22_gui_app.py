@@ -83,7 +83,7 @@ def test_integration_install_and_remove(monkeypatch, capsys) -> None:
     assert main(["--integration", "remove"]) == 0
 
     assert calls == ["install", "remove"]
-    assert "Installed /a" in capsys.readouterr().out
+    assert f"Installed {Path('/a')}" in capsys.readouterr().out
 
 
 def test_setup_actions_do_not_start_the_tray_app(monkeypatch) -> None:
