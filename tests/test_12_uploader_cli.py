@@ -2,6 +2,9 @@
 
 from importlib.metadata import entry_points
 
+import pytest
+
+from naneos import cli
 from naneos.cli import parse_args
 
 
@@ -31,6 +34,41 @@ def test_ble_allow_list_and_link_cap() -> None:
     args = parse_args(["--ble-allow", "8617,8764", "--ble-max-links", "3"])
     assert args.ble_allow == [8617, 8764]
     assert args.ble_max_links == 3
+
+
+def test_the_ble_mode_switch_is_on_unless_switched_off() -> None:
+    assert parse_args([]).no_ble_p2pro_mode is False
+    assert parse_args(["--no-ble-p2pro-mode"]).no_ble_p2pro_mode is True
+
+
+def test_run_hands_the_ble_mode_switch_to_the_manager(monkeypatch) -> None:
+    made: dict = {}
+
+    class FakeManager:
+        def __init__(self, **kwargs) -> None:
+            made.update(kwargs)
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+        def join(self) -> None:
+            pass
+
+    def leave_the_loop(seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "NaneosDeviceManager", FakeManager)
+    monkeypatch.setattr(cli.signal, "signal", lambda *args: None)  # not the handlers of pytest
+    monkeypatch.setattr(cli, "enable_console_logging", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli.time, "sleep", leave_the_loop)
+
+    for flags, expected in (([], True), (["--no-ble-p2pro-mode"], False)):
+        with pytest.raises(KeyboardInterrupt):
+            cli.run(parse_args(flags))
+        assert made["ble_p2pro_mode"] is expected
 
 
 def test_installed_from_names_a_source() -> None:

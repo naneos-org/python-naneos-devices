@@ -138,6 +138,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="maximum number of simultaneous BLE links (default: %(default)s)",
     )
     parser.add_argument(
+        "--no-ble-p2pro-mode",
+        action="store_true",
+        help="do not put a P2 Pro into size distribution mode after every BLE connect "
+        "(by default it is, like the USB connect does)",
+    )
+    parser.add_argument(
         "--diagnostics-interval",
         type=_hours,
         default=1.0,
@@ -185,6 +191,7 @@ def run(args: argparse.Namespace) -> None:
         ble_max_links=args.ble_max_links,
         diagnostics_interval_hours=args.diagnostics_interval or None,
         upload_buffer_mb=args.upload_buffer_mb,
+        ble_p2pro_mode=not args.no_ble_p2pro_mode,
     )
     manager.start()
 

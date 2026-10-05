@@ -34,6 +34,7 @@ nav:
   - Home: index.md
   - User Guide:
       - Devices and commands: user-guide/devices.md
+      - Desktop App (Tray Icon): user-guide/desktop-app.md
       - Raspberry Pi Setup: user-guide/raspberry-pi-setup.md
       - Logging: user-guide/logging.md
       - Migrating from 1.x to 2.0: user-guide/migration-2.0.md

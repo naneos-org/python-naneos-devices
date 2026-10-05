@@ -59,6 +59,7 @@ class NaneosDeviceManager(threading.Thread):
         sample_rate_hz: int | None = None,
         diagnostics_interval_hours: float | None = 1.0,
         upload_buffer_mb: float = 100,
+        ble_p2pro_mode: bool = True,
     ) -> None:
         """
         Args:
@@ -78,6 +79,10 @@ class NaneosDeviceManager(threading.Thread):
             upload_buffer_mb: what is kept in RAM while the upload does not work, in MB
                 (a P2 at 1 Hz needs about 16 MB per day). The oldest data is dropped
                 when it is full. It is lost when the process ends.
+            ble_p2pro_mode: put a P2 Pro into size distribution mode after every BLE
+                connect, as the USB connect does. Skipped for a device that is connected
+                over USB, and for all devices while `sample_rate_hz` is set: USB decides
+                their mode. False never touches the mode over BLE.
         """
         if not upload_buffer_mb > 0:
             raise ValueError("upload_buffer_mb must be positive.")
@@ -86,6 +91,7 @@ class NaneosDeviceManager(threading.Thread):
         self._use_ble = use_ble
         self._ble_serial_numbers = frozenset(ble_serial_numbers) if ble_serial_numbers else None
         self._ble_max_links = ble_max_links
+        self._ble_p2pro_mode = ble_p2pro_mode
         self._serial_gain_test = serial_gain_test
         self._serial_pulse_diagnostics = serial_pulse_diagnostics
         self._sample_rate_hz = PartectorSerialManager.check_sample_rate(sample_rate_hz)
@@ -289,6 +295,20 @@ class NaneosDeviceManager(threading.Thread):
     def live_points_dropped(self) -> int:
         """Points dropped from the live queue because it was full."""
         return self._live_points_dropped
+
+    def _ble_may_set_p2pro_mode(self, serial_number: int) -> bool:
+        """Asked by a BLE link before it switches a P2 Pro into size distribution mode.
+
+        Runs on the BLE event loop. USB decides the mode of a device that is connected over
+        USB, and of all devices while a rate is set (a rate means the plain P2 mode).
+        """
+        if self._sample_rate_hz is not None:
+            return False
+        serial_manager = self._manager_serial
+        return (
+            serial_manager is None
+            or serial_number not in serial_manager.get_connected_serial_numbers()
+        )
 
     def _on_live_point(self, point: NaneosDeviceDataPoint) -> None:
         """Runs on the serial reader threads and the BLE event loop: never blocks."""
@@ -506,7 +526,11 @@ class NaneosDeviceManager(threading.Thread):
             self._manager_ble,
             self._use_ble,
             lambda: PartectorBleManager(
-                self._ble_serial_numbers, self._ble_max_links, self._on_live_point
+                self._ble_serial_numbers,
+                self._ble_max_links,
+                self._on_live_point,
+                self._ble_p2pro_mode,
+                self._ble_may_set_p2pro_mode,
             ),
             "BLE",
         )

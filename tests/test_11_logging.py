@@ -64,3 +64,40 @@ def test_enable_file_logging_writes_to_the_directory_or_file(tmp_path) -> None:
         if isinstance(handler, _NaneosFileHandler):
             handler.close()
             root.removeHandler(handler)
+
+
+def _remove_file_handlers() -> None:
+    root = logging.getLogger(ROOT_LOGGER_NAME)
+    for handler in list(root.handlers):
+        if isinstance(handler, _NaneosFileHandler):
+            handler.close()
+            root.removeHandler(handler)
+
+
+def test_enable_file_logging_does_not_rotate_by_default(tmp_path) -> None:
+    enable_file_logging(tmp_path, LEVEL_WARNING)
+    for i in range(50):
+        get_naneos_logger("naneos.test_file").warning("line %d %s", i, "x" * 200)
+    _remove_file_handlers()
+
+    assert [p.name for p in tmp_path.iterdir()] == ["naneos-devices.log"]
+
+
+def test_enable_file_logging_rotates_when_asked(tmp_path) -> None:
+    enable_file_logging(tmp_path, LEVEL_WARNING, max_bytes=2000, backup_count=2)
+    for i in range(50):
+        get_naneos_logger("naneos.test_file").warning("line %d %s", i, "x" * 200)
+    _remove_file_handlers()
+
+    names = sorted(p.name for p in tmp_path.iterdir())
+    assert names == ["naneos-devices.log", "naneos-devices.log.1", "naneos-devices.log.2"]
+    assert all(p.stat().st_size <= 2000 + 400 for p in tmp_path.iterdir())
+    assert "line 49" in (tmp_path / "naneos-devices.log").read_text()
+
+
+def test_enable_file_logging_replaces_its_handler(tmp_path) -> None:
+    enable_file_logging(tmp_path, LEVEL_WARNING)
+    enable_file_logging(tmp_path, LEVEL_WARNING, max_bytes=1000, backup_count=1)
+    root = logging.getLogger(ROOT_LOGGER_NAME)
+    assert len([h for h in root.handlers if isinstance(h, _NaneosFileHandler)]) == 1
+    _remove_file_handlers()

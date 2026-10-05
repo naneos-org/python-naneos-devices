@@ -592,6 +592,35 @@ Nothing from section 7 itself. Open, and not doable from this repo:
 
 ---
 
+### 7.12 P2 Pro mode over BLE (2026-09-25, branch `feature/ble-p2pro-mode`)
+
+Goal (user): the size distribution mode that the USB connect sets for a P2 Pro, also over BLE by
+default. USB does not check the mode first (the device has no mode query): every connect sends
+`X0006!`, `M0004!` and the settings. Over BLE nothing set the mode, so a P2 Pro left in the plain P2
+mode sent no size distribution and lost its concentration and diameter (`connection.py`
+`_emit_data_point`).
+
+- **Measured on SN8134 (P2 Pro, FW420) over BLE only:** in the plain mode (set over USB with
+  `set_sample_rate(10)`) `M0004!` alone brings the size distribution back, the first point 2-8 s
+  later; `X0006!` is the format of the USB line and is not needed; the link never dropped, also
+  over 3 fresh connections each writing it; writing it in the mode already changes nothing; the UI
+  curve and pulse form read fine afterwards (about 55 s each).
+- **Decisions (user):** send on every connect, like USB (not "only if the data shows the wrong
+  mode"); BLE never overrides USB; switched off by an argument and a CLI flag.
+- **Built:** `PartectorBleConnection._apply_p2pro_mode` runs after every connect once the family
+  is known (`name?` on the first connect, remembered afterwards) and writes
+  `P2PRO_MODE_COMMANDS = ("M0004!",)`. `PartectorBleManager(p2pro_mode=True, p2pro_mode_guard=None)`,
+  `NaneosDeviceManager(ble_p2pro_mode=True)` (its guard says no while `sample_rate_hz` is set and
+  for a serial number that is connected over USB), `naneos-uploader --no-ble-p2pro-mode` (also in
+  the SD card template). A failed write logs a warning and is tried again at the next connect.
+- **Not sent over BLE on purpose:** `X0006!` and the USB-only gain test and pulse diagnostics
+  settings; and `A0002!` (antispikes), which USB re-sends after every switch. Whether a switch resets
+  it cannot be read back (no query), so it was left out: BLE data of a device that is in the mode
+  already is not changed. Add it to `P2PRO_MODE_COMMANDS` if parity with USB is wanted.
+- **Not done:** [ ] a check on a Pi Zero that the extra write on every reconnect does not disturb
+  its BLE links (see the dropout investigation). If it does: send only when no size distribution
+  point arrives within ~30 s after the connect.
+
 ## 8. Cleanup pass (2026-09-24, branch `refactor/open-points`)
 
 Found by reading the whole repo (sweeps of USB / core, BLE, and manager / cloud / tooling). Every

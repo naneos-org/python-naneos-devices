@@ -93,6 +93,8 @@ def template() -> str:
 #                         default: any Partector in reach
 #   --ble-max-links N     maximum number of simultaneous Bluetooth links,
 #                         default {PartectorBleManager.DEFAULT_MAX_LINKS}
+#   --no-ble-p2pro-mode   do not put a P2 Pro into size distribution mode
+#                         after every Bluetooth connect, default: it is
 #   --diagnostics-interval HOURS
 #                         read and upload the UI curve and pulse form of every
 #                         device this often, 0.5 to 24, 0 for never, default 1

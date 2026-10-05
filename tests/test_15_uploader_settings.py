@@ -102,6 +102,7 @@ def test_template_has_no_active_line_and_lists_the_settings() -> None:
     for option in ["--interval", "--no-serial", "--no-ble", "--no-upload", "--ble-allow"]:
         assert option in text
     assert "--ble-max-links N" in text and "default 7" in text
+    assert "--no-ble-p2pro-mode" in text
     assert "#WIFI_SSID=" in text and "#WIFI_PASSWORD=" in text
     assert "#AUTO_UPDATE=" in text
 
