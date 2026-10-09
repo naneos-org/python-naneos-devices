@@ -578,6 +578,8 @@ class Partector1(UsbPartector):
 class Partector2Family(UsbPartector):
     """What the P2 and the P2 Pro share: the optional gain test and pulse diagnostics."""
 
+    MIN_FIRMWARE_PULSE_DIAGNOSTICS = 362
+
     def __init__(
         self,
         serial_number: int | None = None,
@@ -588,14 +590,21 @@ class Partector2Family(UsbPartector):
         transport: SerialTransport | None = None,
         point_listener: PointListener | None = None,
     ) -> None:
-        """See UsbPartector. The two diagnostics need firmware 320 or newer."""
+        """See UsbPartector. The gain test needs firmware 320, pulse diagnostics 362 or newer."""
         self._want_gain_test = gain_test_active
         self._want_pulse_diagnostics = output_pulse_diagnostics
         super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
 
     def _apply_settings(self) -> None:
         self.write("A0002!")  # activates antispikes
-        self._configure_diagnostics(self._want_gain_test, self._want_pulse_diagnostics)
+        # Older firmware does not send the pulse columns: the layout would be too
+        # long and every data line would be dropped as a short one.
+        has_pulse_diagnostics = (
+            self._fw is not None and self._fw >= self.MIN_FIRMWARE_PULSE_DIAGNOSTICS
+        )
+        self._configure_diagnostics(
+            self._want_gain_test, self._want_pulse_diagnostics and has_pulse_diagnostics
+        )
 
 
 class Partector2(Partector2Family):

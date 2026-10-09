@@ -308,3 +308,16 @@ def test_a_silent_device_is_probed_and_dropped_if_it_does_not_answer() -> None:
         assert _wait_for(lambda: not device.is_connected)
     finally:
         device.close()
+
+
+def test_pulse_diagnostics_need_firmware_362_so_the_layout_has_no_pulse_columns() -> None:
+    # FW347 sends the gain columns but not the pulse ones; a layout that expects
+    # them makes every data line look like a short reply and drops it.
+    for firmware, expected in ((347, False), (361, False), (362, True), (422, True)):
+        device, transport = _p2(firmware=firmware, output_pulse_diagnostics=True)
+        try:
+            assert ("opd01!" in transport.written) is expected, firmware
+            has_pulse_columns = "diffusion_current_stddev" in device._data_structure
+            assert has_pulse_columns is expected, firmware
+        finally:
+            device.close()
