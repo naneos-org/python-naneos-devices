@@ -590,7 +590,7 @@ class Partector2Family(UsbPartector):
         transport: SerialTransport | None = None,
         point_listener: PointListener | None = None,
     ) -> None:
-        """See UsbPartector. The gain test needs firmware 320, the pulse diagnostics 362 or newer."""
+        """See UsbPartector. The gain test needs firmware 320, pulse diagnostics 362 or newer."""
         self._want_gain_test = gain_test_active
         self._want_pulse_diagnostics = output_pulse_diagnostics
         super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
