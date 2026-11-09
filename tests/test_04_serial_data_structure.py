@@ -321,3 +321,69 @@ def test_pulse_diagnostics_need_firmware_362_so_the_layout_has_no_pulse_columns(
             assert has_pulse_columns is expected, firmware
         finally:
             device.close()
+
+
+def test_p2_from_firmware_428_has_the_lag_column_before_the_diagnostic_blocks() -> None:
+    transport = FakeTransport(firmware=440)
+    device = Partector2(transport=transport)  # type: ignore[arg-type]  # all blocks on
+    try:
+        base = len(ds.PARTECTOR2_DATA_STRUCTURE_V428)
+        assert device._data_structure == {
+            **ds.PARTECTOR2_DATA_STRUCTURE_V428,
+            **ds.PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE,
+            **ds.PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE,
+        }
+        assert list(device._data_structure)[base - 1] == "lag"
+        assert base == len(ds.PARTECTOR2_DATA_STRUCTURE) + 1
+
+        device._settled_at = 0.0  # the gain test holds the data back after a connect
+        transport.emit(len(device._data_structure) - 1)
+        assert _wait_for(lambda: len(device._points) == 1)
+        assert device.get_data()[0].firmware_version == 440
+    finally:
+        device.close()
+
+
+def test_p2_before_firmware_428_has_no_lag_column() -> None:
+    device, _ = _p2(firmware=427)
+    try:
+        assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE
+    finally:
+        device.close()
+    device, _ = _p2(firmware=428)
+    try:
+        assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE_V428
+    finally:
+        device.close()
+
+
+def test_p2_pro_p2_mode_from_firmware_428_has_the_lag_column() -> None:
+    transport = FakeTransport(serial_number=8134, firmware=440, name="P2pro")
+    device = Partector2Pro(  # type: ignore[arg-type]
+        transport=transport,
+        sample_rate_hz=10,
+        gain_test_active=False,
+        output_pulse_diagnostics=False,
+    )
+    try:
+        assert device._data_structure == ds.PARTECTOR2_DATA_STRUCTURE_V428
+        transport.emit(len(ds.PARTECTOR2_DATA_STRUCTURE_V428) - 1)
+        assert _wait_for(lambda: len(device._points) == 1)
+
+        device.set_sample_rate(None)
+        assert device._data_structure == ds.PARTECTOR2_PRO_DATA_STRUCTURE_V336
+    finally:
+        device.close()
+
+
+def test_a_line_longer_than_the_layout_is_logged_once(caplog) -> None:
+    device, transport = _p2()
+    try:
+        with caplog.at_level("WARNING", logger="naneos"):
+            for _ in range(3):
+                transport.emit(len(ds.PARTECTOR2_DATA_STRUCTURE) + 3)
+            assert device.query("N?") == ["8617"]
+        assert device.get_data() == []
+        assert caplog.text.count("longer than the data layout") == 1
+    finally:
+        device.close()

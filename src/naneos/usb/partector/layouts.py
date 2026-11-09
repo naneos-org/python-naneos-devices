@@ -63,11 +63,14 @@ PARTECTOR2_DATA_STRUCTURE: SerialLayout = {
     "ambient_pressure": float,
 }
 
-# Firmware 265 and 275 send one trailing column more.
+# Firmware 265, 275 and 428 or newer send one more column after the ambient
+# pressure (before the optional pulse / gain blocks). It is parsed for the line
+# length only.
 PARTECTOR2_DATA_STRUCTURE_V265_V275: SerialLayout = {
     **PARTECTOR2_DATA_STRUCTURE,
     "lag": int,  # not used anymore
 }
+PARTECTOR2_DATA_STRUCTURE_V428: SerialLayout = PARTECTOR2_DATA_STRUCTURE_V265_V275
 
 
 def _p2_pro_layout(flow_column: str, flow_type: type[int] | type[float]) -> SerialLayout:
