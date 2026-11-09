@@ -25,6 +25,7 @@ from naneos.usb.partector.layouts import (
     PARTECTOR1_DATA_STRUCTURE_V_LEGACY,
     PARTECTOR2_DATA_STRUCTURE,
     PARTECTOR2_DATA_STRUCTURE_V265_V275,
+    PARTECTOR2_DATA_STRUCTURE_V428,
     PARTECTOR2_GAIN_TEST_ADDITIONAL_DATA_STRUCTURE,
     PARTECTOR2_OUTPUT_PULSE_DIAGNOSTIC_ADDITIONAL_DATA_STRUCTURE,
     PARTECTOR2_PRO_DATA_STRUCTURE_V311,
@@ -136,6 +137,7 @@ class UsbPartector(PartectorDevice, ABC):
         self._points: deque[NaneosDeviceDataPoint] = deque(maxlen=self.DATA_QUEUE_MAXSIZE)
         self._replies: queue.Queue[list[str]] = queue.Queue(maxsize=self.REPLY_QUEUE_MAXSIZE)
         self._replies_overflow_logged = False
+        self._long_lines_logged = False
         self._command_lock = Lock()
         self._stop_event = Event()
         self._last_line_at = time.monotonic()
@@ -464,6 +466,12 @@ class UsbPartector(PartectorDevice, ABC):
 
         # Legacy mode: the exact layout is unknown, extra columns are cut off.
         if columns > len(layout) and not self._legacy_data_structure:
+            if not self._long_lines_logged:
+                self._long_lines_logged = True
+                logger.warning(
+                    f"SN{self._sn}: lines of {columns} columns are longer than the data layout "
+                    f"of {len(layout)}; they are dropped. Wrong firmware layout?"
+                )
             return
 
         try:
@@ -579,6 +587,7 @@ class Partector2Family(UsbPartector):
     """What the P2 and the P2 Pro share: the optional gain test and pulse diagnostics."""
 
     MIN_FIRMWARE_PULSE_DIAGNOSTICS = 362
+    MIN_FIRMWARE_LAG_COLUMN = 428  # the P2 line has the "lag" column again
 
     def __init__(
         self,
@@ -594,6 +603,12 @@ class Partector2Family(UsbPartector):
         self._want_gain_test = gain_test_active
         self._want_pulse_diagnostics = output_pulse_diagnostics
         super().__init__(serial_number, port, sample_rate_hz, transport, point_listener)
+
+    def _p2_line_layout(self) -> SerialLayout:
+        """The plain P2 line with the blocks that are switched on."""
+        has_lag = self._fw is not None and self._fw >= self.MIN_FIRMWARE_LAG_COLUMN
+        base = PARTECTOR2_DATA_STRUCTURE_V428 if has_lag else PARTECTOR2_DATA_STRUCTURE
+        return {**base, **self._diagnostic_columns()}
 
     def _apply_settings(self) -> None:
         self.write("A0002!")  # activates antispikes
@@ -619,7 +634,7 @@ class Partector2(Partector2Family):
             self._log_old_firmware("V295/297/298")
         elif self._fw is not None and self._fw >= 320:
             self._apply_settings()
-            self._data_structure = {**PARTECTOR2_DATA_STRUCTURE, **self._diagnostic_columns()}
+            self._data_structure = self._p2_line_layout()
         else:
             self._data_structure = dict(PARTECTOR2_DATA_STRUCTURE)
             self._legacy_data_structure = True
@@ -677,7 +692,7 @@ class Partector2Pro(Partector2Family):
             )
         self.write("M0000!")  # deactivates size dist mode
         self._apply_settings()
-        self._data_structure = {**PARTECTOR2_DATA_STRUCTURE, **self._diagnostic_columns()}
+        self._data_structure = self._p2_line_layout()
         self._p2_mode = True
 
     def _enter_size_dist_mode(self) -> None:
